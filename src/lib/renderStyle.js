@@ -1,7 +1,15 @@
+import { FONTS, PRESETS } from '../presets.js'
 import { paintStickers } from './stickers.js'
 import { applyViewEdit } from './viewEdit.js'
 
 const EXPORT_SIZE = 1024
+const FONTS_BY_ID = Object.fromEntries(FONTS.map((item) => [item.id, item]))
+const PRESETS_BY_ID = Object.fromEntries(PRESETS.map((item) => [item.id, item]))
+const BOX_SAFETY_PAD = 14
+const ROTATE_PIN_GAP = 22
+
+let metricsCanvas
+let bboxProbe
 
 function canvasToUrl(canvas) {
   return new Promise((resolve) => {
@@ -1014,29 +1022,221 @@ export function layerAnchor(layer, viewW, viewH) {
   }
 }
 
-export function estimateLayerBox(layer, viewW, viewH, scale) {
+function metricsContext() {
+  if (typeof document === 'undefined') return null
+  if (!metricsCanvas) {
+    metricsCanvas = document.createElement('canvas')
+    metricsCanvas.width = 8
+    metricsCanvas.height = 8
+  }
+  return metricsCanvas.getContext('2d')
+}
+
+function measureDomTextBox(layer, font, fontSize, spacing, lineHeight) {
+  if (typeof document === 'undefined' || !document.body || !font) return null
+  if (!bboxProbe) {
+    bboxProbe = document.createElement('div')
+    bboxProbe.setAttribute('data-styler-bbox-probe', 'true')
+    bboxProbe.setAttribute('aria-hidden', 'true')
+    Object.assign(bboxProbe.style, {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+      zIndex: '-1',
+      width: 'max-content',
+      maxWidth: 'none',
+      height: 'auto',
+      margin: '0',
+      padding: '0',
+      border: '0',
+      whiteSpace: 'pre',
+    })
+    document.body.appendChild(bboxProbe)
+  }
+  const weight = resolveWeight(font, layer.fontWeight)
+  bboxProbe.style.font = `${weight} ${fontSize}px ${font.family}`
+  bboxProbe.style.letterSpacing = `${spacing}px`
+  bboxProbe.style.lineHeight = String(lineHeight)
+  bboxProbe.textContent = displayText(layer.text)
+  const rect = bboxProbe.getBoundingClientRect()
+  return {
+    w: bboxProbe.offsetWidth || rect.width,
+    h: bboxProbe.offsetHeight || rect.height,
+  }
+}
+
+function glyphOverflow(ctx, block) {
+  let left = 0
+  let right = 0
+  let ascent = 0
+  let descent = 0
+  for (const layout of block.layouts) {
+    for (const ch of layout.chars) {
+      const metrics = ctx.measureText(ch)
+      left = Math.max(left, metrics.actualBoundingBoxLeft || 0)
+      right = Math.max(right, metrics.actualBoundingBoxRight || 0)
+      ascent = Math.max(ascent, metrics.actualBoundingBoxAscent || metrics.fontBoundingBoxAscent || 0)
+      descent = Math.max(descent, metrics.actualBoundingBoxDescent || metrics.fontBoundingBoxDescent || 0)
+    }
+  }
+  return { left, right, ascent, descent }
+}
+
+function resolveBoxFont(layer, options) {
+  return options?.fontsById?.[layer.fontId]
+    ?? options?.font
+    ?? FONTS_BY_ID[layer.fontId]
+    ?? FONTS[0]
+}
+
+function resolveBoxPreset(layer, options) {
+  if (layer.presetId && options?.presetsById?.[layer.presetId]) return options.presetsById[layer.presetId]
+  if (layer.presetId && PRESETS_BY_ID[layer.presetId]) return PRESETS_BY_ID[layer.presetId]
+  if (layer.role === 'main') return options?.preset ?? null
+  return null
+}
+
+function shaderDecorationPad(shader, fontSize, contentW, contentH, viewW, viewH, stickerOn) {
+  const glow = (ratio) => fontSize * ratio
+  switch (shader) {
+    case 'kitschSticker': {
+      const boxW = contentW + fontSize * 0.9
+      const boxH = fontSize * 1.35
+      const sticker = fontSize * 0.44
+      const extraX = stickerOn === false
+        ? glow(0.22)
+        : Math.max(glow(0.22), boxW * 0.52 + fontSize * 0.18 + sticker - contentW / 2)
+      const extraY = stickerOn === false
+        ? glow(0.16)
+        : Math.max(glow(0.16), boxH * 0.72 + fontSize * 0.12 + sticker - contentH / 2)
+      return { extraX, extraY }
+    }
+    case 'circularBadge': {
+      const radius = Math.min(viewW, viewH) * 0.3 + fontSize * 0.42 + glow(0.18)
+      return {
+        extraX: Math.max(0, radius - contentW / 2),
+        extraY: Math.max(0, radius - contentH / 2),
+      }
+    }
+    case 'waveWarp':
+      return { extraX: glow(0.22), extraY: glow(0.55) }
+    case 'kineticStack':
+      return { extraX: glow(0.64), extraY: glow(0.76) }
+    case 'splitSlice':
+      return { extraX: glow(0.16), extraY: glow(0.12) }
+    case 'hollowOutline':
+      return { extraX: glow(0.22), extraY: glow(0.22) }
+    case 'chunkyBubble':
+      return { extraX: glow(0.28), extraY: glow(0.24) }
+    case 'interlockBlock':
+      return { extraX: glow(1.05), extraY: glow(0.32) }
+    case 'woodcutCarving':
+    case 'woodblock':
+      return { extraX: glow(0.16), extraY: glow(0.2) }
+    case 'liquidChrome':
+    case 'inflatedJelly':
+    case 'cyberNeon':
+    case 'crystalGlass':
+    case 'botanical':
+      return { extraX: glow(0.55), extraY: glow(0.55) }
+    case 'hologram':
+      return { extraX: 24, extraY: 18 }
+    case 'calligraphy':
+      return { extraX: 18, extraY: 22 }
+    case 'graffiti':
+      return { extraX: glow(0.28) + 14, extraY: glow(0.28) + 14 }
+    case 'comicPop':
+      return { extraX: glow(0.16), extraY: glow(0.16) }
+    case 'softBrutal':
+      return { extraX: glow(0.16) + 18, extraY: glow(0.18) + 18 }
+    case 'gothicDark':
+      return { extraX: 24, extraY: 28 }
+    case 'mechanicBevel':
+      return { extraX: glow(0.12), extraY: glow(0.12) }
+    case 'carvedSeal':
+      return { extraX: glow(0.08) + 4, extraY: glow(0.08) + 4 }
+    default:
+      return shader ? { extraX: 24, extraY: 24 } : { extraX: glow(0.08), extraY: glow(0.08) }
+  }
+}
+
+export function estimateLayerBox(layer, viewW, viewH, scale, options = {}) {
   const fontSize = Math.max(12, (layer.fontSize ?? 88) * scale)
-  const lines = textLines(layer.text)
-  const longest = Math.max(...lines.map((line) => [...line].length), 1)
-  const spacing = Math.abs(layer.letterSpacing ?? 0) * scale
-  const width = Math.max(fontSize * 1.3, longest * fontSize * 0.62 + spacing * Math.max(0, longest - 1))
+  const spacing = (Number(layer.letterSpacing) || 0) * scale
   const lineHeight = Math.max(0.8, Math.min(2.5, Number(layer.lineHeight) || 1.2))
-  const height = fontSize * lineHeight * (layer.type === 'seal' ? 1 : Math.max(1, lines.length)) * (layer.type === 'seal' ? 1.1 : 1.08)
+  const font = resolveBoxFont(layer, options)
   const { x, y } = layerAnchor(layer, viewW, viewH)
+
+  if (layer.type === 'seal') {
+    const size = Math.max(28, fontSize * 2.2 * 0.32)
+    const pad = BOX_SAFETY_PAD + 4
+    return {
+      x,
+      y,
+      w: size + pad * 2,
+      h: size + pad * 2,
+      rotation: ((layer.rotation ?? 0) * Math.PI) / 180,
+    }
+  }
+
+  const ctx = metricsContext()
+  let contentW
+  let contentH
+  if (ctx && font) {
+    applyTypeface(ctx, { font, fontSize, fontWeight: layer.fontWeight })
+    const block = lineBlock(ctx, layer.text, spacing, fontSize, lineHeight, layer.align)
+    const overflow = glyphOverflow(ctx, block)
+    const lineCount = Math.max(1, block.layouts.length)
+    contentW = Math.max(block.maxW, overflow.left + overflow.right)
+    contentH = Math.max(
+      block.lh * lineCount * 1.08,
+      (lineCount - 1) * block.lh + overflow.ascent + overflow.descent,
+      fontSize * lineHeight * lineCount,
+    )
+  } else {
+    const lines = textLines(layer.text)
+    const longest = Math.max(...lines.map((line) => [...line].length), 1)
+    contentW = Math.max(fontSize * 1.3, longest * fontSize * 0.62 + Math.abs(spacing) * Math.max(0, longest - 1))
+    contentH = fontSize * lineHeight * Math.max(1, lines.length) * 1.08
+  }
+
+  const domBox = measureDomTextBox(layer, font, fontSize, spacing, lineHeight)
+  if (domBox) {
+    contentW = Math.max(contentW, domBox.w)
+    contentH = Math.max(contentH, domBox.h)
+  }
+
+  const strokePad = Math.max(0, (Number(layer.strokeWidth) || 0) * scale)
+  const shadowPad = Math.max(0, Number(layer.shadowBlur) || 0)
+  const preset = resolveBoxPreset(layer, options)
+  const deco = shaderDecorationPad(
+    preset?.shader,
+    fontSize,
+    contentW,
+    contentH,
+    viewW,
+    viewH,
+    options.stickerOn,
+  )
+  const padX = BOX_SAFETY_PAD + strokePad + shadowPad + deco.extraX
+  const padY = BOX_SAFETY_PAD + strokePad + shadowPad + deco.extraY
+
   return {
     x,
     y,
-    w: width,
-    h: height,
+    w: contentW + padX * 2,
+    h: contentH + padY * 2,
     rotation: ((layer.rotation ?? 0) * Math.PI) / 180,
   }
 }
 
-export function hitTestStudio(layers, px, py, viewW, viewH, scale) {
+export function hitTestStudio(layers, px, py, viewW, viewH, scale, options = {}) {
   for (let index = layers.length - 1; index >= 0; index -= 1) {
     const layer = layers[index]
     if (layer.visible === false) continue
-    const box = estimateLayerBox(layer, viewW, viewH, scale)
+    const box = estimateLayerBox(layer, viewW, viewH, scale, options)
     const dx = px - box.x
     const dy = py - box.y
     const cos = Math.cos(-box.rotation)
@@ -1045,7 +1245,7 @@ export function hitTestStudio(layers, px, py, viewW, viewH, scale) {
     const ly = dx * sin + dy * cos
     const rx = box.w / 2
     const ry = box.h / 2
-    if (Math.hypot(lx, ly + ry + 22) <= 9) return { layer, box, handle: 'rotate' }
+    if (Math.hypot(lx, ly + ry + ROTATE_PIN_GAP) <= 9) return { layer, box, handle: 'rotate' }
     if (Math.hypot(lx - rx, ly - ry) <= 9) return { layer, box, handle: 'scale' }
     if (Math.abs(lx) <= rx + 8 && Math.abs(ly) <= ry + 8) return { layer, box, handle: 'move' }
   }
@@ -1184,12 +1384,12 @@ function paintOverlayBox(ctx, box, accent = 'main') {
   ctx.setLineDash([])
   ctx.beginPath()
   ctx.moveTo(0, -box.h / 2)
-  ctx.lineTo(0, -box.h / 2 - 22)
+  ctx.lineTo(0, -box.h / 2 - ROTATE_PIN_GAP)
   ctx.stroke()
   ctx.shadowBlur = 0
   ctx.fillStyle = fill
   ctx.beginPath()
-  ctx.arc(0, -box.h / 2 - 22, 5, 0, Math.PI * 2)
+  ctx.arc(0, -box.h / 2 - ROTATE_PIN_GAP, 5, 0, Math.PI * 2)
   ctx.fill()
   ctx.fillRect(box.w / 2 - 5, box.h / 2 - 5, 10, 10)
   ctx.restore()
@@ -1273,7 +1473,13 @@ async function drawStudioScene(ctx, options) {
     const selected = layers.find((item) => item.id === selectedId)
     if (selected) {
       const accent = selected.role === 'sub' ? 'sub' : selected.role === 'main' ? 'main' : 'extra'
-      paintOverlayBox(ctx, estimateLayerBox(selected, viewW, viewH, scale), accent)
+      paintOverlayBox(ctx, estimateLayerBox(selected, viewW, viewH, scale, {
+        fontsById,
+        font: options.font,
+        presetsById: extras.presetsById,
+        stickerOn: extras.stickerOn,
+        preset,
+      }), accent)
     }
   }
 }

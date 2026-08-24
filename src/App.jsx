@@ -563,7 +563,12 @@ export default function App() {
     if (cropMode) return
     const point = pointerToCanvas(event)
     if (!point) return
-    const hit = hitTestStudio(studio.layers, point.x, point.y, point.w, point.h, point.scale)
+    const hit = hitTestStudio(studio.layers, point.x, point.y, point.w, point.h, point.scale, {
+      fontsById: FONTS_BY_ID,
+      presetsById: PRESETS_BY_ID,
+      stickerOn: studio.stickerOn,
+      preset,
+    })
     if (!hit) {
       if (!studio.bgLocked) patchStudio({ activeLayerId: studio.layers[0]?.id }, false)
       return
