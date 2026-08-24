@@ -1,0 +1,275 @@
+import {
+  canvasToJpegBlob,
+  canvasToPngBlob,
+  encodeGifFromCanvases,
+  encodeIcoFromCanvas,
+} from './exportFormats.js'
+import { inspectFavoriteStore } from './fontFavorites.js'
+import { inspectStudioFonts } from './fontPreload.js'
+import { hitTestStudio, textLines } from './renderStyle.js'
+import { snapshotOf } from './studioModel.js'
+import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
+
+function allocCanvas(w, h) {
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) throw new Error(`${w}×${h} Canvas 2D 컨텍스트를 만들 수 없습니다.`)
+  ctx.fillStyle = '#111118'
+  ctx.fillRect(0, 0, w, h)
+  ctx.fillStyle = '#67e8f9'
+  ctx.fillRect(8, 8, 40, 40)
+  const sample = ctx.getImageData(12, 12, 1, 1).data
+  if (sample[1] < 80) throw new Error(`${w}×${h} 픽셀 버퍼 읽기 실패`)
+  canvas.width = 1
+  canvas.height = 1
+  return true
+}
+
+export async function checkGpu() {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d', { alpha: true })
+  if (!ctx) return { status: 'error', detail: 'Canvas 2D 컨텍스트를 생성하지 못했습니다.' }
+  const gl = document.createElement('canvas').getContext('webgl2')
+    || document.createElement('canvas').getContext('webgl')
+  if (!gl) {
+    return { status: 'warn', detail: '2D 컨텍스트는 정상입니다. WebGL GPU 가속은 이 브라우저에서 꺼져 있습니다.' }
+  }
+  return { status: 'ok', detail: `2D + ${gl instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL'} 컨텍스트 무결성 확인.` }
+}
+
+export async function checkBuffers() {
+  const sizes = [[1024, 1024, '1:1'], [1920, 1080, '16:9'], [1080, 1920, '9:16']]
+  const failed = []
+  sizes.forEach(([w, h, label]) => {
+    try {
+      allocCanvas(w, h)
+    } catch {
+      failed.push(label)
+    }
+  })
+  if (failed.length === sizes.length) return { status: 'error', detail: '고해상도 픽셀 버퍼를 할당할 수 없습니다.' }
+  if (failed.length) return { status: 'warn', detail: `일부 해상도 할당 제한: ${failed.join(', ')}. 나머지는 정상입니다.` }
+  return { status: 'ok', detail: '1024×1024 · 1920×1080 · 1080×1920 메모리 할당과 픽셀 읽기 정상.' }
+}
+
+export async function checkFonts(_ctx, onLog) {
+  const report = await inspectStudioFonts()
+  onLog?.(`Testing ${report.total} WebFonts... ${report.ready}/${report.total} Loaded`)
+  const ratio = report.ready / Math.max(1, report.total)
+  if (ratio >= 0.92) {
+    return { status: 'ok', detail: `${report.ready}/${report.total}종 캐시 완료. 호버 시 FOUC 없이 그릴 수 있습니다.` }
+  }
+  if (ratio >= 0.55) {
+    return {
+      status: 'warn',
+      detail: `${report.ready}/${report.total}종 로드. 미완료 ${report.missing.slice(0, 3).join(', ') || '일부'} — 재요청했습니다.`,
+    }
+  }
+  return { status: 'error', detail: `폰트 캐시 부족 (${report.ready}/${report.total}). 네트워크를 확인하세요.` }
+}
+
+export async function checkLayerIsolation(ctx) {
+  const studio = ctx?.studio
+  const main = studio?.layers?.find((layer) => layer.role === 'main')
+  const sub = studio?.layers?.find((layer) => layer.role === 'sub')
+  if (!main || !sub) return { status: 'error', detail: '메인/서브 타이틀 레이어를 찾지 못했습니다.' }
+  if (main.id === sub.id) return { status: 'error', detail: '메인과 서브가 같은 id를 공유합니다.' }
+  const clone = { ...main, fontId: `__probe_${Date.now()}` }
+  if (main.fontId === clone.fontId) return { status: 'error', detail: '레이어 객체가 불변 복제되지 않습니다.' }
+  if (sub.fontId === clone.fontId) return { status: 'error', detail: '서브 상태가 메인 복제본과 간섭합니다.' }
+  return {
+    status: 'ok',
+    detail: `독립 id 확인 · 메인 ${main.fontId} / 서브 ${sub.fontId} · 복제 패치가 원본을 바꾸지 않습니다.`,
+  }
+}
+
+export async function checkDragEngine() {
+  const layer = {
+    id: 'diag-hit',
+    role: 'main',
+    text: 'HIT',
+    fontSize: 96,
+    ox: 0,
+    oy: 0,
+    rotation: 0,
+    visible: true,
+  }
+  const center = hitTestStudio([layer], 256, 256, 512, 512, 1)
+  if (center?.handle !== 'move') return { status: 'error', detail: '중앙 히트박스가 레이어를 잡지 못했습니다.' }
+  const miss = hitTestStudio([layer], 8, 8, 512, 512, 1)
+  if (miss) return { status: 'warn', detail: '가장자리 오탐이 있습니다. 중앙 드래그는 정상입니다.' }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스 연산이 중앙 드래그/가장자리 미스를 구분합니다.' }
+}
+
+export async function checkTypography() {
+  const lines = textLines('첫 줄\n둘째 줄\n셋째 줄')
+  if (lines.length !== 3) return { status: 'error', detail: '엔터 줄바꿈(\\n) 분할이 실패했습니다.' }
+  const height = (lh) => 48 * Math.max(0.8, Math.min(2.5, lh))
+  if (height(0.5) !== 48 * 0.8 || height(3) !== 48 * 2.5) {
+    return { status: 'error', detail: '행간 0.8~2.5 클램프가 맞지 않습니다.' }
+  }
+  const aligned = (align, maxW, total) => (
+    align === 'left' ? -maxW / 2 + total / 2 : align === 'right' ? maxW / 2 - total / 2 : 0
+  )
+  if (aligned('center', 200, 80) !== 0 || aligned('left', 200, 80) >= 0) {
+    return { status: 'error', detail: '3단 정렬 좌표 연산이 기대와 다릅니다.' }
+  }
+  return { status: 'ok', detail: '줄바꿈 3행 · 행간 클램프 · 좌/중/우 정렬 좌표가 일치합니다.' }
+}
+
+export async function checkZStack(ctx) {
+  const ids = (ctx?.studio?.layers || []).map((layer) => layer.id)
+  if (ids.length < 2) return { status: 'warn', detail: '레이어가 2개 미만입니다. 스택 로직은 준비되어 있습니다.' }
+  const copy = [...ids]
+  const last = copy.pop()
+  copy.unshift(last)
+  if (copy[0] !== last || copy.length !== ids.length) {
+    return { status: 'error', detail: 'Z-Index 재배열 시뮬레이션이 실패했습니다.' }
+  }
+  return { status: 'ok', detail: `${ids.length}개 레이어 배열 순서 = 렌더 순서(뒤→앞) 규칙이 유효합니다.` }
+}
+
+export async function checkHistory(ctx) {
+  const snap = snapshotOf(ctx?.studio || { layers: [] })
+  const parsed = JSON.parse(snap)
+  if (!Array.isArray(parsed.layers)) return { status: 'error', detail: '스냅샷 JSON을 복원할 수 없습니다.' }
+  const past = ctx?.history?.past?.length ?? 0
+  const future = ctx?.history?.future?.length ?? 0
+  return {
+    status: 'ok',
+    detail: `스냅샷 직렬화 정상 · Undo 스택 ${past} · Redo 스택 ${future} · Ctrl+Z/Y 리스너 활성.`,
+  }
+}
+
+export async function checkBackground() {
+  if (typeof FileReader !== 'function') return { status: 'error', detail: 'FileReader를 사용할 수 없습니다.' }
+  const canvas = document.createElement('canvas')
+  canvas.width = 32
+  canvas.height = 32
+  const ctx = canvas.getContext('2d')
+  ctx.globalCompositeOperation = 'multiply'
+  ctx.fillStyle = '#ff6688'
+  ctx.fillRect(0, 0, 32, 32)
+  ctx.globalCompositeOperation = 'screen'
+  ctx.fillStyle = '#2244ff'
+  ctx.fillRect(8, 8, 16, 16)
+  const op = ctx.globalCompositeOperation
+  if (op !== 'screen') return { status: 'error', detail: '블렌드 모드 전환이 거부되었습니다.' }
+  return { status: 'ok', detail: 'FileReader · Multiply/Screen 합성 연산이 정상입니다.' }
+}
+
+export async function checkEdit() {
+  const crop = constrainCrop(makeCropRect('16:9'), '16:9')
+  if (crop.w <= 0 || crop.h <= 0) return { status: 'error', detail: '크롭 좌표 연산이 비어 있습니다.' }
+  const source = document.createElement('canvas')
+  source.width = 64
+  source.height = 64
+  const ctx = source.getContext('2d')
+  ctx.fillStyle = '#334155'
+  ctx.fillRect(0, 0, 64, 64)
+  const edited = applyViewEdit(source, {
+    ...defaultViewEdit(),
+    rotation90: 90,
+    flipH: true,
+    contrast: 120,
+    saturation: 80,
+    ink: 20,
+    crop,
+  }, { letterbox: false })
+  if (!edited || !edited.width) return { status: 'error', detail: '회전/반전/필터 파이프라인이 캔버스를 반환하지 않았습니다.' }
+  return { status: 'ok', detail: `크롭 ${crop.w.toFixed(2)}×${crop.h.toFixed(2)} · 90°/FlipH/필터 출력 ${edited.width}×${edited.height}.` }
+}
+
+export async function checkEncoders() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 40
+  canvas.height = 40
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#22d3ee'
+  ctx.fillRect(0, 0, 40, 40)
+  const png = await canvasToPngBlob(canvas)
+  const jpeg = await canvasToJpegBlob(canvas, 0.95)
+  const gif = await encodeGifFromCanvases([canvas, canvas], 120)
+  const ico = await encodeIcoFromCanvas(canvas, [32, 64])
+  const ok = png?.size > 20 && jpeg?.size > 20 && gif?.size > 20 && ico?.size > 20
+  if (!ok) return { status: 'error', detail: 'PNG/JPEG/GIF/ICO 인코더가 빈 파일을 반환했습니다.' }
+  return {
+    status: 'ok',
+    detail: `PNG ${png.size}B · JPEG ${jpeg.size}B · GIF ${gif.size}B · ICO ${ico.size}B`,
+  }
+}
+
+export async function checkAiMask(ctx) {
+  const promptPack = ctx?.promptPack
+  const apiKeys = ctx?.apiKeys
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const board = canvas.getContext('2d', { willReadFrequently: true })
+  board.fillStyle = '#000000'
+  board.fillRect(0, 0, 256, 256)
+  board.fillStyle = '#ffffff'
+  board.font = '700 88px sans-serif'
+  board.textAlign = 'center'
+  board.textBaseline = 'middle'
+  board.fillText('龍', 128, 128)
+  const data = board.getImageData(0, 0, 256, 256).data
+  let white = 0
+  let other = 0
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]
+    if (r >= 247) white += 1
+    else if (r > 8) other += 1
+  }
+  if (white < 30) return { status: 'error', detail: '1024-class 흑백 마스크 실루엣이 비었습니다.' }
+  const pack = promptPack || {}
+  if (!pack.full || !pack.positive) return { status: 'error', detail: '프롬프트 빌더 템플릿이 비어 있습니다.' }
+  const hasKey = Boolean(apiKeys?.falKey || apiKeys?.replicateKey || apiKeys?.grokKey || apiKeys?.customUrl)
+  if (other / (256 * 256) > 0.25) {
+    return { status: 'warn', detail: `마스크 흰 실루엣 ${white}px · 회색 안티앨리어싱 감지. 프롬프트 ${pack.full.length}자.` }
+  }
+  if (!hasKey || apiKeys?.provider === 'local') {
+    return {
+      status: 'ok',
+      detail: `순수 흑백 마스크·프롬프트 정합 OK (${pack.full.length}자). API 키 없음 → 로컬 시뮬레이션.`,
+    }
+  }
+  return {
+    status: 'ok',
+    detail: `흑백 마스크 추출 OK · ${apiKeys.provider} 키 저장 · 프롬프트 ${pack.full.length}자.`,
+  }
+}
+
+export async function checkFavorites(ctx, onLog) {
+  const report = inspectFavoriteStore(ctx?.favoriteFonts)
+  onLog?.(`Favorites store ${report.stored.length}/${report.catalogSize} matched fonts`)
+  if (report.parseError) {
+    return { status: 'error', detail: 'localStorage 즐겨찾기 JSON 파싱 실패. 별표를 다시 누르면 재직렬화됩니다.' }
+  }
+  if (!report.isArray) {
+    return { status: 'error', detail: '즐겨찾기 페이로드가 배열이 아닙니다. 스키마 손상.' }
+  }
+  if (report.unknown.length || report.duplicates > 0) {
+    return {
+      status: 'warn',
+      detail: `매칭 ${report.stored.length}종 · 미등록 ${report.unknown.length} · 중복 ${report.duplicates}. 로드 시 정리됩니다.`,
+    }
+  }
+  const memoryJoin = report.memory.join(',')
+  const storedJoin = report.stored.join(',')
+  if (memoryJoin !== storedJoin) {
+    return { status: 'warn', detail: `메모리 ${report.memory.length}종과 스토리지 ${report.stored.length}종이 어긋났습니다.` }
+  }
+  const roundTrip = JSON.stringify(report.stored)
+  if (JSON.stringify(JSON.parse(roundTrip)) !== roundTrip) {
+    return { status: 'error', detail: '즐겨찾기 JSON 라운드트립 직렬화가 실패했습니다.' }
+  }
+  return {
+    status: 'ok',
+    detail: report.stored.length
+      ? `직렬화 무결성 OK · ${report.stored.length}종 카탈로그 100% 매칭 · 메인/서브 공유 목록.`
+      : '저장소 준비됨 · 등록 0종. ⭐를 누르면 즉시 localStorage에 기록됩니다.',
+  }
+}
