@@ -592,7 +592,7 @@ export default function App() {
       const angle = Math.atan2(point.y - point.h / 2 - origin.oy * point.h, point.x - point.w / 2 - origin.ox * point.w)
       patch = { rotation: Math.round((angle * 180) / Math.PI + 90) }
     } else if (drag.handle === 'scale') {
-      patch = { fontSize: Math.max(18, Math.min(180, origin.fontSize + (point.x - drag.startX) * 0.35)) }
+      patch = { fontSize: Math.max(20, Math.min(350, origin.fontSize + (point.x - drag.startX) * 0.35)) }
     } else {
       patch = {
         ox: Math.max(-0.45, Math.min(0.45, origin.ox + dx)),

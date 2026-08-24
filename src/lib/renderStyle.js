@@ -820,6 +820,48 @@ function alignedX(align, maxW, total) {
   return 0
 }
 
+export function fitLayerFontSize(layer, font, viewW, viewH = viewW, {
+  min = 20,
+  max = 350,
+  fill = 0.85,
+} = {}) {
+  if (typeof document === 'undefined') return Math.round(layer.fontSize || min)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return Math.round(layer.fontSize || min)
+  const targetW = Math.max(48, viewW * fill)
+  const targetH = Math.max(48, viewH * fill)
+  const strokePad = (Number(layer.strokeWidth) || 0) * 2
+  const spacing = Number(layer.letterSpacing) || 0
+  const lineCount = Math.max(1, textLines(layer.text).length)
+  const lineHeight = Math.max(0.8, Math.min(2.5, Number(layer.lineHeight) || 1.2))
+
+  const measure = (size) => {
+    applyTypeface(ctx, { font, fontSize: size, fontWeight: layer.fontWeight })
+    const block = lineBlock(ctx, layer.text, spacing, size, lineHeight, layer.align)
+    const width = block.maxW + strokePad
+    const height = size * lineHeight * lineCount * (layer.type === 'seal' ? 1.1 : 1.08)
+    return { width, height }
+  }
+
+  const fits = (size) => {
+    const box = measure(size)
+    return box.width <= targetW && box.height <= targetH
+  }
+
+  if (fits(max)) return max
+  if (!fits(min)) return min
+
+  let lo = min
+  let hi = max
+  for (let i = 0; i < 20; i += 1) {
+    const mid = (lo + hi) / 2
+    if (fits(mid)) lo = mid
+    else hi = mid
+  }
+  return Math.max(min, Math.min(max, Math.round(lo)))
+}
+
 function paintSealStamp(ctx, viewW, viewH, fontSize, text, mask = false) {
   const size = Math.max(28, fontSize * 0.32)
   const x = viewW * 0.74

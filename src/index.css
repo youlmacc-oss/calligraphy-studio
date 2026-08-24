@@ -206,6 +206,52 @@ body {
   cursor: pointer;
 }
 
+.size-fit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.size-fit-head .ui-label {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.size-num {
+  width: 4.4rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.35rem 0.4rem;
+  font-size: 14px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.size-num-unit {
+  font-size: 12px;
+  font-weight: 800;
+  color: #94a3b8;
+}
+
+.size-fit-btn {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  background: rgba(8, 47, 73, 0.55);
+  padding: 0.38rem 0.65rem;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ecfeff;
+  white-space: nowrap;
+}
+
+.size-fit-btn:hover,
+.size-fit-btn:focus-visible {
+  filter: brightness(1.12);
+  outline: none;
+}
+
 .sticker-panel {
   border-radius: 1.1rem;
   border: 1px solid rgba(251, 191, 36, 0.18);

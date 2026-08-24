@@ -2,10 +2,11 @@ import clsx from 'clsx'
 import { Trash2 } from 'lucide-react'
 import FontPicker from './FontPicker.jsx'
 import { magnify } from './MenuMagnifierHUD.jsx'
-import { resolveWeight } from '../lib/renderStyle.js'
+import { fitLayerFontSize, resolveWeight } from '../lib/renderStyle.js'
 import {
   CALLIGRAPHY_PRESET_IDS,
   FONTS,
+  getAspect,
   PRESETS,
   STICKER_THEMES,
   THEMES,
@@ -26,11 +27,18 @@ function layerMeta(layer) {
   return { icon: '🏷️', title: `${layer.name} 편집 카드`, hint: '추가 텍스트 레이어' }
 }
 
+const FONT_SIZE_MIN = 20
+const FONT_SIZE_MAX = 350
+
+function clampFontSize(value) {
+  const next = Number(value)
+  if (!Number.isFinite(next)) return FONT_SIZE_MIN
+  return Math.round(Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, next)))
+}
+
 function sizeRange(layer) {
-  if (layer.role === 'main') return { min: 90, max: 120 }
-  if (layer.role === 'sub') return { min: 32, max: 48 }
-  if (layer.type === 'seal') return { min: 28, max: 90 }
-  return { min: 24, max: 80 }
+  if (layer.type === 'seal') return { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX }
+  return { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX }
 }
 
 export default function LayerEditCard({
@@ -57,8 +65,7 @@ export default function LayerEditCard({
   const font = FONTS_BY_ID[layer.fontId] ?? FONTS[0]
   const weight = resolveWeight(font, layer.fontWeight ?? 400)
   const range = sizeRange(layer)
-  const sizeMin = Math.min(range.min, Math.round(layer.fontSize))
-  const sizeMax = Math.max(range.max, Math.round(layer.fontSize))
+  const aspect = getAspect(studio?.aspectId || '1:1')
   const layerPreset = PRESETS.find((item) => item.id === layer.presetId) ?? null
   const shader = layerPreset?.shader
   const showCalligraphy = CALLIGRAPHY_PRESET_IDS.includes(layer.presetId) || shader === 'calligraphy' || shader === 'carvedSeal'
@@ -213,10 +220,46 @@ export default function LayerEditCard({
             </div>
           ) : null}
 
-          <label className="ui-label mt-3" {...magnify('폰트 크기', '글자 크기를 키우거나 줄입니다')}>
-            🔠 크기 {Math.round(layer.fontSize)}px
-            <input type="range" min={sizeMin} max={sizeMax} className="ctrl-slider mt-1" value={layer.fontSize} onChange={(event) => onPatch(layer.id, { fontSize: Number(event.target.value) }, false)} />
-          </label>
+          <div className="size-fit-block mt-3">
+            <div className="size-fit-head">
+              <label className="ui-label" {...magnify('폰트 크기', '20~350px. 긴 문장은 화면 맞춤으로 한 번에 줄입니다')}>
+                🔠 크기
+              </label>
+              <input
+                type="number"
+                className="size-num"
+                min={range.min}
+                max={range.max}
+                step={1}
+                value={Math.round(layer.fontSize)}
+                onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
+                onBlur={onCommit}
+                {...magnify('크기 숫자 입력', '원하는 px 값을 직접 입력합니다')}
+              />
+              <span className="size-num-unit">px</span>
+              <button
+                type="button"
+                className="size-fit-btn"
+                onClick={() => onPatch(layer.id, {
+                  fontSize: fitLayerFontSize(layer, font, aspect.w, aspect.h),
+                })}
+                {...magnify('화면 맞춤', '캔버스 가로의 약 85% 안에 글자가 들어오도록 크기를 자동 계산합니다')}
+              >
+                📏 화면 맞춤
+              </button>
+            </div>
+            <input
+              type="range"
+              min={range.min}
+              max={range.max}
+              step={1}
+              className="ctrl-slider mt-1.5"
+              value={Math.round(layer.fontSize)}
+              onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
+              onPointerUp={onCommit}
+              {...magnify('폰트 크기 슬라이더', '20px부터 350px까지 1px 단위로 조절합니다')}
+            />
+          </div>
           <label className="ui-label mt-2" {...magnify('자간', '글자 사이 간격을 조절합니다')}>
             ↔️ 자간 {layer.letterSpacing}px
             <input type="range" min="-8" max="28" className="ctrl-slider mt-1" value={layer.letterSpacing} onChange={(event) => onPatch(layer.id, { letterSpacing: Number(event.target.value) }, false)} />
