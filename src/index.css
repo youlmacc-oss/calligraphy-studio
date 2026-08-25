@@ -141,6 +141,19 @@ body {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.preview-frame.is-bg-checker {
+  background: repeating-conic-gradient(#2a2a36 0% 25%, #1a1a24 0% 50%) 50% / 18px 18px;
+}
+
+.preview-frame.is-bg-light {
+  background: #ececf3;
+}
+
+.preview-frame.is-bg-dark {
+  background:
+    radial-gradient(ellipse at 50% 40%, #161622 0%, #07070c 72%);
+}
+
 .preview-frame.is-hover-preview {
   border-color: rgba(34, 211, 238, 0.35);
   box-shadow: 0 0 28px rgba(34, 211, 238, 0.12);
@@ -2004,6 +2017,58 @@ body {
 .crop-handle.l { left: -7px; top: calc(50% - 6px); cursor: ew-resize; }
 .crop-handle.r { right: -7px; top: calc(50% - 6px); cursor: ew-resize; }
 
+.canvas-bg-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 50;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(7, 7, 12, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.canvas-bg-toggle button {
+  min-width: 2.4rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.22rem 0.45rem;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.canvas-bg-toggle button.is-on {
+  background: rgba(34, 211, 238, 0.22);
+  color: #ecfeff;
+}
+
+.snap-guide {
+  position: absolute;
+  pointer-events: none;
+  z-index: 45;
+  background: #67e8f9;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.85);
+}
+
+.snap-guide-v {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+}
+
+.snap-guide-h {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+}
+
 .export-hub {
   border-radius: 1.05rem;
   border: 1px solid rgba(34, 211, 238, 0.22);
@@ -2022,6 +2087,67 @@ body {
   margin: 0.35rem 0 0;
   font-size: 11px;
   color: #94a3b8;
+}
+
+.export-scale-row,
+.project-io-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.export-scale-chip {
+  flex: 1;
+  min-width: 4.5rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 0.4rem 0.3rem;
+  font-size: 11px;
+  font-weight: 800;
+  color: #cbd5e1;
+}
+
+.export-scale-chip.is-on {
+  border-color: rgba(34, 211, 238, 0.5);
+  background: rgba(34, 211, 238, 0.14);
+  color: #ecfeff;
+}
+
+.font-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.35rem 0.65rem 0.55rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 0.85rem;
+  border: 1px dashed rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.06);
+  color: #e0f2fe;
+}
+
+.font-drop.is-over {
+  border-color: #67e8f9;
+  background: rgba(34, 211, 238, 0.14);
+}
+
+.font-drop strong {
+  display: block;
+  font-size: 13px;
+}
+
+.font-drop p {
+  margin: 0.15rem 0 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.font-drop-note {
+  margin: 0 0.75rem 0.45rem;
+  font-size: 11px;
+  color: #67e8f9;
 }
 
 .export-btn-png {

@@ -60,9 +60,11 @@ export default function LayerEditCard({
   onReorder,
   favoriteIds,
   onToggleFavorite,
+  extraFonts = [],
+  onAddFontFile,
 }) {
   const meta = layerMeta(layer)
-  const font = FONTS_BY_ID[layer.fontId] ?? FONTS[0]
+  const font = extraFonts.find((item) => item.id === layer.fontId) ?? FONTS_BY_ID[layer.fontId] ?? FONTS[0]
   const weight = resolveWeight(font, layer.fontWeight ?? 400)
   const range = sizeRange(layer)
   const aspect = getAspect(studio?.aspectId || '1:1')
@@ -214,6 +216,8 @@ export default function LayerEditCard({
                 preferredGroup={font.group}
                 favoriteIds={favoriteIds}
                 onToggleFavorite={onToggleFavorite}
+                extraFonts={extraFonts}
+                onAddFontFile={onAddFontFile}
                 onChange={(fontId) => onSelectFont(layer.id, fontId)}
                 onHoverFont={onHoverFont}
               />
@@ -281,6 +285,19 @@ export default function LayerEditCard({
             🔄 회전 {layer.rotation}°
             <input type="range" min="-180" max="180" className="ctrl-slider mt-1" value={layer.rotation} onChange={(event) => onPatch(layer.id, { rotation: Number(event.target.value) }, false)} />
           </label>
+          {layer.type !== 'seal' ? (
+            <label className="ui-label mt-2" {...magnify('곡선 텍스트', '글자를 원형·반원 아치로 휘게 합니다')}>
+              🌙 곡선 텍스트 {layer.curveAmount ?? 0}°
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                className="ctrl-slider mt-1"
+                value={layer.curveAmount ?? 0}
+                onChange={(event) => onPatch(layer.id, { curveAmount: Number(event.target.value) }, false)}
+              />
+            </label>
+          ) : null}
           <label className="ui-label mt-2" {...magnify('투명도', '글자가 배경과 얼마나 겹쳐 보일지 조절합니다')}>
             💧 투명도 {Math.round((layer.opacity ?? 1) * 100)}%
             <input type="range" min="0" max="100" className="ctrl-slider mt-1" value={Math.round((layer.opacity ?? 1) * 100)} onChange={(event) => onPatch(layer.id, { opacity: Number(event.target.value) / 100 }, false)} />
@@ -350,6 +367,12 @@ export default function LayerEditCard({
               </label>
               <label className="ui-label col-span-2" {...magnify('외곽선 두께', '글자 테두리를 두껍게 또는 얇게 만듭니다')}>두께 {layer.strokeWidth}
                 <input type="range" min="0" max="14" className="ctrl-slider mt-1" value={layer.strokeWidth} onChange={(event) => onPatch(layer.id, { strokeWidth: Number(event.target.value) }, false)} />
+              </label>
+              <label className="ui-label" {...magnify('2차 외곽선 색', '유튜브 썸네일용 바깥 테두리 색입니다')}>2차 외곽선
+                <input type="color" className="color-input" value={layer.strokeColor2 || '#0f172a'} onChange={(event) => onPatch(layer.id, { strokeColor2: event.target.value }, false)} />
+              </label>
+              <label className="ui-label" {...magnify('2차 외곽선 두께', '안쪽 테두리 바깥에 한 겹 더 칩니다')}>2차 두께 {layer.strokeWidth2 ?? 0}
+                <input type="range" min="0" max="18" className="ctrl-slider mt-1" value={layer.strokeWidth2 ?? 0} onChange={(event) => onPatch(layer.id, { strokeWidth2: Number(event.target.value) }, false)} />
               </label>
               <label className="ui-label" {...magnify('그림자 색', '글자 그림자의 색을 고릅니다')}>그림자
                 <input type="color" className="color-input" value={layer.shadowColor} onChange={(event) => onPatch(layer.id, { shadowColor: event.target.value }, false)} />

@@ -13,6 +13,14 @@ import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
 import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
+import {
+  applyCenterSnap,
+  buildStylePrompt,
+  nudgeOffset,
+  parseStudioProject,
+  scaledExportSize,
+  serializeStudioProject,
+} from './proTools.js'
 
 function allocCanvas(w, h) {
   const canvas = document.createElement('canvas')
@@ -374,5 +382,60 @@ export async function checkEmoticonSlicer() {
   return {
     status: 'ok',
     detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+  }
+}
+
+export async function checkProEngine() {
+  if (typeof FontFace !== 'function') {
+    return { status: 'warn', detail: 'IDLE · FontFace API를 이 브라우저에서 찾지 못했습니다.' }
+  }
+  const nudged = nudgeOffset(0, 0, 'ArrowRight', { viewW: 100, viewH: 100 })
+  if (!nudged.moved || Math.abs(nudged.ox - 0.01) > 1e-6) {
+    return { status: 'error', detail: '1px 방향키 너지가 실패했습니다.' }
+  }
+  const fast = nudgeOffset(0, 0, 'ArrowDown', { viewW: 100, viewH: 100, shift: true })
+  if (Math.abs(fast.oy - 0.1) > 1e-6) {
+    return { status: 'error', detail: 'Shift+방향키 10px 너지가 실패했습니다.' }
+  }
+  const snap = applyCenterSnap(0.01, 0.01)
+  if (!snap.snapX || !snap.snapY || snap.ox !== 0 || snap.oy !== 0) {
+    return { status: 'error', detail: '중앙 자석 스냅이 실패했습니다.' }
+  }
+  const fourK = scaledExportSize({ w: 1024, h: 1024 }, 4)
+  if (fourK.exportW !== 4096 || fourK.exportH !== 4096) {
+    return { status: 'error', detail: '4x 고해상도 스케일이 실패했습니다.' }
+  }
+  const json = serializeStudioProject({
+    layers: [{
+      id: 'a',
+      role: 'main',
+      text: 'Hi',
+      ox: 0,
+      oy: 0,
+      color: '#f8fafc',
+      strokeWidth: 2,
+      strokeWidth2: 6,
+      strokeColor2: '#0f172a',
+      curveAmount: 40,
+    }],
+    background: { dataUrl: '' },
+    aspectId: '1:1',
+  })
+  const parsed = parseStudioProject(json)
+  if (parsed.layers[0].curveAmount !== 40 || parsed.layers[0].strokeWidth2 !== 6) {
+    return { status: 'error', detail: '프로젝트 JSON이 곡선/2중외곽선을 보존하지 않습니다.' }
+  }
+  const prompt = buildStylePrompt({
+    layer: parsed.layers[0],
+    font: { label: 'Custom' },
+    preset: { name: 'Neon' },
+    studio: { aspectId: '1:1' },
+  })
+  if (!prompt.full.includes('[Grok]') || !prompt.full.includes('dual-stroke') || !prompt.full.includes('arc')) {
+    return { status: 'warn', detail: 'IDLE · 스타일 프롬프트 생성기가 불완전합니다.' }
+  }
+  return {
+    status: 'ok',
+    detail: 'PASS · 스냅 · 1px/10px 단축키 · 곡선 JSON · 2중외곽선 · 4x 스케일 · FontFace',
   }
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Star } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Star, Upload } from 'lucide-react'
 import { DEFAULT_TEXT, FONT_GROUPS, FONTS, getFontMeta } from '../presets.js'
 import { resolveWeight } from '../lib/renderStyle.js'
+import { CUSTOM_FONT_GROUP, isFontFile } from '../lib/customFonts.js'
 
 const SAMPLE = '가나다 / Aa / 龍'
 const SCROLL_EDGE = 4
@@ -15,7 +16,7 @@ const FAVORITES_GROUP = {
 }
 
 function pickerGroups() {
-  return [FAVORITES_GROUP, ...FONT_GROUPS]
+  return [FAVORITES_GROUP, CUSTOM_FONT_GROUP, ...FONT_GROUPS]
 }
 
 function CategoryTabRail({ groups, activeId, onSelect }) {
@@ -183,8 +184,11 @@ export default function FontPicker({
   preferredGroup = 'kr-calli',
   favoriteIds = [],
   onToggleFavorite,
+  extraFonts = [],
+  onAddFontFile,
 }) {
-  const current = FONTS.find((item) => item.id === value) ?? FONTS[0]
+  const catalog = extraFonts.length ? [...extraFonts, ...FONTS] : FONTS
+  const current = catalog.find((item) => item.id === value) ?? FONTS[0]
   const previewLine = String(text || '').split('\n')[0].trim()
   const currentGroup = current.group || preferredGroup
   const groups = pickerGroups()
@@ -193,12 +197,19 @@ export default function FontPicker({
   const [openGroup, setOpenGroup] = useState(currentGroup)
   const [hoverId, setHoverId] = useState(null)
   const [card, setCard] = useState(null)
+  const [dropOver, setDropOver] = useState(false)
+  const [fontNote, setFontNote] = useState('')
   const rootRef = useRef(null)
+  const fileRef = useRef(null)
   const rafRef = useRef(0)
-  const hovered = FONTS.find((item) => item.id === hoverId) ?? null
+  const hovered = catalog.find((item) => item.id === hoverId) ?? null
   const guideFont = hovered ?? current
-  const currentMeta = getFontMeta(current)
-  const guideMeta = getFontMeta(guideFont)
+  const currentMeta = current.custom
+    ? { tag: '📂 내 폰트', mood: '내 PC에서 올린 글꼴', use: '이 레이어에 즉시 적용', blurb: 'FontFace로 등록된 커스텀 폰트입니다.', guide: '업로드한 글꼴은 이 브라우저 세션에서 바로 쓰입니다.' }
+    : getFontMeta(current)
+  const guideMeta = guideFont.custom
+    ? { tag: '📂 내 폰트', mood: '내 PC에서 올린 글꼴', use: '이 레이어에 즉시 적용', blurb: 'FontFace로 등록된 커스텀 폰트입니다.', guide: '업로드한 글꼴은 이 브라우저 세션에서 바로 쓰입니다.' }
+    : getFontMeta(guideFont)
 
   useEffect(() => {
     setOpenGroup((prev) => (prev === 'favorites' ? 'favorites' : (current.group || preferredGroup)))
@@ -288,6 +299,21 @@ export default function FontPicker({
     onHoverFont?.(null)
   }
 
+  const takeFontFile = async (file) => {
+    if (!file) return
+    if (!isFontFile(file)) {
+      setFontNote('TTF / OTF / WOFF 파일만 올릴 수 있습니다.')
+      return
+    }
+    try {
+      const item = await onAddFontFile?.(file)
+      setFontNote(item?.label ? `${item.label} 등록 완료` : '글꼴을 등록했습니다.')
+      if (item?.group) setOpenGroup(item.group)
+    } catch (error) {
+      setFontNote(error.message || '글꼴 등록에 실패했습니다.')
+    }
+  }
+
   const currentFav = favoriteSet.has(current.id)
 
   return (
@@ -345,6 +371,39 @@ export default function FontPicker({
 
       {open && (
         <div className="font-picker-panel" role="listbox" data-no-magnifier>
+          <div
+            className={clsx('font-drop', dropOver && 'is-over')}
+            onDragOver={(event) => {
+              event.preventDefault()
+              setDropOver(true)
+            }}
+            onDragLeave={() => setDropOver(false)}
+            onDrop={(event) => {
+              event.preventDefault()
+              setDropOver(false)
+              takeFontFile(event.dataTransfer.files?.[0])
+            }}
+          >
+            <Upload className="h-4 w-4" />
+            <div>
+              <strong>내 PC 폰트 올리기</strong>
+              <p>TTF / OTF / WOFF를 끌어다 놓거나 선택</p>
+            </div>
+            <button type="button" className="mini-btn" onClick={() => fileRef.current?.click()}>
+              파일 선택
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              hidden
+              accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+              onChange={(event) => {
+                takeFontFile(event.target.files?.[0])
+                event.target.value = ''
+              }}
+            />
+          </div>
+          {fontNote ? <p className="font-drop-note">{fontNote}</p> : null}
           <CategoryTabRail
             groups={groups}
             activeId={openGroup}
@@ -354,8 +413,10 @@ export default function FontPicker({
           {groups.map((group) => {
             const expanded = openGroup === group.id
             const fonts = group.id === 'favorites'
-              ? FONTS.filter((item) => favoriteSet.has(item.id))
-              : FONTS.filter((item) => item.group === group.id)
+              ? catalog.filter((item) => favoriteSet.has(item.id))
+              : group.id === 'custom'
+                ? extraFonts
+                : FONTS.filter((item) => item.group === group.id)
             return (
               <div key={group.id} className={clsx('font-picker-group', expanded && 'is-open')}>
                 <button
@@ -418,7 +479,9 @@ export default function FontPicker({
                       )
                     }) : (
                       <p className="font-fav-empty">
-                        아직 즐겨찾기가 없습니다. 다른 탭에서 글꼴 우측 ⭐를 누르면 여기에 모입니다.
+                        {group.id === 'custom'
+                          ? '위쪽에 TTF/OTF/WOFF를 올리면 이 목록에 나타납니다.'
+                          : '아직 즐겨찾기가 없습니다. 다른 탭에서 글꼴 우측 ⭐를 누르면 여기에 모입니다.'}
                       </p>
                     )}
                   </div>
@@ -434,7 +497,7 @@ export default function FontPicker({
             <div className="font-preview-card" style={{ left: card.left, top: card.top }} data-no-magnifier>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-base font-semibold text-white">{hovered.label}</p>
-                <span className="font-preview-tag">{getFontMeta(hovered).tag}</span>
+                <span className="font-preview-tag">{hovered.custom ? '📂 내 폰트' : getFontMeta(hovered).tag}</span>
               </div>
               <div
                 className="font-preview-sample"
@@ -442,7 +505,7 @@ export default function FontPicker({
               >
                 {previewLine || DEFAULT_TEXT}
               </div>
-              <p className="mt-2 text-[14px] leading-6 text-slate-100">{getFontMeta(hovered).guide}</p>
+              <p className="mt-2 text-[14px] leading-6 text-slate-100">{hovered.custom ? 'FontFace로 등록된 커스텀 폰트입니다.' : getFontMeta(hovered).guide}</p>
             </div>,
             document.body,
           )

@@ -5,6 +5,8 @@ import {
   Download,
   FlipHorizontal2,
   FlipVertical2,
+  FolderDown,
+  FolderUp,
   Grid3x3,
   KeyRound,
   Lock,
@@ -49,11 +51,24 @@ import {
   saveApiKeys,
   saveStudioState,
   snapshotOf,
+  studioFromParsed,
 } from './lib/studioModel.js'
 import { loadFavoriteFonts, saveFavoriteFonts, toggleFavoriteId } from './lib/fontFavorites.js'
 import { DIAG_STEPS } from './lib/featureRegistry.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
+import { registerCustomFontFile } from './lib/customFonts.js'
+import {
+  applyCenterSnap,
+  buildStylePrompt,
+  EXPORT_SCALES,
+  isEditableTarget,
+  nudgeOffset,
+  parseStudioProject,
+  PREVIEW_BG_MODES,
+  scaledExportSize,
+  serializeStudioProject,
+} from './lib/proTools.js'
 import {
   defaultViewEdit,
   makeCropRect,
@@ -151,8 +166,11 @@ export default function App() {
   const [guideOpen, setGuideOpen] = useState(false)
   const [emoSplitOpen, setEmoSplitOpen] = useState(false)
   const [favoriteFonts, setFavoriteFonts] = useState(() => loadFavoriteFonts())
+  const [customFonts, setCustomFonts] = useState([])
+  const [snapGuide, setSnapGuide] = useState({ x: false, y: false })
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadLeftPanelWidth())
   const [isResizing, setIsResizing] = useState(false)
+  const projectInputRef = useRef(null)
   const canvasRef = useRef(null)
   const stageRef = useRef(null)
   const leftSplitRef = useRef(null)
@@ -168,13 +186,20 @@ export default function App() {
   studioRef.current = studio
   leftPanelWidthRef.current = leftPanelWidth
 
+  const fontsById = useMemo(
+    () => ({
+      ...FONTS_BY_ID,
+      ...Object.fromEntries(customFonts.map((item) => [item.id, item])),
+    }),
+    [customFonts],
+  )
   const mainLayer = studio.layers.find((layer) => layer.role === 'main') ?? studio.layers[0]
   const subLayer = studio.layers.find((layer) => layer.role === 'sub')
   const extraLayers = studio.layers.filter((layer) => layer.role !== 'main' && layer.role !== 'sub')
   const preset = PRESETS_BY_ID[mainLayer?.presetId] ?? PRESETS_BY_ID[studio.presetId] ?? PRESETS[0]
   const aspect = getAspect(studio.aspectId)
   const activeLayer = studio.layers.find((item) => item.id === studio.activeLayerId) ?? studio.layers[0]
-  const font = FONTS_BY_ID[activeLayer?.fontId] ?? FONTS[0]
+  const font = fontsById[activeLayer?.fontId] ?? FONTS[0]
   const themeLabel = THEMES.find((theme) => theme.id === preset.theme)?.name ?? '26종 프리셋'
   const liveLayers = useMemo(() => {
     if (!hoverPreview?.fontId || !hoverPreview.layerId) return studio.layers
@@ -185,11 +210,11 @@ export default function App() {
   const liveStatus = useMemo(() => {
     const layer = liveLayers.find((item) => item.id === studio.activeLayerId) ?? liveLayers[0] ?? activeLayer
     return liveStatusFromLayer(layer, {
-      fontsById: FONTS_BY_ID,
+      fontsById,
       presetsById: PRESETS_BY_ID,
       studioPreset: preset,
     })
-  }, [liveLayers, studio.activeLayerId, activeLayer, preset])
+  }, [liveLayers, studio.activeLayerId, activeLayer, preset, fontsById])
 
   const promptPack = useMemo(() => {
     const text = studio.layers.find((layer) => layer.role === 'main')?.text
@@ -208,7 +233,7 @@ export default function App() {
   const renderOptions = useMemo(
     () => ({
       layers: liveLayers,
-      fontsById: FONTS_BY_ID,
+      fontsById,
       font,
       preset,
       viewMode: studio.viewMode,
@@ -229,11 +254,12 @@ export default function App() {
       showOverlay: true,
       exportW: aspect.w,
       exportH: aspect.h,
+      previewBg: studio.previewBg || 'dark',
       presetsById: PRESETS_BY_ID,
       viewEdit: studio.viewEdit ?? defaultViewEdit(),
       skipCrop: cropMode,
     }),
-    [liveLayers, font, preset, studio, aspect, cropMode],
+    [liveLayers, font, preset, studio, aspect, cropMode, fontsById],
   )
 
   const capture = useCallback(() => {
@@ -401,19 +427,53 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event) => {
+      if (isEditableTarget(event.target)) return
       const key = event.key.toLowerCase()
       if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) {
         event.preventDefault()
         undo()
+        return
       }
       if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) {
         event.preventDefault()
         redo()
+        return
+      }
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        const current = studioRef.current
+        if (current.layerLocked) return
+        const layer = current.layers.find((item) => item.id === current.activeLayerId)
+        if (!layer) return
+        const canvas = canvasRef.current
+        const next = nudgeOffset(layer.ox, layer.oy, event.key, {
+          viewW: canvas?.clientWidth || 512,
+          viewH: canvas?.clientHeight || 512,
+          shift: event.shiftKey,
+        })
+        if (!next.moved) return
+        capture()
+        setStudio((prev) => ({
+          ...prev,
+          layers: prev.layers.map((item) => (item.id === layer.id ? { ...item, ox: next.ox, oy: next.oy } : item)),
+        }))
+        return
+      }
+      if (event.key === 'Delete') {
+        const current = studioRef.current
+        const layer = current.layers.find((item) => item.id === current.activeLayerId)
+        if (!layer || layer.role === 'main' || layer.role === 'sub') return
+        event.preventDefault()
+        capture()
+        setStudio((prev) => {
+          const layers = prev.layers.filter((item) => item.id !== layer.id)
+          return { ...prev, layers, activeLayerId: layers[0]?.id ?? null }
+        })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [undo, redo])
+  }, [undo, redo, capture])
 
   const handleHoverFont = useCallback((layerId, fontId) => {
     setHoverPreview(fontId ? { layerId, fontId } : null)
@@ -426,7 +486,7 @@ export default function App() {
   const selectFontFor = (layerId, nextId) => {
     const target = studioRef.current.layers.find((layer) => layer.id === layerId)
     if (!target) return
-    const nextFont = FONTS_BY_ID[nextId] ?? FONTS[0]
+    const nextFont = fontsById[nextId] ?? FONTS[0]
     const patch = {
       fontId: nextId,
       fontWeight: resolveWeight(nextFont, target.fontWeight),
@@ -588,7 +648,7 @@ export default function App() {
     const point = pointerToCanvas(event)
     if (!point) return
     const hit = hitTestStudio(studio.layers, point.x, point.y, point.w, point.h, point.scale, {
-      fontsById: FONTS_BY_ID,
+      fontsById,
       presetsById: PRESETS_BY_ID,
       stickerOn: studio.stickerOn,
       preset,
@@ -618,15 +678,18 @@ export default function App() {
     const origin = drag.origin
     let patch = {}
     if (drag.handle === 'rotate') {
+      setSnapGuide({ x: false, y: false })
       const angle = Math.atan2(point.y - point.h / 2 - origin.oy * point.h, point.x - point.w / 2 - origin.ox * point.w)
       patch = { rotation: Math.round((angle * 180) / Math.PI + 90) }
     } else if (drag.handle === 'scale') {
+      setSnapGuide({ x: false, y: false })
       patch = { fontSize: Math.max(20, Math.min(350, origin.fontSize + (point.x - drag.startX) * 0.35)) }
     } else {
-      patch = {
-        ox: Math.max(-0.45, Math.min(0.45, origin.ox + dx)),
-        oy: Math.max(-0.45, Math.min(0.45, origin.oy + dy)),
-      }
+      const rawX = Math.max(-0.45, Math.min(0.45, origin.ox + dx))
+      const rawY = Math.max(-0.45, Math.min(0.45, origin.oy + dy))
+      const snapped = applyCenterSnap(rawX, rawY)
+      patch = { ox: snapped.ox, oy: snapped.oy }
+      setSnapGuide({ x: snapped.snapX, y: snapped.snapY })
     }
     if (paintRaf.current) cancelAnimationFrame(paintRaf.current)
     paintRaf.current = requestAnimationFrame(() => {
@@ -639,6 +702,7 @@ export default function App() {
 
   const onCanvasPointerUp = () => {
     dragRef.current = null
+    setSnapGuide({ x: false, y: false })
   }
 
   const viewEdit = studio.viewEdit ?? defaultViewEdit()
@@ -680,13 +744,18 @@ export default function App() {
   )
 
   const ensureExport = async () => {
+    const sized = scaledExportSize(aspect, studio.exportScale || 1)
     const result = await renderStyledText({
       ...renderOptions,
       layers: studio.layers,
+      fontsById,
       showOverlay: false,
       gridOn: false,
       skipCrop: false,
       viewEdit,
+      exportW: sized.exportW,
+      exportH: sized.exportH,
+      previewBg: 'dark',
     })
     revokeUrls()
     urlsRef.current = { transparentUrl: result.transparentUrl, maskUrl: result.maskUrl }
@@ -850,11 +919,13 @@ export default function App() {
   }
 
   const copyPrompt = async (kind = 'full') => {
+    const stylePack = buildStylePrompt({ layer: activeLayer, font, preset, studio })
     const payload = {
       full: promptPack.full,
       positive: promptPack.positive,
       negative: promptPack.negative,
       mj: promptPack.midjourney,
+      style: stylePack.full,
     }[kind] ?? promptPack.full
     try {
       await navigator.clipboard.writeText(payload)
@@ -862,6 +933,40 @@ export default function App() {
       window.setTimeout(() => setPromptCopied(''), 2000)
     } catch {
       setPromptCopied('')
+    }
+  }
+
+  const addCustomFontFile = async (file) => {
+    const item = await registerCustomFontFile(file)
+    setCustomFonts((prev) => [...prev.filter((entry) => entry.id !== item.id), item])
+    const layerId = studioRef.current.activeLayerId
+    if (layerId) {
+      setStudio((prev) => ({
+        ...prev,
+        layers: prev.layers.map((layer) => (
+          layer.id === layerId ? { ...layer, fontId: item.id, fontWeight: 400 } : layer
+        )),
+      }))
+    }
+    return item
+  }
+
+  const downloadProjectJson = () => {
+    const blob = new Blob([serializeStudioProject(studioRef.current)], { type: 'application/json' })
+    downloadBlob(blob, `${slugify(activeLayer?.text || 'styler')}-project.json`)
+    setExportNote('프로젝트 JSON을 저장했습니다.')
+  }
+
+  const importProjectJson = async (file) => {
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parseStudioProject(text)
+      capture()
+      setStudio(studioFromParsed(parsed))
+      setExportNote('프로젝트를 불러왔습니다.')
+    } catch (error) {
+      setExportNote(`JSON 불러오기 실패: ${error.message || '형식을 확인해 주세요'}`)
     }
   }
 
@@ -977,6 +1082,8 @@ export default function App() {
                 onPatchStudio={patchStudio}
                 favoriteIds={favoriteFonts}
                 onToggleFavorite={toggleFavoriteFont}
+                extraFonts={customFonts}
+                onAddFontFile={addCustomFontFile}
               />
             ) : null}
             {subLayer ? (
@@ -999,6 +1106,8 @@ export default function App() {
                 onPatchStudio={patchStudio}
                 favoriteIds={favoriteFonts}
                 onToggleFavorite={toggleFavoriteFont}
+                extraFonts={customFonts}
+                onAddFontFile={addCustomFontFile}
               />
             ) : null}
           </section>
@@ -1037,6 +1146,8 @@ export default function App() {
                     onPatchStudio={patchStudio}
                     favoriteIds={favoriteFonts}
                     onToggleFavorite={toggleFavoriteFont}
+                    extraFonts={customFonts}
+                    onAddFontFile={addCustomFontFile}
                   />
                 ))}
               </div>
@@ -1234,7 +1345,13 @@ export default function App() {
           <div className="canvas-stage" ref={stageRef} style={{ '--studio-ar': `${aspect.w} / ${aspect.h}` }}>
             <div
               id="main-canvas-area"
-              className={clsx('preview-frame', studio.viewMode === 'mask' && 'is-mask-view', hoverPreview && 'is-hover-preview', cropMode && 'is-cropping')}
+              className={clsx(
+                'preview-frame',
+                studio.viewMode === 'mask' && 'is-mask-view',
+                hoverPreview && 'is-hover-preview',
+                cropMode && 'is-cropping',
+                `is-bg-${studio.previewBg || 'dark'}`,
+              )}
             >
               <canvas
                 ref={canvasRef}
@@ -1244,6 +1361,21 @@ export default function App() {
                 onPointerUp={onCanvasPointerUp}
                 onPointerCancel={onCanvasPointerUp}
               />
+              {snapGuide.x ? <span className="snap-guide snap-guide-v" /> : null}
+              {snapGuide.y ? <span className="snap-guide snap-guide-h" /> : null}
+              <div className="canvas-bg-toggle" role="group" aria-label="캔버스 배경 보기">
+                {PREVIEW_BG_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    className={clsx((studio.previewBg || 'dark') === mode.id && 'is-on')}
+                    onClick={() => patchStudio({ previewBg: mode.id }, false)}
+                    {...magnify(`${mode.title}`, '미리보기만 바꿉니다. 투명 PNG 내보내기는 그대로입니다')}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
               {cropMode ? (
                 <CropOverlay rect={cropDraft} aspectId={cropAspect} onChange={setCropDraft} />
               ) : null}
@@ -1304,7 +1436,7 @@ export default function App() {
           <p className="mt-3 text-center text-[11px] text-zinc-500">
             {cropMode
               ? '크롭 박스를 드래그해 영역을 잡고 ✓ 적용 / ✕ 취소를 누르세요'
-              : '드래그로 이동 · 모서리 핸들로 크기 · 위쪽 핸들로 회전 · Ctrl+Z / Ctrl+Y'}
+              : '드래그로 이동 · 중앙 자석 스냅 · 방향키 1px / Shift+방향키 10px · Ctrl+Z / Ctrl+Y · Delete는 추가 레이어'}
           </p>
         </main>
 
@@ -1334,6 +1466,19 @@ export default function App() {
           <section className="export-hub">
             <h2 className="panel-title">다양한 포맷 익스포트 & 변환 허브</h2>
             <p className="export-hub-note">{exportBusy ? '렌더링 중…' : exportNote}</p>
+            <div className="export-scale-row">
+              {EXPORT_SCALES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={clsx('export-scale-chip', (studio.exportScale || 1) === item.id && 'is-on')}
+                  onClick={() => patchStudio({ exportScale: item.id }, false)}
+                  {...magnify(item.label, `${item.hint}. 투명 PNG/JPEG에만 적용됩니다`)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             <button type="button" disabled={exportBusy} className="export-btn export-btn-png mt-3 w-full" onClick={downloadPng} {...magnify('투명 배경 PNG', '배경 없이 글자만 깨끗하게 저장합니다')}>
               <Download className="h-4 w-4" /> 🖼️ 투명 배경 PNG 다운로드
             </button>
@@ -1366,6 +1511,27 @@ export default function App() {
             <button type="button" className="export-btn mt-2 w-full" onClick={() => copyPrompt('full')} {...magnify('AI 프롬프트 복사', '생성용 설명을 클립보드에 복사합니다')}>
               <Copy className="h-4 w-4" /> {promptCopied === 'full' ? '✅ 복사 완료!' : '📋 AI 프롬프트 원클릭 복사'}
             </button>
+            <button type="button" className="export-btn mt-2 w-full" onClick={() => copyPrompt('style')} {...magnify('스타일 프롬프트 복사', '지금 색·외곽선·곡선·폰트 무드를 Grok/Midjourney용으로 복사합니다')}>
+              <Copy className="h-4 w-4" /> {promptCopied === 'style' ? '✅ 스타일 복사 완료!' : '⚡ 스타일 프롬프트 복사 (Grok/MJ)'}
+            </button>
+            <div className="project-io-row">
+              <button type="button" className="mini-btn" onClick={downloadProjectJson} {...magnify('프로젝트 JSON 저장', '텍스트·색·좌표·폰트를 JSON으로 받습니다')}>
+                <FolderDown className="h-3.5 w-3.5" /> JSON 저장
+              </button>
+              <button type="button" className="mini-btn" onClick={() => projectInputRef.current?.click()} {...magnify('프로젝트 JSON 불러오기', '저장한 작업을 다시 엽니다')}>
+                <FolderUp className="h-3.5 w-3.5" /> JSON 불러오기
+              </button>
+              <input
+                ref={projectInputRef}
+                type="file"
+                accept="application/json,.json"
+                hidden
+                onChange={(event) => {
+                  importProjectJson(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+              />
+            </div>
           </section>
 
           <section className="prompt-engine">

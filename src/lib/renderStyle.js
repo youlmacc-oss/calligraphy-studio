@@ -1,4 +1,5 @@
 import { FONTS, PRESETS } from '../presets.js'
+import { curveExtraPad } from './proTools.js'
 import { paintStickers } from './stickers.js'
 import { applyViewEdit } from './viewEdit.js'
 
@@ -41,9 +42,52 @@ function layoutText(ctx, text, letterSpacing) {
 function eachGlyph(layout, x, y, letterSpacing, paint) {
   let cursor = x - layout.total / 2
   layout.chars.forEach((ch, index) => {
-    paint(ch, cursor, y)
+    paint(ch, cursor, y, 0, layout.widths[index])
     cursor += layout.widths[index] + letterSpacing
   })
+}
+
+function eachGlyphOnArc(layout, originX, originY, letterSpacing, curveDeg, paint) {
+  const span = (Number(curveDeg) || 0) * Math.PI / 180
+  if (Math.abs(span) < 0.02) {
+    eachGlyph(layout, originX, originY, letterSpacing, paint)
+    return
+  }
+  const mag = Math.abs(span)
+  const sign = span >= 0 ? 1 : -1
+  const radius = layout.total / Math.max(0.08, mag)
+  let distance = 0
+  layout.chars.forEach((ch, index) => {
+    const mid = distance + layout.widths[index] / 2
+    const t = layout.total > 0 ? mid / layout.total : 0.5
+    const angle = -mag / 2 + mag * t
+    const x = originX + Math.sin(angle) * radius
+    const y = originY + sign * (Math.cos(angle) - 1) * radius
+    paint(ch, x, y, angle * sign, layout.widths[index])
+    distance += layout.widths[index] + letterSpacing
+  })
+}
+
+function strokeOrFillGlyph(ctx, mode, ch, gx, gy, angle, width) {
+  if (!angle) {
+    if (mode === 'stroke') ctx.strokeText(ch, gx, gy)
+    else ctx.fillText(ch, gx, gy)
+    return
+  }
+  ctx.save()
+  ctx.translate(gx, gy)
+  ctx.rotate(angle)
+  if (mode === 'stroke') ctx.strokeText(ch, -width / 2, 0)
+  else ctx.fillText(ch, -width / 2, 0)
+  ctx.restore()
+}
+
+function walkGlyphs(layout, x, y, letterSpacing, curve, paint) {
+  if (Math.abs(Number(curve) || 0) >= 2) {
+    eachGlyphOnArc(layout, x, y, letterSpacing, curve, paint)
+    return
+  }
+  eachGlyph(layout, x, y, letterSpacing, paint)
 }
 
 function fillSpaced(ctx, layout, x, y, letterSpacing) {
@@ -62,16 +106,27 @@ function paintLayer(ctx, layout, x, y, letterSpacing, style) {
     ctx.shadowOffsetX = style.shadowOffsetX ?? 0
     ctx.shadowOffsetY = style.shadowOffsetY ?? 0
   }
-  if (style.strokeStyle) {
+  const ox = x + (style.ox ?? 0)
+  const oy = y + (style.oy ?? 0)
+  const curve = Number(style.curve) || 0
+  const run = (mode) => walkGlyphs(layout, ox, oy, letterSpacing, curve, (ch, gx, gy, angle, width) => {
+    strokeOrFillGlyph(ctx, mode, ch, gx, gy, angle, width)
+  })
+  ctx.lineJoin = 'round'
+  ctx.miterLimit = 2
+  if (style.stroke2Style && (style.lineWidth2 ?? 0) > 0) {
+    ctx.strokeStyle = style.stroke2Style
+    ctx.lineWidth = (style.lineWidth ?? 0) + style.lineWidth2
+    run('stroke')
+  }
+  if (style.strokeStyle && (style.lineWidth ?? 0) > 0) {
     ctx.strokeStyle = style.strokeStyle
     ctx.lineWidth = style.lineWidth ?? 2
-    ctx.lineJoin = 'round'
-    ctx.miterLimit = 2
-    strokeSpaced(ctx, layout, x + (style.ox ?? 0), y + (style.oy ?? 0), letterSpacing)
+    run('stroke')
   }
   if (style.fillStyle) {
     ctx.fillStyle = style.fillStyle
-    fillSpaced(ctx, layout, x + (style.ox ?? 0), y + (style.oy ?? 0), letterSpacing)
+    run('fill')
   }
   ctx.restore()
 }
@@ -1208,8 +1263,9 @@ export function estimateLayerBox(layer, viewW, viewH, scale, options = {}) {
     contentH = Math.max(contentH, domBox.h)
   }
 
-  const strokePad = Math.max(0, (Number(layer.strokeWidth) || 0) * scale)
+  const strokePad = Math.max(0, ((Number(layer.strokeWidth) || 0) + (Number(layer.strokeWidth2) || 0)) * scale)
   const shadowPad = Math.max(0, Number(layer.shadowBlur) || 0)
+  const curvePad = curveExtraPad(fontSize, layer.curveAmount)
   const preset = resolveBoxPreset(layer, options)
   const deco = shaderDecorationPad(
     preset?.shader,
@@ -1220,8 +1276,8 @@ export function estimateLayerBox(layer, viewW, viewH, scale, options = {}) {
     viewH,
     options.stickerOn,
   )
-  const padX = BOX_SAFETY_PAD + strokePad + shadowPad + deco.extraX
-  const padY = BOX_SAFETY_PAD + strokePad + shadowPad + deco.extraY
+  const padX = BOX_SAFETY_PAD + strokePad + shadowPad + deco.extraX + curvePad * 0.35
+  const padY = BOX_SAFETY_PAD + strokePad + shadowPad + deco.extraY + curvePad
 
   return {
     x,
@@ -1291,17 +1347,50 @@ function drawGrid(ctx, viewW, viewH) {
   ctx.restore()
 }
 
-function drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background) {
+function drawCheckerPlate(ctx, viewW, viewH, size = 16) {
+  ctx.fillStyle = '#2a2a36'
+  ctx.fillRect(0, 0, viewW, viewH)
+  ctx.fillStyle = '#1a1a24'
+  for (let y = 0; y < viewH; y += size) {
+    for (let x = 0; x < viewW; x += size) {
+      if (((x / size) + (y / size)) % 2 === 0) ctx.fillRect(x, y, size, size)
+    }
+  }
+}
+
+function drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background, previewBg = 'dark') {
   ctx.clearRect(0, 0, viewW, viewH)
   if (transparent && !bgImage) return
-  const x = viewW / 2
-  const y = viewH / 2
-  const plate = ctx.createRadialGradient(x, viewH * 0.4, 20, x, y, Math.max(viewW, viewH) * 0.72)
-  plate.addColorStop(0, '#161622')
-  plate.addColorStop(1, '#07070c')
-  ctx.fillStyle = plate
-  ctx.fillRect(0, 0, viewW, viewH)
-  if (!bgImage) return
+  if (!bgImage) {
+    if (previewBg === 'checker') {
+      drawCheckerPlate(ctx, viewW, viewH)
+    } else if (previewBg === 'light') {
+      ctx.fillStyle = '#ececf3'
+      ctx.fillRect(0, 0, viewW, viewH)
+    } else {
+      const x = viewW / 2
+      const y = viewH / 2
+      const plate = ctx.createRadialGradient(x, viewH * 0.4, 20, x, y, Math.max(viewW, viewH) * 0.72)
+      plate.addColorStop(0, '#161622')
+      plate.addColorStop(1, '#07070c')
+      ctx.fillStyle = plate
+      ctx.fillRect(0, 0, viewW, viewH)
+    }
+    return
+  }
+  if (previewBg === 'checker') drawCheckerPlate(ctx, viewW, viewH)
+  else if (previewBg === 'light') {
+    ctx.fillStyle = '#ececf3'
+    ctx.fillRect(0, 0, viewW, viewH)
+  } else {
+    const x = viewW / 2
+    const y = viewH / 2
+    const plate = ctx.createRadialGradient(x, viewH * 0.4, 20, x, y, Math.max(viewW, viewH) * 0.72)
+    plate.addColorStop(0, '#161622')
+    plate.addColorStop(1, '#07070c')
+    ctx.fillStyle = plate
+    ctx.fillRect(0, 0, viewW, viewH)
+  }
   ctx.save()
   ctx.globalAlpha = background?.opacity ?? 1
   ctx.filter = `blur(${background?.blur ?? 0}px)`
@@ -1339,16 +1428,29 @@ function paintStudioLayer(ctx, layer, font, preset, extras, viewW, viewH, scale,
     return
   }
   const paintOne = (layout, lx, ly) => {
+    const curve = Number(layer.curveAmount) || 0
+    const useCurve = Math.abs(curve) >= 2
+    const strokeStyle = {
+      strokeStyle: layer.strokeWidth > 0 ? layer.strokeColor : undefined,
+      lineWidth: layer.strokeWidth > 0 ? layer.strokeWidth * scale : 0,
+      stroke2Style: layer.strokeWidth2 > 0 ? (layer.strokeColor2 || '#0f172a') : undefined,
+      lineWidth2: layer.strokeWidth2 > 0 ? layer.strokeWidth2 * scale : 0,
+      curve: useCurve ? curve : 0,
+    }
     if (mask) {
-      if (layerPreset && TYPO_SHADERS.has(layerPreset.shader)) {
+      if (layerPreset && TYPO_SHADERS.has(layerPreset.shader) && !useCurve) {
         paintShader(ctx, layout, lx, ly, letterSpacing, fontSize, layerPreset, viewW, viewH, true, { ...extras, text: display })
       } else {
         ctx.fillStyle = '#ffffff'
-        fillSpaced(ctx, layout, lx, ly, letterSpacing)
+        if (useCurve) {
+          paintLayer(ctx, layout, lx, ly, letterSpacing, { fillStyle: '#ffffff', curve })
+        } else {
+          fillSpaced(ctx, layout, lx, ly, letterSpacing)
+        }
       }
       return
     }
-    if (layerPreset) {
+    if (layerPreset && !useCurve) {
       paintShader(ctx, layout, lx, ly, letterSpacing, fontSize, layerPreset, viewW, viewH, false, { ...extras, text: display })
     }
     if (layer.shadowBlur > 0) {
@@ -1356,19 +1458,16 @@ function paintStudioLayer(ctx, layer, font, preset, extras, viewW, viewH, scale,
         fillStyle: layer.color || '#f8fafc',
         shadowColor: layer.shadowColor || '#000000',
         shadowBlur: layer.shadowBlur,
+        curve: strokeStyle.curve,
       })
     }
-    if (!layerPreset) {
+    if (!layerPreset || useCurve) {
       paintLayer(ctx, layout, lx, ly, letterSpacing, {
         fillStyle: layer.color || '#f8fafc',
-        strokeStyle: layer.strokeWidth > 0 ? layer.strokeColor : undefined,
-        lineWidth: layer.strokeWidth > 0 ? layer.strokeWidth * scale : undefined,
+        ...strokeStyle,
       })
-    } else if (layer.strokeWidth > 0) {
-      paintLayer(ctx, layout, lx, ly, letterSpacing, {
-        strokeStyle: layer.strokeColor,
-        lineWidth: layer.strokeWidth * scale,
-      })
+    } else if (layer.strokeWidth > 0 || layer.strokeWidth2 > 0) {
+      paintLayer(ctx, layout, lx, ly, letterSpacing, strokeStyle)
     }
   }
   block.layouts.forEach((layout, index) => {
@@ -1463,7 +1562,7 @@ async function drawStudioScene(ctx, options) {
     ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, viewW, viewH)
   } else {
-    drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background)
+    drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background, options.previewBg || 'dark')
     if (gridOn) drawGrid(ctx, viewW, viewH)
   }
   for (const { layer } of layersInPaintOrder(layers)) {

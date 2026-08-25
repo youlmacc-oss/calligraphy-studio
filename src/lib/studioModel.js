@@ -27,6 +27,9 @@ export function createLayer(partial = {}) {
     color: '#f8fafc',
     strokeColor: '#22d3ee',
     strokeWidth: 0,
+    strokeColor2: '#0f172a',
+    strokeWidth2: 0,
+    curveAmount: 0,
     shadowColor: '#000000',
     shadowBlur: 0,
     visible: true,
@@ -88,6 +91,45 @@ export function defaultStudioState() {
     },
     viewEdit: defaultViewEdit(),
     gifMotion: 'pulse',
+    previewBg: 'dark',
+    exportScale: 1,
+  }
+}
+
+export function studioFromParsed(parsed) {
+  const base = defaultStudioState()
+  if (!parsed || typeof parsed !== 'object') return base
+  const layers = Array.isArray(parsed.layers) && parsed.layers.length
+    ? parsed.layers.map((layer) => createLayer({
+      ...layer,
+      presetId: layer.presetId ?? (layer.role === 'main' ? (parsed.presetId || PRESETS[0].id) : ''),
+      opacity: layer.opacity ?? 1,
+      lineHeight: layer.lineHeight ?? 1.2,
+      align: layer.align ?? 'center',
+      curveAmount: layer.curveAmount ?? 0,
+      strokeWidth2: layer.strokeWidth2 ?? 0,
+      strokeColor2: layer.strokeColor2 ?? '#0f172a',
+    }))
+    : base.layers
+  if (!layers.some((layer) => layer.role === 'main')) {
+    layers.unshift(createDefaultLayers()[0])
+  }
+  if (!layers.some((layer) => layer.role === 'sub')) {
+    layers.splice(1, 0, createDefaultLayers()[1])
+  }
+  const exportScale = [1, 2, 4].includes(Number(parsed.exportScale)) ? Number(parsed.exportScale) : 1
+  const previewBg = ['checker', 'dark', 'light'].includes(parsed.previewBg) ? parsed.previewBg : 'dark'
+  return {
+    ...base,
+    ...parsed,
+    layers,
+    previewBg,
+    exportScale,
+    background: { ...base.background, ...(parsed.background ?? {}) },
+    viewEdit: { ...base.viewEdit, ...(parsed.viewEdit ?? {}) },
+    activeLayerId: layers.some((item) => item.id === parsed.activeLayerId)
+      ? parsed.activeLayerId
+      : layers[0]?.id ?? null,
   }
 }
 
@@ -95,33 +137,7 @@ export function loadStudioState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultStudioState()
-    const parsed = JSON.parse(raw)
-    const base = defaultStudioState()
-    const layers = Array.isArray(parsed.layers) && parsed.layers.length
-      ? parsed.layers.map((layer) => createLayer({
-        ...layer,
-        presetId: layer.presetId ?? (layer.role === 'main' ? (parsed.presetId || PRESETS[0].id) : ''),
-        opacity: layer.opacity ?? 1,
-        lineHeight: layer.lineHeight ?? 1.2,
-        align: layer.align ?? 'center',
-      }))
-      : base.layers
-    if (!layers.some((layer) => layer.role === 'main')) {
-      layers.unshift(createDefaultLayers()[0])
-    }
-    if (!layers.some((layer) => layer.role === 'sub')) {
-      layers.splice(1, 0, createDefaultLayers()[1])
-    }
-    return {
-      ...base,
-      ...parsed,
-      layers,
-      background: { ...base.background, ...(parsed.background ?? {}) },
-      viewEdit: { ...base.viewEdit, ...(parsed.viewEdit ?? {}) },
-      activeLayerId: layers.some((item) => item.id === parsed.activeLayerId)
-        ? parsed.activeLayerId
-        : layers[0]?.id ?? null,
-    }
+    return studioFromParsed(JSON.parse(raw))
   } catch {
     return defaultStudioState()
   }
@@ -213,5 +229,7 @@ export function snapshotOf(state) {
     layerLocked: state.layerLocked,
     background: state.background,
     viewEdit: state.viewEdit,
+    previewBg: state.previewBg,
+    exportScale: state.exportScale,
   })
 }
