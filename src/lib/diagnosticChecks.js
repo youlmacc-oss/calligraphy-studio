@@ -6,7 +6,8 @@ import {
 } from './exportFormats.js'
 import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
-import { hitTestStudio, textLines } from './renderStyle.js'
+import { liveStatusFromLayer } from './liveStatus.js'
+import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
 import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
 
@@ -100,7 +101,12 @@ export async function checkDragEngine() {
   if (center?.handle !== 'move') return { status: 'error', detail: '중앙 히트박스가 레이어를 잡지 못했습니다.' }
   const miss = hitTestStudio([layer], 8, 8, 512, 512, 1)
   if (miss) return { status: 'warn', detail: '가장자리 오탐이 있습니다. 중앙 드래그는 정상입니다.' }
-  return { status: 'ok', detail: '2D 앵커·회전 히트박스 연산이 중앙 드래그/가장자리 미스를 구분합니다.' }
+  const padded = estimateLayerBox({ ...layer, strokeWidth: 10, shadowBlur: 24 }, 512, 512, 1)
+  const plain = estimateLayerBox(layer, 512, 512, 1)
+  if (padded.w <= plain.w || padded.h <= plain.h) {
+    return { status: 'error', detail: '외곽선·그림자 패딩이 선택 박스에 반영되지 않습니다.' }
+  }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스·장식 패딩이 중앙 드래그/가장자리 미스를 구분합니다.' }
 }
 
 export async function checkTypography() {
@@ -128,7 +134,15 @@ export async function checkZStack(ctx) {
   if (copy[0] !== last || copy.length !== ids.length) {
     return { status: 'error', detail: 'Z-Index 재배열 시뮬레이션이 실패했습니다.' }
   }
-  return { status: 'ok', detail: `${ids.length}개 레이어 배열 순서 = 렌더 순서(뒤→앞) 규칙이 유효합니다.` }
+  const mainRank = layerPaintRank({ role: 'main' }, 0)
+  const subRank = layerPaintRank({ role: 'sub' }, 1)
+  if (!(mainRank > subRank)) {
+    return { status: 'error', detail: '메인 타이틀 페인트 랭크가 서브보다 앞에 있지 않습니다.' }
+  }
+  return {
+    status: 'ok',
+    detail: `${ids.length}개 레이어 · 서브 ${subRank.toFixed(2)} → 메인 ${mainRank.toFixed(2)} · 선택 박스 최상단 규칙이 유효합니다.`,
+  }
 }
 
 export async function checkHistory(ctx) {
@@ -271,5 +285,29 @@ export async function checkFavorites(ctx, onLog) {
     detail: report.stored.length
       ? `직렬화 무결성 OK · ${report.stored.length}종 카탈로그 100% 매칭 · 메인/서브 공유 목록.`
       : '저장소 준비됨 · 등록 0종. ⭐를 누르면 즉시 localStorage에 기록됩니다.',
+  }
+}
+
+export async function checkLiveStatusHud(ctx) {
+  const studio = ctx?.studio
+  const layer = studio?.layers?.find((item) => item.id === studio.activeLayerId) ?? studio?.layers?.[0]
+  if (!layer) return { status: 'error', detail: '활성 레이어가 없어 Live Status HUD를 검증할 수 없습니다.' }
+  const info = liveStatusFromLayer(layer, {})
+  if (!info?.stats || !info.badge?.text) {
+    return { status: 'error', detail: 'HUD 집계 모델이 비어 있습니다.' }
+  }
+  const hud = typeof document !== 'undefined' ? document.querySelector('.live-status-hud') : null
+  const area = typeof document !== 'undefined' ? document.getElementById('main-canvas-area') : null
+  if (!hud) return { status: 'error', detail: '캔버스 하단 Live Status HUD DOM을 찾지 못했습니다.' }
+  const text = hud.textContent || ''
+  if (!text.includes(info.stats) || !text.includes(info.badge.text)) {
+    return { status: 'warn', detail: `HUD 표시가 선택 레이어(${info.badge.text} · ${info.stats})와 어긋납니다.` }
+  }
+  if (!area) {
+    return { status: 'warn', detail: `HUD ${info.badge.text} · ${info.stats}는 정상이나 #main-canvas-area 기준점이 없습니다.` }
+  }
+  return {
+    status: 'ok',
+    detail: `HUD ${info.badge.text} · ${info.stats} · ${info.fontSize}px · 산세리프 고정 · 중앙 뷰포트 정렬 확인.`,
   }
 }

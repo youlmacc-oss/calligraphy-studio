@@ -49,6 +49,8 @@ import {
   snapshotOf,
 } from './lib/studioModel.js'
 import { loadFavoriteFonts, saveFavoriteFonts, toggleFavoriteId } from './lib/fontFavorites.js'
+import { DIAG_STEPS } from './lib/featureRegistry.js'
+import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
 import {
   animateViewEdit,
@@ -77,38 +79,6 @@ function slugify(value) {
     .replace(/\s+/g, '-')
     .replace(/[\\/:*?"<>|]/g, '')
     .slice(0, 32) || 'styler'
-}
-
-function formatHudNumber(value, digits = 2) {
-  const rounded = Number(Number(value || 0).toFixed(digits))
-  return Object.is(rounded, -0) ? '0' : String(rounded)
-}
-
-function liveStatusFromLayer(layer, { fontsById, presetsById, studioPreset } = {}) {
-  if (!layer) return null
-  const raw = String(layer.text ?? '').replace(/\r\n/g, '\n')
-  const chars = [...raw].length
-  const lines = raw.length ? raw.split('\n').length : 1
-  const font = fontsById?.[layer.fontId]
-  const layerPreset = presetsById?.[layer.presetId] ?? (layer.role === 'main' ? studioPreset : null)
-  const badge = layer.role === 'main'
-    ? { tone: 'main', text: '👑 메인' }
-    : layer.role === 'sub'
-      ? { tone: 'sub', text: '✨ 서브' }
-      : { tone: 'extra', text: '✦ 추가' }
-  return {
-    badge,
-    stats: `${chars}자 / ${lines}줄`,
-    fontName: font?.label ?? layer.fontId ?? '폰트',
-    fontSize: Math.round(Number(layer.fontSize) || 0),
-    tracking: formatHudNumber(layer.letterSpacing),
-    leading: formatHudNumber(layer.lineHeight || 1.2),
-    x: formatHudNumber(layer.ox),
-    y: formatHudNumber(layer.oy),
-    rotation: Math.round(Number(layer.rotation) || 0),
-    opacity: Math.round(Math.max(0, Math.min(1, Number(layer.opacity) ?? 1)) * 100),
-    presetName: layerPreset?.name ?? '직접 설정',
-  }
 }
 
 const FONTS_BY_ID = Object.fromEntries(FONTS.map((item) => [item.id, item]))
@@ -966,7 +936,7 @@ export default function App() {
               type="button"
               className="nav-utility-btn"
               onClick={() => setDiagOpen(true)}
-              {...magnify('시스템 정밀 자가진단', '13단계 Live HUD로 캔버스·폰트·즐겨찾기·익스포트·AI 마스크를 실시간 점검합니다')}
+              {...magnify('시스템 정밀 자가진단', `${DIAG_STEPS.length}단계 Live HUD로 캔버스·폰트·즐겨찾기·인포 바·익스포트·AI 마스크를 실시간 점검합니다`)}
             >
               🩺 시스템 정밀 자가진단
             </button>

@@ -1,0 +1,18 @@
+---
+description: After studio feature work, update diagnostics/guidebook and always tag+deploy
+alwaysApply: true
+---
+
+# Studio ship checklist
+
+When adding or changing a user-facing studio feature:
+
+1. Update `src/lib/featureRegistry.js` guidebook copy (and a diagnostic check in `src/lib/diagnosticChecks.js` when the behavior is testable). Prefer extending an existing step; add a new `diagnosticFunction` only when the feature cannot be covered by current checks.
+2. Keep HUD step count honest: never hardcode "13단계". Use `DIAG_STEPS.length`.
+3. After the code is done, always:
+   - `git add .`
+   - `git commit` with a concise why-focused message
+   - `git tag -a vX.Y.Z-stable-backup -m "... Stable Backup"` (bump patch from the latest `v*-stable-backup` tag)
+   - `git push origin main`
+   - `git push origin vX.Y.Z-stable-backup`
+4. Do not skip tag/push because the change looks small. The user asked for backup + GitHub Pages redeploy on every additional work item.
