@@ -1504,6 +1504,7 @@ export default function App() {
           >
             <div
               id="main-canvas-area"
+              data-preview-bg={studio.previewBg || 'dark'}
               className={clsx(
                 'preview-frame',
                 studio.viewMode === 'mask' && 'is-mask-view',
@@ -1514,7 +1515,7 @@ export default function App() {
             >
               <canvas
                 ref={canvasRef}
-                className={clsx('h-full w-full', cropMode ? 'cursor-crosshair' : (studio.layerLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'))}
+                className={clsx('h-full w-full bg-transparent', cropMode ? 'cursor-crosshair' : (studio.layerLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'))}
                 onPointerDown={onCanvasPointerDown}
                 onPointerMove={onCanvasPointerMove}
                 onPointerUp={onCanvasPointerUp}

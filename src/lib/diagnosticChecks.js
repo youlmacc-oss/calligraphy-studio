@@ -174,16 +174,46 @@ export async function checkBackground() {
   const canvas = document.createElement('canvas')
   canvas.width = 32
   canvas.height = 32
-  const ctx = canvas.getContext('2d')
-  ctx.globalCompositeOperation = 'multiply'
-  ctx.fillStyle = '#ff6688'
-  ctx.fillRect(0, 0, 32, 32)
-  ctx.globalCompositeOperation = 'screen'
-  ctx.fillStyle = '#2244ff'
-  ctx.fillRect(8, 8, 16, 16)
-  const op = ctx.globalCompositeOperation
+  const brush = canvas.getContext('2d')
+  brush.globalCompositeOperation = 'multiply'
+  brush.fillStyle = '#ff6688'
+  brush.fillRect(0, 0, 32, 32)
+  brush.globalCompositeOperation = 'screen'
+  brush.fillStyle = '#2244ff'
+  brush.fillRect(8, 8, 16, 16)
+  const op = brush.globalCompositeOperation
   if (op !== 'screen') return { status: 'error', detail: '블렌드 모드 전환이 거부되었습니다.' }
-  return { status: 'ok', detail: 'FileReader · Multiply/Screen 합성 연산이 정상입니다.' }
+
+  const frame = typeof document !== 'undefined' ? document.getElementById('main-canvas-area') : null
+  if (!frame) {
+    return { status: 'warn', detail: '합성 연산은 정상이나 미리보기 배경 래퍼를 찾지 못했습니다.' }
+  }
+  const mode = ['checker', 'dark', 'light'].find((id) => frame.classList.contains(`is-bg-${id}`))
+    || frame.getAttribute('data-preview-bg')
+  if (!mode) {
+    return { status: 'warn', detail: '미리보기 배경 모드 클래스(is-bg-*)가 바인딩되지 않았습니다.' }
+  }
+  const liveCanvas = frame.querySelector('canvas')
+  if (liveCanvas) {
+    const canvasBg = window.getComputedStyle(liveCanvas).backgroundColor
+    if (canvasBg === 'rgb(0, 0, 0)' || canvasBg === 'black') {
+      return { status: 'warn', detail: 'IDLE · 캔버스 요소가 불투명 검정이라 투명/라이트 플레이트가 가려집니다.' }
+    }
+  }
+  const plate = window.getComputedStyle(frame)
+  if (mode === 'light' && !/255/.test(plate.backgroundColor || '')) {
+    return { status: 'warn', detail: 'IDLE · 라이트 모드인데 래퍼 배경이 흰색이 아닙니다.' }
+  }
+  if (mode === 'dark' && plate.backgroundImage && plate.backgroundImage !== 'none') {
+    return { status: 'warn', detail: 'IDLE · 다크 모드에 체커 이미지가 남아 있습니다.' }
+  }
+  if (mode === 'checker' && (!plate.backgroundImage || plate.backgroundImage === 'none')) {
+    return { status: 'warn', detail: 'IDLE · 투명 모드 체커보드 패턴이 없습니다.' }
+  }
+  return {
+    status: 'ok',
+    detail: `FileReader · Multiply/Screen · 미리보기 배경 ${mode} 플레이트 바인딩 확인.`,
+  }
 }
 
 export async function checkEdit() {

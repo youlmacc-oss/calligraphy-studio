@@ -1365,30 +1365,20 @@ function drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background
     if (previewBg === 'checker') {
       drawCheckerPlate(ctx, viewW, viewH)
     } else if (previewBg === 'light') {
-      ctx.fillStyle = '#ececf3'
+      ctx.fillStyle = '#ffffff'
       ctx.fillRect(0, 0, viewW, viewH)
     } else {
-      const x = viewW / 2
-      const y = viewH / 2
-      const plate = ctx.createRadialGradient(x, viewH * 0.4, 20, x, y, Math.max(viewW, viewH) * 0.72)
-      plate.addColorStop(0, '#161622')
-      plate.addColorStop(1, '#07070c')
-      ctx.fillStyle = plate
+      ctx.fillStyle = '#0f1117'
       ctx.fillRect(0, 0, viewW, viewH)
     }
     return
   }
   if (previewBg === 'checker') drawCheckerPlate(ctx, viewW, viewH)
   else if (previewBg === 'light') {
-    ctx.fillStyle = '#ececf3'
+    ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, viewW, viewH)
   } else {
-    const x = viewW / 2
-    const y = viewH / 2
-    const plate = ctx.createRadialGradient(x, viewH * 0.4, 20, x, y, Math.max(viewW, viewH) * 0.72)
-    plate.addColorStop(0, '#161622')
-    plate.addColorStop(1, '#07070c')
-    ctx.fillStyle = plate
+    ctx.fillStyle = '#0f1117'
     ctx.fillRect(0, 0, viewW, viewH)
   }
   ctx.save()
@@ -1603,7 +1593,7 @@ export async function drawLivePreview(canvas, options) {
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   canvas.width = cssW * dpr
   canvas.height = cssH * dpr
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { alpha: true })
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const scale = Math.min(cssW, cssH) / 512
 
@@ -1613,7 +1603,7 @@ export async function drawLivePreview(canvas, options) {
       width: cssW,
       height: cssH,
       scale,
-      transparent: false,
+      transparent: true,
       showOverlay: options.showOverlay !== false,
     })
     if (options.viewEdit) {
@@ -1635,7 +1625,7 @@ export async function drawLivePreview(canvas, options) {
     ...options,
     fontSize: options.fontSize * (cssW / 512),
     letterSpacing: options.letterSpacing * (cssW / 512),
-    transparent: false,
+    transparent: true,
     width: cssW,
     height: cssH,
   }

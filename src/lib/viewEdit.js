@@ -111,8 +111,6 @@ export function applyViewEdit(source, edit, { letterbox = true, skipCrop = false
 
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, w, h)
-  ctx.fillStyle = '#07070c'
-  ctx.fillRect(0, 0, w, h)
   const scale = Math.min(w / sw, h / sh)
   ctx.drawImage(cut, (w - sw * scale) / 2, (h - sh * scale) / 2, sw * scale, sh * scale)
   return stage
