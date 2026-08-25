@@ -1232,9 +1232,21 @@ export function estimateLayerBox(layer, viewW, viewH, scale, options = {}) {
   }
 }
 
+export function layerPaintRank(layer, index = 0) {
+  const base = layer?.role === 'main' ? 20 : layer?.role === 'sub' ? 10 : 12
+  return base + index / 1000
+}
+
+function layersInPaintOrder(layers) {
+  return (layers || [])
+    .map((layer, index) => ({ layer, index, rank: layerPaintRank(layer, index) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+}
+
 export function hitTestStudio(layers, px, py, viewW, viewH, scale, options = {}) {
-  for (let index = layers.length - 1; index >= 0; index -= 1) {
-    const layer = layers[index]
+  const stacked = layersInPaintOrder(layers)
+  for (let cursor = stacked.length - 1; cursor >= 0; cursor -= 1) {
+    const layer = stacked[cursor].layer
     if (layer.visible === false) continue
     const box = estimateLayerBox(layer, viewW, viewH, scale, options)
     const dx = px - box.x
@@ -1454,7 +1466,7 @@ async function drawStudioScene(ctx, options) {
     drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background)
     if (gridOn) drawGrid(ctx, viewW, viewH)
   }
-  for (const layer of layers) {
+  for (const { layer } of layersInPaintOrder(layers)) {
     if (layer.visible === false) continue
     const font = fontsById?.[layer.fontId] ?? options.font
     if (font) await ensureFont(font, layer.fontSize * scale, layer.fontWeight)
@@ -1486,8 +1498,9 @@ async function drawStudioScene(ctx, options) {
 
 export async function drawLivePreview(canvas, options) {
   if (!canvas) return
-  const cssW = Math.max(1, Math.round(canvas.clientWidth || 512))
-  const cssH = Math.max(1, Math.round(canvas.clientHeight || 512))
+  const rect = typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : { width: 0, height: 0 }
+  const cssW = Math.max(1, Math.round(canvas.clientWidth || rect.width || 512))
+  const cssH = Math.max(1, Math.round(canvas.clientHeight || rect.height || 512))
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   canvas.width = cssW * dpr
   canvas.height = cssH * dpr

@@ -381,11 +381,21 @@ export default function App() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
-    const observer = new ResizeObserver(() => {
+    const redraw = () => {
       if (canvasRef.current) drawLivePreview(canvasRef.current, renderOptions)
-    })
-    observer.observe(canvas.parentElement ?? canvas)
-    return () => observer.disconnect()
+    }
+    const observer = new ResizeObserver(redraw)
+    observer.observe(canvas)
+    const frame = canvas.parentElement
+    if (frame) observer.observe(frame)
+    if (stageRef.current && stageRef.current !== frame) observer.observe(stageRef.current)
+    window.visualViewport?.addEventListener('resize', redraw)
+    window.visualViewport?.addEventListener('scroll', redraw)
+    return () => {
+      observer.disconnect()
+      window.visualViewport?.removeEventListener('resize', redraw)
+      window.visualViewport?.removeEventListener('scroll', redraw)
+    }
   }, [renderOptions])
 
   useEffect(() => {
@@ -590,12 +600,19 @@ export default function App() {
     const canvas = canvasRef.current
     if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
+    const boundsW = rect.width || canvas.clientWidth || 1
+    const boundsH = rect.height || canvas.clientHeight || 1
+    const cssW = Math.max(1, canvas.clientWidth || boundsW)
+    const cssH = Math.max(1, canvas.clientHeight || boundsH)
+    const x = ((event.clientX - rect.left) / boundsW) * cssW
+    const y = ((event.clientY - rect.top) / boundsH) * cssH
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-      w: rect.width,
-      h: rect.height,
-      scale: Math.min(rect.width, rect.height) / 512,
+      x,
+      y,
+      w: cssW,
+      h: cssH,
+      scale: Math.min(cssW, cssH) / 512,
     }
   }
 
@@ -1228,7 +1245,10 @@ export default function App() {
             </div>
           ) : null}
           <div className="canvas-stage" ref={stageRef} style={{ '--studio-ar': `${aspect.w} / ${aspect.h}` }}>
-            <div className={clsx('preview-frame', studio.viewMode === 'mask' && 'is-mask-view', hoverPreview && 'is-hover-preview', cropMode && 'is-cropping')}>
+            <div
+              id="main-canvas-area"
+              className={clsx('preview-frame', studio.viewMode === 'mask' && 'is-mask-view', hoverPreview && 'is-hover-preview', cropMode && 'is-cropping')}
+            >
               <canvas
                 ref={canvasRef}
                 className={clsx('h-full w-full', cropMode ? 'cursor-crosshair' : (studio.layerLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'))}

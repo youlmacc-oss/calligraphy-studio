@@ -124,10 +124,16 @@ body {
 
 .preview-frame {
   position: relative;
+  isolation: isolate;
+  z-index: 1;
   width: min(100%, 760px);
+  max-width: 100%;
   max-height: min(68vh, 740px);
   aspect-ratio: var(--studio-ar, 1 / 1);
   overflow: hidden;
+  flex: 0 0 auto;
+  margin: auto;
+  box-sizing: border-box;
   border-radius: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background:
@@ -140,8 +146,23 @@ body {
   box-shadow: 0 0 28px rgba(34, 211, 238, 0.12);
 }
 
+#main-canvas-area {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  z-index: 1;
+}
+
 .preview-frame canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
   display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
 }
 
 .ctrl-select {
@@ -1080,6 +1101,7 @@ body {
   gap: 0.75rem;
   min-height: calc(100svh - 64px);
   padding: 0.75rem;
+  align-items: stretch;
 }
 
 .studio-shell[data-ui-scale="120"] .studio-3col {
@@ -1151,8 +1173,11 @@ body {
 
 .studio-center {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  overflow: auto;
 }
 
 .panel-block,
@@ -1420,14 +1445,21 @@ body {
 
 .canvas-stage {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
+  min-width: 0;
   min-height: 420px;
+  width: 100%;
+  overflow: auto;
+  isolation: isolate;
+  position: relative;
+  z-index: 1;
   border-radius: 1.2rem;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(255, 255, 255, 0.02);
   padding: 1rem;
+  box-sizing: border-box;
 }
 
 .live-status-hud,
@@ -1443,6 +1475,8 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem 0.45rem;
+  position: relative;
+  z-index: 40;
   width: min(100%, 760px);
   max-width: 100%;
   margin: 0.7rem auto 0;
@@ -1681,7 +1715,7 @@ body {
 .crop-overlay {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 30;
   cursor: crosshair;
   touch-action: none;
 }
