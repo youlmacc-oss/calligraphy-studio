@@ -1430,6 +1430,105 @@ body {
   padding: 1rem;
 }
 
+.live-status-hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.45rem;
+  width: min(100%, 760px);
+  max-width: 100%;
+  margin: 0.7rem auto 0;
+  padding: 0.5rem 0.7rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(7, 7, 12, 0.7));
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    0 0 22px rgba(34, 211, 238, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-status-hud__badge,
+.live-status-hud__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.38rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.live-status-hud__badge {
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.14);
+  color: #ecfeff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 10px rgba(34, 211, 238, 0.45);
+}
+
+.live-status-hud__badge.is-sub {
+  border-color: rgba(232, 121, 249, 0.5);
+  background: rgba(232, 121, 249, 0.14);
+  color: #fae8ff;
+  text-shadow: 0 0 10px rgba(232, 121, 249, 0.4);
+}
+
+.live-status-hud__badge.is-extra {
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fef9c3;
+  text-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
+}
+
+.live-status-hud__chip {
+  padding: 0.22rem 0.55rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.live-status-hud__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.live-status-hud__value {
+  font-size: 12px;
+  font-weight: 750;
+  color: #ecfeff;
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.28);
+}
+
+.live-status-hud__dot {
+  margin: 0 0.28rem;
+  color: rgba(34, 211, 238, 0.55);
+  font-weight: 800;
+}
+
+@media (max-width: 860px) {
+  .live-status-hud {
+    padding: 0.45rem 0.55rem;
+  }
+
+  .live-status-hud__value {
+    font-size: 11px;
+  }
+}
+
 .color-input {
   display: block;
   width: 100%;

@@ -79,6 +79,38 @@ function slugify(value) {
     .slice(0, 32) || 'styler'
 }
 
+function formatHudNumber(value, digits = 2) {
+  const rounded = Number(Number(value || 0).toFixed(digits))
+  return Object.is(rounded, -0) ? '0' : String(rounded)
+}
+
+function liveStatusFromLayer(layer, { fontsById, presetsById, studioPreset } = {}) {
+  if (!layer) return null
+  const raw = String(layer.text ?? '').replace(/\r\n/g, '\n')
+  const chars = [...raw].length
+  const lines = raw.length ? raw.split('\n').length : 1
+  const font = fontsById?.[layer.fontId]
+  const layerPreset = presetsById?.[layer.presetId] ?? (layer.role === 'main' ? studioPreset : null)
+  const badge = layer.role === 'main'
+    ? { tone: 'main', text: '👑 메인' }
+    : layer.role === 'sub'
+      ? { tone: 'sub', text: '✨ 서브' }
+      : { tone: 'extra', text: '✦ 추가' }
+  return {
+    badge,
+    stats: `${chars}자 / ${lines}줄`,
+    fontName: font?.label ?? layer.fontId ?? '폰트',
+    fontSize: Math.round(Number(layer.fontSize) || 0),
+    tracking: formatHudNumber(layer.letterSpacing),
+    leading: formatHudNumber(layer.lineHeight || 1.2),
+    x: formatHudNumber(layer.ox),
+    y: formatHudNumber(layer.oy),
+    rotation: Math.round(Number(layer.rotation) || 0),
+    opacity: Math.round(Math.max(0, Math.min(1, Number(layer.opacity) ?? 1)) * 100),
+    presetName: layerPreset?.name ?? '직접 설정',
+  }
+}
+
 const FONTS_BY_ID = Object.fromEntries(FONTS.map((item) => [item.id, item]))
 const PRESETS_BY_ID = Object.fromEntries(PRESETS.map((item) => [item.id, item]))
 const BLEND_MODES = [
@@ -183,6 +215,14 @@ export default function App() {
       layer.id === hoverPreview.layerId ? { ...layer, fontId: hoverPreview.fontId } : layer
     ))
   }, [studio.layers, hoverPreview])
+  const liveStatus = useMemo(() => {
+    const layer = liveLayers.find((item) => item.id === studio.activeLayerId) ?? liveLayers[0] ?? activeLayer
+    return liveStatusFromLayer(layer, {
+      fontsById: FONTS_BY_ID,
+      presetsById: PRESETS_BY_ID,
+      studioPreset: preset,
+    })
+  }, [liveLayers, studio.activeLayerId, activeLayer, preset])
 
   const promptPack = useMemo(() => {
     const text = studio.layers.find((layer) => layer.role === 'main')?.text
@@ -1202,6 +1242,49 @@ export default function App() {
               ) : null}
             </div>
           </div>
+          {liveStatus ? (
+            <div
+              className="live-status-hud"
+              role="status"
+              aria-live="polite"
+              aria-label="실시간 텍스트 인포 바"
+              {...magnify('실시간 텍스트 인포 바', '선택한 레이어의 글자 수, 폰트, 좌표, 프리셋이 캔버스 아래에 바로 반영됩니다')}
+            >
+              <span className={clsx('live-status-hud__badge', `is-${liveStatus.badge.tone}`)}>
+                [{liveStatus.badge.text}]
+              </span>
+              <span className="live-status-hud__chip">
+                <span className="live-status-hud__label">글자</span>
+                <span className="live-status-hud__value">{liveStatus.stats}</span>
+              </span>
+              <span className="live-status-hud__chip">
+                <span className="live-status-hud__label">폰트</span>
+                <span className="live-status-hud__value">
+                  {liveStatus.fontName}
+                  <span className="live-status-hud__dot">·</span>
+                  {liveStatus.fontSize}px
+                  <span className="live-status-hud__dot">·</span>
+                  자간 {liveStatus.tracking}px
+                  <span className="live-status-hud__dot">·</span>
+                  행간 {liveStatus.leading}배
+                </span>
+              </span>
+              <span className="live-status-hud__chip">
+                <span className="live-status-hud__label">캔버스</span>
+                <span className="live-status-hud__value">
+                  좌표(X: {liveStatus.x}, Y: {liveStatus.y})
+                  <span className="live-status-hud__dot">·</span>
+                  회전({liveStatus.rotation}°)
+                  <span className="live-status-hud__dot">·</span>
+                  투명도({liveStatus.opacity}%)
+                </span>
+              </span>
+              <span className="live-status-hud__chip">
+                <span className="live-status-hud__label">프리셋</span>
+                <span className="live-status-hud__value">{liveStatus.presetName}</span>
+              </span>
+            </div>
+          ) : null}
           <p className="mt-3 text-center text-[11px] text-zinc-500">
             {cropMode
               ? '크롭 박스를 드래그해 영역을 잡고 ✓ 적용 / ✕ 취소를 누르세요'
