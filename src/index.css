@@ -1430,6 +1430,14 @@ body {
   padding: 1rem;
 }
 
+.live-status-hud,
+.live-status-hud * {
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Noto Sans KR", "Segoe UI", Roboto, "Malgun Gothic", sans-serif !important;
+  font-variant-numeric: tabular-nums;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
 .live-status-hud {
   display: flex;
   flex-wrap: wrap;
@@ -1451,7 +1459,9 @@ body {
     0 0 22px rgba(34, 211, 238, 0.12);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .live-status-hud__badge,
@@ -1471,24 +1481,24 @@ body {
   border: 1px solid rgba(34, 211, 238, 0.45);
   background: rgba(34, 211, 238, 0.14);
   color: #ecfeff;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-shadow: 0 0 10px rgba(34, 211, 238, 0.45);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: none;
 }
 
 .live-status-hud__badge.is-sub {
   border-color: rgba(232, 121, 249, 0.5);
   background: rgba(232, 121, 249, 0.14);
   color: #fae8ff;
-  text-shadow: 0 0 10px rgba(232, 121, 249, 0.4);
+  text-shadow: none;
 }
 
 .live-status-hud__badge.is-extra {
   border-color: rgba(250, 204, 21, 0.45);
   background: rgba(250, 204, 21, 0.12);
   color: #fef9c3;
-  text-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
+  text-shadow: none;
 }
 
 .live-status-hud__chip {
@@ -1499,33 +1509,39 @@ body {
 }
 
 .live-status-hud__label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #94a3b8;
 }
 
 .live-status-hud__value {
-  font-size: 12px;
-  font-weight: 750;
+  font-size: 13px;
+  font-weight: 600;
   color: #ecfeff;
-  text-shadow: 0 0 12px rgba(34, 211, 238, 0.28);
+  text-shadow: none;
 }
 
 .live-status-hud__dot {
   margin: 0 0.28rem;
   color: rgba(34, 211, 238, 0.55);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 @media (max-width: 860px) {
   .live-status-hud {
     padding: 0.45rem 0.55rem;
+    font-size: 12px;
   }
 
+  .live-status-hud__badge,
   .live-status-hud__value {
-    font-size: 11px;
+    font-size: 12px;
+  }
+
+  .live-status-hud__label {
+    font-size: 10px;
   }
 }
 
