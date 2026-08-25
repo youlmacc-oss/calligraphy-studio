@@ -215,9 +215,12 @@ export default function App() {
   const paintRaf = useRef(0)
   const renderOptionsRef = useRef(null)
   const lastPerfEmit = useRef(0)
+  const diagOpenRef = useRef(false)
+  const closeDiag = useCallback(() => setDiagOpen(false), [])
 
   studioRef.current = studio
   leftPanelWidthRef.current = leftPanelWidth
+  diagOpenRef.current = diagOpen
 
   const fontsById = useMemo(
     () => ({
@@ -304,7 +307,7 @@ export default function App() {
     const finish = () => {
       notePaint(performance.now() - t0)
       const now = performance.now()
-      if (now - lastPerfEmit.current < 240) return
+      if (now - lastPerfEmit.current < 240 || diagOpenRef.current) return
       lastPerfEmit.current = now
       setRenderHud(readRenderPerf())
     }
@@ -475,7 +478,7 @@ export default function App() {
     let raf = 0
     const tick = (now) => {
       noteFrame(now)
-      if (now - lastPerfEmit.current >= 280) {
+      if (now - lastPerfEmit.current >= 280 && !diagOpenRef.current) {
         lastPerfEmit.current = now
         setRenderHud(readRenderPerf())
       }
@@ -1764,7 +1767,7 @@ export default function App() {
       <MenuMagnifierHUD />
       <SelfDiagnosticModal
         open={diagOpen}
-        onClose={() => setDiagOpen(false)}
+        onClose={closeDiag}
         promptPack={promptPack}
         apiKeys={apiKeys}
         studio={studio}

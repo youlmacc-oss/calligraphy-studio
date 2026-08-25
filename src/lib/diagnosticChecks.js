@@ -318,9 +318,14 @@ export async function checkLiveStatusHud(ctx) {
   if (!area) {
     return { status: 'warn', detail: `HUD ${info.badge.text} · ${info.stats}는 정상이나 #main-canvas-area 기준점이 없습니다.` }
   }
+  const diagHud = typeof document !== 'undefined' ? document.querySelector('.diag-hud') : null
+  const gauge = diagHud?.querySelector('.diag-gauge')
+  if (!diagHud || !gauge) {
+    return { status: 'warn', detail: '인포 바는 정상이나 자가진단 게이지 HUD를 찾지 못했습니다.' }
+  }
   return {
     status: 'ok',
-    detail: `HUD ${info.badge.text} · ${info.stats} · ${info.fontSize}px · 산세리프 고정 · 중앙 뷰포트 정렬 확인.`,
+    detail: `HUD ${info.badge.text} · ${info.stats} · ${info.fontSize}px · 산세리프 고정 · 중앙 뷰포트 · 자가진단 게이지 확인.`,
   }
 }
 
@@ -446,18 +451,21 @@ export async function checkFpsPipeline() {
     return { status: 'warn', detail: 'IDLE · rAF / performance API를 쓰지 못하는 환경입니다.' }
   }
   const deltas = []
-  await new Promise((resolve) => {
-    let last = 0
-    let count = 0
-    const step = (now) => {
-      if (last) deltas.push(now - last)
-      last = now
-      count += 1
-      if (count < 18) requestAnimationFrame(step)
-      else resolve()
-    }
-    requestAnimationFrame(step)
-  })
+  await Promise.race([
+    new Promise((resolve) => {
+      let last = 0
+      let count = 0
+      const step = (now) => {
+        if (last) deltas.push(now - last)
+        last = now
+        count += 1
+        if (count < 8) requestAnimationFrame(step)
+        else resolve()
+      }
+      requestAnimationFrame(step)
+    }),
+    new Promise((resolve) => window.setTimeout(resolve, 600)),
+  ])
   const avg = deltas.length ? deltas.reduce((sum, item) => sum + item, 0) / deltas.length : 16.7
   const fps = Math.min(60, 1000 / Math.max(1, avg))
   const probe = document.createElement('canvas')

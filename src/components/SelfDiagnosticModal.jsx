@@ -16,7 +16,7 @@ function idleCards() {
 
 function verdictLabel(item) {
   if (item.phase === 'run') return 'SCAN'
-  if (item.status === 'ok') return 'PASS'
+  if (item.status === 'ok') return 'PASS ✅'
   if (item.status === 'warn') return 'WARN'
   if (item.status === 'error') return 'FAIL'
   return 'IDLE'
@@ -68,12 +68,12 @@ export default function SelfDiagnosticModal({
           setStepIndex(index)
           setCards((prev) => prev.map((card) => {
             if (card.id !== id) return card
-            if (phase === 'run') return { ...card, phase: 'run', detail: '검사 중…' }
+            if (phase === 'run') return { ...card, phase: 'run', status: null, detail: '검사 중…' }
             return { ...card, phase: 'done', ...item }
           }))
         },
       })
-      setReport(next)
+      if (!ac.signal.aborted) setReport(next)
     } catch (error) {
       pushLog({ at: '--', level: 'ERROR', message: error.message || '진단 실패' })
     } finally {
@@ -85,6 +85,12 @@ export default function SelfDiagnosticModal({
   }
 
   useEffect(() => {
+    if (open) return undefined
+    abortRef.current?.abort()
+    return undefined
+  }, [open])
+
+  useEffect(() => {
     if (!open) return undefined
     const onKey = (event) => {
       if (event.key === 'Escape') onClose()
@@ -92,7 +98,6 @@ export default function SelfDiagnosticModal({
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
-      abortRef.current?.abort()
     }
   }, [open, onClose])
 
@@ -104,8 +109,9 @@ export default function SelfDiagnosticModal({
 
   const doneCount = cards.filter((card) => card.phase === 'done').length
   const running = cards.some((card) => card.phase === 'run')
-  const progress = Math.round(((doneCount + (running ? 0.45 : 0)) / total) * 100)
-  const current = busy ? Math.max(stepIndex, doneCount) : doneCount
+  const finished = Boolean(report) && report.checks?.length === total
+  const progress = finished ? 100 : Math.min(99, Math.round(((doneCount + (running ? 0.45 : 0)) / Math.max(1, total)) * 100))
+  const current = finished ? total : (busy ? Math.max(stepIndex, doneCount, running ? 1 : 0) : doneCount)
 
   return (
     <div className="studio-modal-root" role="dialog" aria-modal="true" aria-labelledby="diag-title">
@@ -148,8 +154,8 @@ export default function SelfDiagnosticModal({
 
         <div className="diag-gauge">
           <div className="diag-gauge-meta">
-            <span>진행 단계: [ {current} / {total} ]</span>
-            <strong>{progress}%</strong>
+            <span>진행 단계: [ {current} / {total} ]{finished ? ' 100% 완료' : ''}</span>
+            <strong>{finished ? '100% 완료' : `${progress}%`}</strong>
           </div>
           <div className="diag-bar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <span style={{ width: `${progress}%` }} />
@@ -157,7 +163,8 @@ export default function SelfDiagnosticModal({
           {report ? (
             <p className="diag-health">
               시스템 건강 지수 배지 · 정상 {report.score.ok} / 주의 {report.score.warn} / 오류 {report.score.error}
-              {' '}(건강 지수: {report.health}%) · 평균 지연시간 {report.avg}ms
+              {' '}· 종합 건강 지수: {report.health}% · 평균 지연시간 {report.avg}ms
+              {finished ? ' · 전체 단계 완료' : ''}
             </p>
           ) : (
             <p className="diag-health is-idle">레지스트리 {total}항목이 대기 중입니다. 시작하면 카드가 PASS/FAIL 애니메이션으로 바뀌고 콘솔에 로그가 흐릅니다.</p>
