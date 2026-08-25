@@ -21,6 +21,7 @@ import {
   scaledExportSize,
   serializeStudioProject,
 } from './proTools.js'
+import { readRenderPerf } from './renderPerf.js'
 
 function allocCanvas(w, h) {
   const canvas = document.createElement('canvas')
@@ -437,5 +438,48 @@ export async function checkProEngine() {
   return {
     status: 'ok',
     detail: 'PASS · 스냅 · 1px/10px 단축키 · 곡선 JSON · 2중외곽선 · 4x 스케일 · FontFace',
+  }
+}
+
+export async function checkFpsPipeline() {
+  if (typeof requestAnimationFrame !== 'function' || typeof performance === 'undefined') {
+    return { status: 'warn', detail: 'IDLE · rAF / performance API를 쓰지 못하는 환경입니다.' }
+  }
+  const deltas = []
+  await new Promise((resolve) => {
+    let last = 0
+    let count = 0
+    const step = (now) => {
+      if (last) deltas.push(now - last)
+      last = now
+      count += 1
+      if (count < 18) requestAnimationFrame(step)
+      else resolve()
+    }
+    requestAnimationFrame(step)
+  })
+  const avg = deltas.length ? deltas.reduce((sum, item) => sum + item, 0) / deltas.length : 16.7
+  const fps = Math.min(60, 1000 / Math.max(1, avg))
+  const probe = document.createElement('canvas')
+  probe.width = 256
+  probe.height = 256
+  const t0 = performance.now()
+  const ctx = probe.getContext('2d')
+  if (!ctx) return { status: 'warn', detail: 'IDLE · 파이프라인 프로브 컨텍스트를 열지 못했습니다.' }
+  ctx.fillStyle = '#22d3ee'
+  ctx.fillRect(0, 0, 256, 256)
+  ctx.getImageData(8, 8, 48, 48)
+  const latency = performance.now() - t0
+  const live = readRenderPerf()
+  const stable = fps >= 45 && latency <= 40
+  if (!stable) {
+    return {
+      status: 'warn',
+      detail: `IDLE · rAF ${Math.round(fps)} FPS / 프로브 ${latency.toFixed(1)}ms · 라이브 ${live.text}`,
+    }
+  }
+  return {
+    status: 'ok',
+    detail: `PASS · ${Math.round(fps)} FPS / 프로브 ${latency.toFixed(1)}ms · ${live.text}`,
   }
 }

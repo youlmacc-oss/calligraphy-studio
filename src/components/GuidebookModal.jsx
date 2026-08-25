@@ -105,7 +105,7 @@ function WorkflowBoard({ workflow }) {
   )
 }
 
-function FeatureBlock({ feature, startNo }) {
+function FeatureBlock({ feature, startNo, onApplySample }) {
   const content = feature.guideContent
   let next = startNo
   const play = content.play || []
@@ -113,6 +113,16 @@ function FeatureBlock({ feature, startNo }) {
     <section id={`guide-sec-${content.sectionId || feature.id}`} className="guide-feature">
       {content.title ? <h3 className="guide-feature-title">{content.title}</h3> : null}
       {content.kicker ? <p className="guide-kicker">{content.kicker}</p> : null}
+      {content.sample ? (
+        <button
+          type="button"
+          className="guide-sample-btn"
+          onClick={() => onApplySample?.(content.sample)}
+        >
+          💡 이 스타일 캔버스에 즉시 적용
+          <span>{content.sample.label}</span>
+        </button>
+      ) : null}
       {(content.visuals || []).map((visual, index) => (
         <ChipRow key={`${feature.id}-v-${index}`} visual={visual} />
       ))}
@@ -139,7 +149,7 @@ function FeatureBlock({ feature, startNo }) {
   )
 }
 
-function ChapterPane({ chapter }) {
+function ChapterPane({ chapter, onApplySample }) {
   let startNo = 1
   return (
     <div className="guide-pane">
@@ -150,6 +160,7 @@ function ChapterPane({ chapter }) {
             key={feature.id}
             feature={feature}
             startNo={startNo}
+            onApplySample={onApplySample}
           />
         )
         startNo += playCount
@@ -159,7 +170,7 @@ function ChapterPane({ chapter }) {
   )
 }
 
-export default function GuidebookModal({ open, onClose }) {
+export default function GuidebookModal({ open, onClose, onApplySample }) {
   const chapters = useMemo(() => getGuidebookChapters(), [])
   const [tab, setTab] = useState(chapters[0]?.id || 'basics')
   const contentRef = useRef(null)
@@ -239,7 +250,7 @@ export default function GuidebookModal({ open, onClose }) {
                 ))}
               </div>
             ) : null}
-            {current ? <ChapterPane chapter={current} /> : null}
+            {current ? <ChapterPane chapter={current} onApplySample={onApplySample} /> : null}
           </div>
         </div>
       </div>

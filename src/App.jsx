@@ -26,6 +26,7 @@ import EmoticonSplitterModal from './components/EmoticonSplitterModal.jsx'
 import GuidebookModal from './components/GuidebookModal.jsx'
 import LayerEditCard from './components/LayerEditCard.jsx'
 import MenuMagnifierHUD, { magnify } from './components/MenuMagnifierHUD.jsx'
+import OnboardingTour from './components/OnboardingTour.jsx'
 import ProgressModal from './components/ProgressModal.jsx'
 import SelfDiagnosticModal from './components/SelfDiagnosticModal.jsx'
 import { runRemoteAi, simulateAiResult } from './lib/aiProviders.js'
@@ -58,6 +59,11 @@ import { DIAG_STEPS } from './lib/featureRegistry.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
 import { registerCustomFontFile } from './lib/customFonts.js'
+import { applyGuideSample } from './lib/guideSamples.js'
+import {
+  loadOnboardDone,
+  saveOnboardDone,
+} from './lib/onboarding.js'
 import {
   applyCenterSnap,
   buildStylePrompt,
@@ -69,6 +75,7 @@ import {
   scaledExportSize,
   serializeStudioProject,
 } from './lib/proTools.js'
+import { noteFrame, notePaint, readRenderPerf } from './lib/renderPerf.js'
 import {
   defaultViewEdit,
   makeCropRect,
@@ -139,6 +146,25 @@ function saveLeftPanelWidth(width) {
   }
 }
 
+const PANEL_COLLAPSE_KEY = 'styler-panel-collapse-v1'
+
+function loadPanelCollapse() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PANEL_COLLAPSE_KEY) || '{}')
+    return { left: Boolean(parsed.left), right: Boolean(parsed.right) }
+  } catch {
+    return { left: false, right: false }
+  }
+}
+
+function savePanelCollapse(next) {
+  try {
+    localStorage.setItem(PANEL_COLLAPSE_KEY, JSON.stringify(next))
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function App() {
   const initial = useMemo(() => loadStudioState(), [])
   const [studio, setStudio] = useState(initial)
@@ -168,6 +194,11 @@ export default function App() {
   const [favoriteFonts, setFavoriteFonts] = useState(() => loadFavoriteFonts())
   const [customFonts, setCustomFonts] = useState([])
   const [snapGuide, setSnapGuide] = useState({ x: false, y: false })
+  const [leftCollapsed, setLeftCollapsed] = useState(() => loadPanelCollapse().left)
+  const [rightCollapsed, setRightCollapsed] = useState(() => loadPanelCollapse().right)
+  const [tourOpen, setTourOpen] = useState(false)
+  const [tourStep, setTourStep] = useState(0)
+  const [renderHud, setRenderHud] = useState(() => readRenderPerf())
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadLeftPanelWidth())
   const [isResizing, setIsResizing] = useState(false)
   const projectInputRef = useRef(null)
@@ -182,6 +213,8 @@ export default function App() {
   const historyRef = useRef({ past: [], future: [] })
   const dragRef = useRef(null)
   const paintRaf = useRef(0)
+  const renderOptionsRef = useRef(null)
+  const lastPerfEmit = useRef(0)
 
   studioRef.current = studio
   leftPanelWidthRef.current = leftPanelWidth
@@ -261,6 +294,46 @@ export default function App() {
     }),
     [liveLayers, font, preset, studio, aspect, cropMode, fontsById],
   )
+  renderOptionsRef.current = renderOptions
+
+  const paintCanvas = useCallback((options) => {
+    const canvas = canvasRef.current
+    const opts = options || renderOptionsRef.current
+    if (!canvas || !opts) return
+    const t0 = performance.now()
+    const finish = () => {
+      notePaint(performance.now() - t0)
+      const now = performance.now()
+      if (now - lastPerfEmit.current < 240) return
+      lastPerfEmit.current = now
+      setRenderHud(readRenderPerf())
+    }
+    const result = drawLivePreview(canvas, opts)
+    if (result && typeof result.then === 'function') result.then(finish)
+    else finish()
+  }, [])
+
+  const setPanelsCollapsed = (patch) => {
+    setLeftCollapsed((left) => {
+      const nextLeft = patch.left ?? left
+      setRightCollapsed((right) => {
+        const nextRight = patch.right ?? right
+        savePanelCollapse({ left: nextLeft, right: nextRight })
+        return nextRight
+      })
+      return nextLeft
+    })
+  }
+
+  const startTour = () => {
+    setTourStep(0)
+    setTourOpen(true)
+  }
+
+  const finishTour = () => {
+    setTourOpen(false)
+    saveOnboardDone()
+  }
 
   const capture = useCallback(() => {
     historyRef.current.past.push(snapshotOf(studioRef.current))
@@ -291,6 +364,13 @@ export default function App() {
     }), record)
   }, [patchStudio])
 
+  const applySample = (sample) => {
+    if (!sample) return
+    capture()
+    setStudio((prev) => applyGuideSample(prev, sample))
+    setGuideOpen(false)
+  }
+
   const revokeUrls = useCallback(() => {
     const { transparentUrl: prevPng, maskUrl: prevMask } = urlsRef.current
     if (prevPng) URL.revokeObjectURL(prevPng)
@@ -313,7 +393,7 @@ export default function App() {
     const image = new Image()
     image.onload = () => {
       bgImageRef.current = image
-      if (canvasRef.current) drawLivePreview(canvasRef.current, { ...renderOptions, bgImage: image })
+      if (canvasRef.current) paintCanvas({ ...renderOptions, bgImage: image })
     }
     image.src = dataUrl
     return undefined
@@ -366,16 +446,16 @@ export default function App() {
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      if (canvasRef.current) drawLivePreview(canvasRef.current, renderOptions)
+      paintCanvas(renderOptions)
     })
     return () => cancelAnimationFrame(frame)
-  }, [renderOptions])
+  }, [paintCanvas, renderOptions])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
     const redraw = () => {
-      if (canvasRef.current) drawLivePreview(canvasRef.current, renderOptions)
+      paintCanvas()
     }
     const observer = new ResizeObserver(redraw)
     observer.observe(canvas)
@@ -389,7 +469,30 @@ export default function App() {
       window.visualViewport?.removeEventListener('resize', redraw)
       window.visualViewport?.removeEventListener('scroll', redraw)
     }
-  }, [renderOptions])
+  }, [paintCanvas, renderOptions])
+
+  useEffect(() => {
+    let raf = 0
+    const tick = (now) => {
+      noteFrame(now)
+      if (now - lastPerfEmit.current >= 280) {
+        lastPerfEmit.current = now
+        setRenderHud(readRenderPerf())
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  useEffect(() => {
+    if (loadOnboardDone()) return undefined
+    const timer = window.setTimeout(() => {
+      setTourStep(0)
+      setTourOpen(true)
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -1057,9 +1160,24 @@ export default function App() {
         </div>
       </header>
 
-      <div className="studio-3col" style={{ '--left-panel-width': `${leftPanelWidth}px` }}>
+      <div
+        className={clsx(
+          'studio-3col',
+          leftCollapsed && 'is-left-collapsed',
+          rightCollapsed && 'is-right-collapsed',
+        )}
+        style={{ '--left-panel-width': `${leftPanelWidth}px` }}
+      >
         <div className="studio-left-split" ref={leftSplitRef}>
         <aside className="studio-left">
+          <button
+            type="button"
+            className="panel-fold panel-fold-left"
+            onClick={() => setPanelsCollapsed({ left: true })}
+            {...magnify('왼쪽 패널 접기', '스타일 패널을 접어 캔버스를 넓힙니다')}
+          >
+            ◀
+          </button>
           <section className="title-split">
             <p className="panel-title title-split-kicker">👑✨ 상시 분할 제어 패널</p>
             {mainLayer ? (
@@ -1208,7 +1326,27 @@ export default function App() {
         </div>
 
         <main className="studio-center">
-          <div className="canvas-toolbar">
+          {leftCollapsed ? (
+            <button
+              type="button"
+              className="panel-rail panel-rail-left"
+              onClick={() => setPanelsCollapsed({ left: false })}
+              {...magnify('왼쪽 패널 펼치기', '스타일·폰트 패널을 다시 엽니다')}
+            >
+              ▶
+            </button>
+          ) : null}
+          {rightCollapsed ? (
+            <button
+              type="button"
+              className="panel-rail panel-rail-right"
+              onClick={() => setPanelsCollapsed({ right: false })}
+              {...magnify('오른쪽 패널 펼치기', '익스포트·프롬프트 패널을 다시 엽니다')}
+            >
+              ◀
+            </button>
+          ) : null}
+          <div className="canvas-toolbar" data-tour="nudge">
             <button type="button" className="tool-btn" onClick={undo} {...magnify('Undo 실행 취소', '바로 이전 작업으로 되돌립니다 (Ctrl+Z)')}><Undo2 className="h-3.5 w-3.5" /> Undo</button>
             <button type="button" className="tool-btn" onClick={redo} {...magnify('Redo 다시 실행', '취소한 작업을 다시 적용합니다 (Ctrl+Y)')}><Redo2 className="h-3.5 w-3.5" /> Redo</button>
             <button type="button" className="tool-btn" onClick={resetActive} {...magnify('정중앙 정렬', '선택한 글자를 캔버스 한가운데로 되돌립니다')}><RotateCcw className="h-3.5 w-3.5" /> 🎯 정중앙 정렬</button>
@@ -1224,6 +1362,7 @@ export default function App() {
               className={clsx('tool-btn', exportBusy && 'is-on')}
               disabled={exportBusy}
               onClick={downloadGif}
+              data-tour="gif-export"
               {...magnify('GIF 다운로드', '선택한 모션 프리셋으로 움직이는 GIF를 만들고 바로 저장합니다')}
             >
               🎬 GIF 다운로드
@@ -1232,9 +1371,18 @@ export default function App() {
               type="button"
               className={clsx('tool-btn', emoSplitOpen && 'is-on')}
               onClick={() => setEmoSplitOpen(true)}
+              data-tour="emo-split"
               {...magnify('이모티콘 시트 분할기', 'AI가 만든 스티커 시트를 360×360 PNG와 ZIP으로 나눕니다')}
             >
               🧩 이모티콘 시트 분할기
+            </button>
+            <button
+              type="button"
+              className={clsx('tool-btn', tourOpen && 'is-on')}
+              onClick={startTour}
+              {...magnify('빠른 시작 투어', '핵심 버튼 4곳을 순서대로 안내합니다')}
+            >
+              ❓ 빠른 시작 투어
             </button>
             <span className="ml-auto text-[11px] text-zinc-500">
               {aspect.label} · {preset.name} · {activeLayer?.name}
@@ -1396,6 +1544,7 @@ export default function App() {
               role="status"
               aria-live="polite"
               aria-label="실시간 텍스트 인포 바"
+              data-tour="live-hud"
               {...magnify('실시간 텍스트 인포 바', '선택한 레이어의 글자 수, 폰트, 좌표, 프리셋이 캔버스 아래에 바로 반영됩니다')}
             >
               <span className={clsx('live-status-hud__badge', `is-${liveStatus.badge.tone}`)}>
@@ -1431,6 +1580,16 @@ export default function App() {
                 <span className="live-status-hud__label">프리셋</span>
                 <span className="live-status-hud__value">{liveStatus.presetName}</span>
               </span>
+              <span className="live-status-hud__chip">
+                <span className="live-status-hud__label">엔진</span>
+                <span className={clsx('live-status-hud__value', `is-perf-${renderHud.status}`)}>
+                  {renderHud.fps} FPS
+                  <span className="live-status-hud__dot">·</span>
+                  {renderHud.ms}ms
+                  <span className="live-status-hud__dot">·</span>
+                  {renderHud.label}
+                </span>
+              </span>
             </div>
           ) : null}
           <p className="mt-3 text-center text-[11px] text-zinc-500">
@@ -1441,6 +1600,14 @@ export default function App() {
         </main>
 
         <aside className="studio-right">
+          <button
+            type="button"
+            className="panel-fold panel-fold-right"
+            onClick={() => setPanelsCollapsed({ right: true })}
+            {...magnify('오른쪽 패널 접기', '익스포트 패널을 접어 캔버스를 넓힙니다')}
+          >
+            ▶
+          </button>
           <section className="ai-card">
             <p className="text-[11px] tracking-[0.16em] text-cyan-300/80 uppercase">AI Engine</p>
             <h2 className="mt-1 text-base font-semibold text-white">실제 렌더링 생성</h2>
@@ -1605,8 +1772,19 @@ export default function App() {
         favoriteFonts={favoriteFonts}
         onRevoke={revokeUrls}
       />
-      <GuidebookModal open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <GuidebookModal
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        onApplySample={applySample}
+      />
       <EmoticonSplitterModal open={emoSplitOpen} onClose={() => setEmoSplitOpen(false)} />
+      <OnboardingTour
+        open={tourOpen}
+        stepIndex={tourStep}
+        onNext={() => setTourStep((index) => Math.min(index + 1, 3))}
+        onPrev={() => setTourStep((index) => Math.max(0, index - 1))}
+        onClose={finishTour}
+      />
     </div>
   )
 }

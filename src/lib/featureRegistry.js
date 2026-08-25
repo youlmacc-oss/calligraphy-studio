@@ -14,9 +14,11 @@ import {
   checkGifEngine,
   checkEmoticonSlicer,
   checkProEngine,
+  checkFpsPipeline,
   checkTypography,
   checkZStack,
 } from './diagnosticChecks.js'
+import { GUIDE_SAMPLES } from './guideSamples.js'
 
 export const GUIDE_CHAPTERS = [
   { id: 'basics', no: '01', label: '간단 설정 요약', depth: 'summary' },
@@ -163,6 +165,7 @@ export const APP_FEATURES_REGISTRY = [
       sectionId: 'gif',
       sectionLabel: 'GIF 모션',
       title: '🎬 GIF 애니메이션 활용 팁 및 프롬프트 연동 가이드',
+      sample: GUIDE_SAMPLES['neon-cyber'],
       play: [
         {
           title: '모션 프리셋을 고른 뒤 GIF를 받는다',
@@ -192,6 +195,7 @@ export const APP_FEATURES_REGISTRY = [
       sectionId: 'emoticon',
       sectionLabel: '이모티콘 시트',
       title: '🧩 AI 이모티콘 30종 시트 생성 및 원클릭 분할 가이드',
+      sample: GUIDE_SAMPLES['kakao-sticker'],
       play: [
         {
           title: 'AI에서 균일한 30종 시트를 뽑는다',
@@ -247,6 +251,28 @@ export const APP_FEATURES_REGISTRY = [
     },
   }),
   feature({
+    id: 'fps-pipeline',
+    name: '⚡ 실시간 렌더링 FPS 및 파이프라인 레이턴시 감시',
+    description: 'requestAnimationFrame 델타와 캔버스 페인트 지연시간(ms)을 실시간 점검',
+    diagnosticFunction: checkFpsPipeline,
+    guideContent: {
+      chapterId: 'canvas',
+      order: 24,
+      sectionId: 'fps',
+      sectionLabel: 'FPS 감시',
+      title: '⚡ 실시간 렌더링 FPS 및 파이프라인 레이턴시',
+      play: [
+        {
+          title: '하단 HUD에서 60FPS를 확인한다',
+          body: '캔버스 아래 인포 바의 [엔진] 칸에 `60 FPS / 지연시간 14ms (안정적)`처럼 표시됩니다. rAF 델타로 화면 갱신률을, 미리보기 페인트 시간으로 파이프라인 지연을 잽니다. 50FPS 이상·24ms 이하면 안정적입니다.',
+          params: ['rAF 델타 = FPS', 'drawLivePreview 시간 = 지연(ms)', '안정적 / 주의 / 지연'],
+          tip: '좌우 패널을 접어 캔버스를 넓혀도 FPS 칸은 그대로 보입니다. 4x 내보내기는 미리보기 FPS와 별개입니다.',
+          fail: '노트북 전원 절약 모드에서는 30FPS로 떨어질 수 있습니다. 성능 모드로 바꾸거나 격자/스티커를 잠시 끄세요.',
+        },
+      ],
+    },
+  }),
+  feature({
     id: 'guide-basics',
     name: '간단 설정 요약',
     description: '폰트, 컬러, 슬라이더, 레이아웃, 내보내기 압축 안내',
@@ -254,12 +280,13 @@ export const APP_FEATURES_REGISTRY = [
       chapterId: 'basics',
       order: 10,
       title: '📖 챕터 1. 간단 설정 요약 — 폰트·컬러·슬라이더',
+      sample: GUIDE_SAMPLES['gold-dragon'],
       kicker: '매일 쓰는 기본 조작만 한 장에 모았습니다. 배치·크롭·합성·AI는 다음 챕터에서 단계별로 다룹니다.',
       visuals: [
         { tone: 'layout', chips: ['왼쪽 설정', '|', '중앙 캔버스', '우측 익스포트'], split: true },
       ],
       summary: [
-        { title: '3단 레이아웃', body: '왼쪽↔캔버스 사이 세로선을 드래그하면 폭이 바뀌고, 더블클릭하면 360px로 돌아갑니다. 버튼 위에 마우스를 올리면 22px 돋보기 HUD가 뜹니다. 상단 1:1 / 16:9 / 9:16으로 미리보기 화면비를 바꿉니다. 캔버스는 해상도·배율과 관계없이 작업 영역 정중앙에 두고, 바로 아래 실시간 인포 바가 선택 레이어 수치를 보여 줍니다.' },
+        { title: '3단 레이아웃', body: '왼쪽↔캔버스 사이 세로선을 드래그하면 폭이 바뀌고, 더블클릭하면 360px로 돌아갑니다. 패널 모서리 [◀]/[▶]로 좌·우 패널을 접으면 캔버스가 넓어집니다. 상단 [❓ 빠른 시작 투어]는 핵심 버튼 4곳을 짚어 줍니다. 버튼 위에 마우스를 올리면 22px 돋보기 HUD가 뜹니다. 상단 1:1 / 16:9 / 9:16으로 미리보기 화면비를 바꿉니다. 캔버스는 해상도·배율과 관계없이 작업 영역 정중앙에 두고, 바로 아래 실시간 인포 바가 선택 레이어 수치와 FPS를 보여 줍니다.' },
         { title: '폰트 선택', body: '레이어 카드의 폰트 버튼을 열고 카테고리 탭을 고른 뒤 항목에 호버하면 캔버스가 미리봅니다. 클릭하면 그 레이어에만 적용됩니다. 메인과 서브는 서로 간섭하지 않습니다.' },
         { title: '컬러 픽커', body: '카드 하단 [텍스트 / 외곽선 / 그림자] 색 칸을 누릅니다. 외곽선 두께 0이면 테두리가 없고, 2~6이 포스터에 무난합니다. 그림자 블러는 8~18이 읽기 좋습니다.' },
         { title: '슬라이더', body: '크기·자간·줄간격·회전·투명도·가로/세로 위치는 드래그만으로 반영됩니다. 손을 떼면 히스토리에 남으므로 Ctrl+Z로 되돌릴 수 있습니다. 줄간격 권장 구간은 챕터 2를 보세요.' },
