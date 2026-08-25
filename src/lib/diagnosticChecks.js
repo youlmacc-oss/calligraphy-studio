@@ -8,6 +8,8 @@ import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
+import { fitToKakaoCanvas, KAKAO_STICKER_SIZE, sliceSheet, splitGridBoxes } from './emoticonSplit.js'
+import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
 import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
@@ -338,5 +340,39 @@ export async function checkGifEngine() {
   return {
     status: 'ok',
     detail: `PASS · ${GIF_MOTIONS.map((item) => item.name).join(' / ')} · 인코더 ${blob.size}B · 프레임 ${frames.length}`,
+  }
+}
+
+export async function checkEmoticonSlicer() {
+  if (typeof JSZip !== 'function') {
+    return { status: 'warn', detail: 'IDLE · JSZip 모듈을 불러오지 못했습니다.' }
+  }
+  const sheet = document.createElement('canvas')
+  sheet.width = 240
+  sheet.height = 120
+  const ctx = sheet.getContext('2d')
+  if (!ctx) return { status: 'warn', detail: 'IDLE · 슬라이싱 버퍼를 열 수 없습니다.' }
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, 240, 120)
+  ctx.fillStyle = '#111111'
+  ctx.fillRect(12, 12, 84, 84)
+  ctx.fillRect(140, 18, 72, 72)
+  const smart = sliceSheet(sheet, { mode: 'smart', transparent: true })
+  const grid = splitGridBoxes(240, 120, 2, 1)
+  const kakao = fitToKakaoCanvas(sheet, grid[0])
+  if (kakao.width !== KAKAO_STICKER_SIZE || kakao.height !== KAKAO_STICKER_SIZE) {
+    return { status: 'error', detail: `360×360 리사이저가 ${kakao.width}×${kakao.height}를 반환했습니다.` }
+  }
+  const corner = kakao.getContext('2d').getImageData(2, 2, 1, 1).data
+  if (corner[3] > 40) {
+    return { status: 'warn', detail: 'IDLE · 360×360 알파 채널이 불투명합니다.' }
+  }
+  const zip = new JSZip()
+  zip.file('kakao-360-01.png', await canvasToPngBlob(kakao))
+  const packed = await zip.generateAsync({ type: 'blob' })
+  if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
+  return {
+    status: 'ok',
+    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import AiGenerateModal from './components/AiGenerateModal.jsx'
 import CropOverlay from './components/CropOverlay.jsx'
+import EmoticonSplitterModal from './components/EmoticonSplitterModal.jsx'
 import GuidebookModal from './components/GuidebookModal.jsx'
 import LayerEditCard from './components/LayerEditCard.jsx'
 import MenuMagnifierHUD, { magnify } from './components/MenuMagnifierHUD.jsx'
@@ -148,6 +149,7 @@ export default function App() {
   const [exportNote, setExportNote] = useState('PNG · JPEG · GIF · ICO를 지금 바로 다운로드할 수 있습니다.')
   const [diagOpen, setDiagOpen] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
+  const [emoSplitOpen, setEmoSplitOpen] = useState(false)
   const [favoriteFonts, setFavoriteFonts] = useState(() => loadFavoriteFonts())
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadLeftPanelWidth())
   const [isResizing, setIsResizing] = useState(false)
@@ -1115,6 +1117,14 @@ export default function App() {
             >
               🎬 GIF 다운로드
             </button>
+            <button
+              type="button"
+              className={clsx('tool-btn', emoSplitOpen && 'is-on')}
+              onClick={() => setEmoSplitOpen(true)}
+              {...magnify('이모티콘 시트 분할기', 'AI가 만든 스티커 시트를 360×360 PNG와 ZIP으로 나눕니다')}
+            >
+              🧩 이모티콘 시트 분할기
+            </button>
             <span className="ml-auto text-[11px] text-zinc-500">
               {aspect.label} · {preset.name} · {activeLayer?.name}
               {hoverPreview ? ' · 호버 프리뷰' : ''}
@@ -1430,6 +1440,7 @@ export default function App() {
         onRevoke={revokeUrls}
       />
       <GuidebookModal open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <EmoticonSplitterModal open={emoSplitOpen} onClose={() => setEmoSplitOpen(false)} />
     </div>
   )
 }
