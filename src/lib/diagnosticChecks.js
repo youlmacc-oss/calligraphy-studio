@@ -318,6 +318,18 @@ export async function checkLiveStatusHud(ctx) {
   if (!area) {
     return { status: 'warn', detail: `HUD ${info.badge.text} · ${info.stats}는 정상이나 #main-canvas-area 기준점이 없습니다.` }
   }
+  const hudRect = hud.getBoundingClientRect()
+  const areaRect = area.getBoundingClientRect()
+  const viewH = window.innerHeight || document.documentElement.clientHeight
+  if (hudRect.bottom > viewH + 2) {
+    return { status: 'warn', detail: `IDLE · 하단 인포 바가 뷰포트 밖으로 잘립니다 (${Math.round(hudRect.bottom - viewH)}px).` }
+  }
+  if (hudRect.height > 56) {
+    return { status: 'warn', detail: `IDLE · 인포 바 높이 ${Math.round(hudRect.height)}px — 슬림 도킹(36~42px)보다 큽니다.` }
+  }
+  if (areaRect.bottom > hudRect.top + 6) {
+    return { status: 'warn', detail: 'IDLE · 캔버스가 하단 인포 바와 겹쳐 슬림 도킹이 깨졌습니다.' }
+  }
   const diagHud = typeof document !== 'undefined' ? document.querySelector('.diag-hud') : null
   const gauge = diagHud?.querySelector('.diag-gauge')
   if (!diagHud || !gauge) {
@@ -325,7 +337,7 @@ export async function checkLiveStatusHud(ctx) {
   }
   return {
     status: 'ok',
-    detail: `HUD ${info.badge.text} · ${info.stats} · ${info.fontSize}px · 산세리프 고정 · 중앙 뷰포트 · 자가진단 게이지 확인.`,
+    detail: `HUD ${info.badge.text} · ${info.stats} · 슬림 ${Math.round(hudRect.height)}px 도킹 · 뷰포트 내 · 자가진단 게이지 확인.`,
   }
 }
 

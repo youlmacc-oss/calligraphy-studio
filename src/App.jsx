@@ -1328,7 +1328,7 @@ export default function App() {
         />
         </div>
 
-        <main className="studio-center">
+        <main className="studio-center flex min-h-0 flex-1 flex-col">
           {leftCollapsed ? (
             <button
               type="button"
@@ -1493,7 +1493,15 @@ export default function App() {
               ) : null}
             </div>
           ) : null}
-          <div className="canvas-stage" ref={stageRef} style={{ '--studio-ar': `${aspect.w} / ${aspect.h}` }}>
+          <div
+            className="canvas-stage"
+            ref={stageRef}
+            style={{
+              '--studio-ar': `${aspect.w} / ${aspect.h}`,
+              '--ar-w': aspect.w,
+              '--ar-h': aspect.h,
+            }}
+          >
             <div
               id="main-canvas-area"
               className={clsx(
@@ -1541,6 +1549,11 @@ export default function App() {
               ) : null}
             </div>
           </div>
+          <p className="canvas-hint">
+            {cropMode
+              ? '크롭 박스를 드래그해 영역을 잡고 ✓ 적용 / ✕ 취소를 누르세요'
+              : '드래그로 이동 · 중앙 자석 스냅 · 방향키 1px / Shift+방향키 10px · Ctrl+Z / Ctrl+Y · Delete는 추가 레이어'}
+          </p>
           {liveStatus ? (
             <div
               className="live-status-hud"
@@ -1595,11 +1608,6 @@ export default function App() {
               </span>
             </div>
           ) : null}
-          <p className="mt-3 text-center text-[11px] text-zinc-500">
-            {cropMode
-              ? '크롭 박스를 드래그해 영역을 잡고 ✓ 적용 / ✕ 취소를 누르세요'
-              : '드래그로 이동 · 중앙 자석 스냅 · 방향키 1px / Shift+방향키 10px · Ctrl+Z / Ctrl+Y · Delete는 추가 레이어'}
-          </p>
         </main>
 
         <aside className="studio-right">
