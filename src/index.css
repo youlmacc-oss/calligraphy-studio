@@ -1738,6 +1738,73 @@ body {
   touch-action: none;
 }
 
+.gif-progress-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  padding: 1.2rem;
+  background: rgba(7, 7, 12, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.gif-progress-overlay__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 750;
+  color: #ecfeff;
+}
+
+.gif-progress-overlay__track {
+  width: min(72%, 280px);
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.gif-progress-overlay__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22d3ee, #c084fc, #f472b6);
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.45);
+  transition: width 80ms linear;
+}
+
+.gif-progress-overlay__pct {
+  font-size: 18px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.gif-motion-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.gif-motion-chip {
+  border-radius: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 0.45rem 0.3rem;
+  font-size: 11px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.gif-motion-chip.is-on {
+  border-color: rgba(232, 121, 249, 0.55);
+  background: rgba(232, 121, 249, 0.16);
+  color: #fae8ff;
+}
+
 .crop-box {
   position: absolute;
   box-sizing: border-box;

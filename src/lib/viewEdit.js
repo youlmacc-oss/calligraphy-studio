@@ -132,7 +132,7 @@ export function animateViewEdit(edit, style, t) {
 
 export function gifStyleFromPreset(preset) {
   const shader = preset?.shader || ''
-  if (shader.includes('glitch') || shader.includes('slice') || shader.includes('split')) return 'glitch'
-  if (shader.includes('chrome') || shader.includes('liquid') || shader.includes('metal')) return 'chrome'
+  if (shader.includes('wave') || shader.includes('calli') || shader.includes('kinetic')) return 'float'
+  if (shader.includes('chrome') || shader.includes('glass') || shader.includes('hologram') || shader.includes('crystal')) return 'fade'
   return 'pulse'
 }

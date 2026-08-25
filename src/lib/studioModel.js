@@ -87,6 +87,7 @@ export function defaultStudioState() {
       blend: 'source-over',
     },
     viewEdit: defaultViewEdit(),
+    gifMotion: 'pulse',
   }
 }
 

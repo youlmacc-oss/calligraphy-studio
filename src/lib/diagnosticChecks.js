@@ -7,6 +7,7 @@ import {
 import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
 import { liveStatusFromLayer } from './liveStatus.js'
+import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
 import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
@@ -309,5 +310,33 @@ export async function checkLiveStatusHud(ctx) {
   return {
     status: 'ok',
     detail: `HUD ${info.badge.text} · ${info.stats} · ${info.fontSize}px · 산세리프 고정 · 중앙 뷰포트 정렬 확인.`,
+  }
+}
+
+export async function checkGifEngine() {
+  if (typeof encodeGifFromCanvases !== 'function') {
+    return { status: 'warn', detail: 'IDLE · GIF 인코더 모듈을 불러오지 못했습니다.' }
+  }
+  if (GIF_MOTIONS.length !== 3) {
+    return { status: 'error', detail: 'GIF 모션 프리셋이 3종이 아닙니다.' }
+  }
+  const sample = document.createElement('canvas')
+  sample.width = 24
+  sample.height = 24
+  const brush = sample.getContext('2d')
+  if (!brush) return { status: 'warn', detail: 'IDLE · 프레임 버퍼 컨텍스트를 열 수 없습니다.' }
+  brush.fillStyle = '#67e8f9'
+  brush.fillRect(3, 3, 18, 18)
+  const frames = GIF_MOTIONS.map((motion, index) => composeGifFrame(sample, motion.id, index / 3))
+  if (frames.some((frame) => !frame?.width)) {
+    return { status: 'warn', detail: 'IDLE · 모션 프레임 버퍼가 비어 있습니다.' }
+  }
+  const blob = await encodeGifFromCanvases(frames, 80)
+  if (!blob || blob.size < 32) {
+    return { status: 'warn', detail: 'IDLE · 인코더는 로드됐지만 샘플 GIF가 비어 있습니다.' }
+  }
+  return {
+    status: 'ok',
+    detail: `PASS · ${GIF_MOTIONS.map((item) => item.name).join(' / ')} · 인코더 ${blob.size}B · 프레임 ${frames.length}`,
   }
 }

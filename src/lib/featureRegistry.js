@@ -11,6 +11,7 @@ import {
   checkHistory,
   checkLayerIsolation,
   checkLiveStatusHud,
+  checkGifEngine,
   checkTypography,
   checkZStack,
 } from './diagnosticChecks.js'
@@ -150,6 +151,35 @@ export const APP_FEATURES_REGISTRY = [
     },
   }),
   feature({
+    id: 'gif-engine',
+    name: 'GIF 모션 엔진 & 렌더러',
+    description: '네온 펄스·소프트 플로팅·시네마틱 페이드 프리셋, 프레임 버퍼, 인코더 로드 검증',
+    diagnosticFunction: checkGifEngine,
+    guideContent: {
+      chapterId: 'ai',
+      order: 8,
+      sectionId: 'gif',
+      sectionLabel: 'GIF 모션',
+      title: '🎬 GIF 애니메이션 활용 팁 및 프롬프트 연동 가이드',
+      play: [
+        {
+          title: '모션 프리셋을 고른 뒤 GIF를 받는다',
+          body: '중앙 툴바 [🎬 GIF 다운로드] 또는 우측 [움직이는 GIF]를 누릅니다. 생성 중 캔버스 한가운데에 0~100% 진행 바가 뜨고, 끝나면 파일이 자동 저장됩니다. 루프는 약 2초입니다.',
+          params: ['네온 펄스', '소프트 플로팅', '시네마틱 페이드'],
+          tip: '쇼츠 썸네일은 네온 펄스, 채널 배너는 소프트 플로팅, 릴스 인트로는 시네마틱 페이드가 잘 맞습니다.',
+          fail: '진행 바가 멈추면 글자가 너무 크거나 해상도가 높을 수 있습니다. 화면 맞춤으로 줄인 뒤 다시 시도하세요.',
+        },
+        {
+          title: 'Grok 프롬프트에 모션 키워드를 붙인다',
+          body: '마스크+영문 프롬프트를 복사한 뒤, 움직이는 결과물을 원할 때 키워드를 덧붙입니다. 네온 펄스: looping neon glow, breathing outline light. 소프트 플로팅: gentle vertical float, soft hover title. 시네마틱 페이드: cinematic fade in-out, scale pulse intro.',
+          params: ['looping neon glow', 'gentle vertical float', 'cinematic fade in-out'],
+          tip: 'Grok 프로 대화에는 마스크를 먼저 첨부하고, 마법 문장 뒤에 위 키워드를 한 줄로 붙이세요. 이 앱 GIF는 타이포 모션용, Grok은 질감 합성용입니다.',
+          fail: '프롬프트에 "video, 24fps film"만 넣고 마스크를 빼면 글자 형태가 녹습니다. 항상 흑백 마스크를 함께 보내세요.',
+        },
+      ],
+    },
+  }),
+  feature({
     id: 'guide-basics',
     name: '간단 설정 요약',
     description: '폰트, 컬러, 슬라이더, 레이아웃, 내보내기 압축 안내',
@@ -167,7 +197,7 @@ export const APP_FEATURES_REGISTRY = [
         { title: '컬러 픽커', body: '카드 하단 [텍스트 / 외곽선 / 그림자] 색 칸을 누릅니다. 외곽선 두께 0이면 테두리가 없고, 2~6이 포스터에 무난합니다. 그림자 블러는 8~18이 읽기 좋습니다.' },
         { title: '슬라이더', body: '크기·자간·줄간격·회전·투명도·가로/세로 위치는 드래그만으로 반영됩니다. 손을 떼면 히스토리에 남으므로 Ctrl+Z로 되돌릴 수 있습니다. 줄간격 권장 구간은 챕터 2를 보세요.' },
         { title: '프리셋 원클릭', body: '🎨 올인원 / ✍️ 캘리그라피 / 🪵 목각 탭에서 카드를 누르면 그 레이어 스타일만 바뀝니다. 키치 스티커는 올인원에서 해당 프리셋을 고른 뒤 하단에 나타납니다.' },
-        { title: '내보내기·단축키', body: '우측에서 투명 PNG, JPEG, 모션 GIF, ICO를 고릅니다. Ctrl+Z 실행 취소, Ctrl+Y 다시 실행, Delete는 추가 레이어만 지웁니다(메인/서브 잠금).' },
+        { title: '내보내기·단축키', body: '우측에서 투명 PNG, JPEG, 모션 GIF, ICO를 고릅니다. GIF는 네온 펄스·소프트 플로팅·시네마틱 페이드 중 하나를 고른 뒤 [🎬 GIF 다운로드]로 받습니다. Ctrl+Z 실행 취소, Ctrl+Y 다시 실행, Delete는 추가 레이어만 지웁니다(메인/서브 잠금).' },
       ],
     },
   }),

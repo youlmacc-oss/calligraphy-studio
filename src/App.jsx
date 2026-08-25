@@ -34,6 +34,7 @@ import {
   iconPackageFromCanvas,
   scaleCanvasToMax,
 } from './lib/exportFormats.js'
+import { composeGifFrame, GIF_MOTIONS, resolveGifMotion } from './lib/gifMotion.js'
 import {
   drawLivePreview,
   hitTestStudio,
@@ -53,10 +54,7 @@ import { DIAG_STEPS } from './lib/featureRegistry.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
 import {
-  animateViewEdit,
-  applyViewEdit,
   defaultViewEdit,
-  gifStyleFromPreset,
   makeCropRect,
 } from './lib/viewEdit.js'
 import {
@@ -96,11 +94,7 @@ const CROP_ASPECTS = [
   { id: '4:3', label: '4:3' },
   { id: 'free', label: '자유 비율' },
 ]
-const GIF_STYLE_LABEL = {
-  pulse: '네온 숨쉬기 Pulse',
-  glitch: '사이버 글리치',
-  chrome: '크롬 반사광',
-}
+const GIF_STYLE_LABEL = Object.fromEntries(GIF_MOTIONS.map((item) => [item.id, item.name]))
 const LEFT_PANEL_KEY = 'styler-left-panel-width'
 const LEFT_PANEL_DEFAULT = 360
 const LEFT_PANEL_MIN = 280
@@ -150,6 +144,7 @@ export default function App() {
   const [cropDraft, setCropDraft] = useState(() => makeCropRect('free'))
   const [filterOpen, setFilterOpen] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
+  const [gifProgress, setGifProgress] = useState(null)
   const [exportNote, setExportNote] = useState('PNG · JPEG · GIF · ICO를 지금 바로 다운로드할 수 있습니다.')
   const [diagOpen, setDiagOpen] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
@@ -645,7 +640,7 @@ export default function App() {
   }
 
   const viewEdit = studio.viewEdit ?? defaultViewEdit()
-  const gifStyle = gifStyleFromPreset(preset)
+  const gifMotion = resolveGifMotion(studio.gifMotion, preset)
 
   const beginCrop = () => {
     setFilterOpen(false)
@@ -727,42 +722,45 @@ export default function App() {
   })
 
   const downloadGif = () => runExport('GIF 애니메이션', async () => {
-    const geometry = {
-      ...viewEdit,
-      brightness: 100,
-      contrast: 100,
-      saturation: 100,
-      vignette: 0,
-      ink: 0,
+    setGifProgress(4)
+    try {
+      const geometry = {
+        ...viewEdit,
+        brightness: 100,
+        contrast: 100,
+        saturation: 100,
+        vignette: 0,
+        ink: 0,
+      }
+      const result = await renderStyledText({
+        ...renderOptions,
+        layers: studio.layers,
+        showOverlay: false,
+        gridOn: false,
+        skipCrop: false,
+        viewEdit: geometry,
+      })
+      revokeUrls()
+      urlsRef.current = { transparentUrl: result.transparentUrl, maskUrl: result.maskUrl }
+      setTransparentUrl(result.transparentUrl)
+      setMaskUrl(result.maskUrl)
+      if (!result.graphic) throw new Error('GIF 프레임 원본 캔버스를 만들지 못했습니다')
+      const frames = []
+      const count = 18
+      for (let i = 0; i < count; i += 1) {
+        const frame = composeGifFrame(result.graphic, gifMotion, i / count)
+        frames.push(scaleCanvasToMax(frame, 480))
+        setGifProgress(8 + Math.round(((i + 1) / count) * 82))
+        await new Promise((resolve) => window.setTimeout(resolve, 12))
+      }
+      setGifProgress(94)
+      const blob = await encodeGifFromCanvases(frames, 100)
+      if (!blob) throw new Error('GIF 인코더가 비어 있는 파일을 반환했습니다')
+      setGifProgress(100)
+      downloadBlob(blob, exportName(`${gifMotion}-loop`, 'gif'))
+    } finally {
+      window.setTimeout(() => setGifProgress(null), 480)
     }
-    const result = await renderStyledText({
-      ...renderOptions,
-      layers: studio.layers,
-      showOverlay: false,
-      gridOn: false,
-      skipCrop: false,
-      viewEdit: geometry,
-    })
-    revokeUrls()
-    urlsRef.current = { transparentUrl: result.transparentUrl, maskUrl: result.maskUrl }
-    setTransparentUrl(result.transparentUrl)
-    setMaskUrl(result.maskUrl)
-    const frames = []
-    const count = 20
-    for (let i = 0; i < count; i += 1) {
-      const animated = animateViewEdit(viewEdit, gifStyle, i / count)
-      const filtered = applyViewEdit(result.graphic, {
-        ...defaultViewEdit(),
-        brightness: animated.brightness,
-        contrast: animated.contrast,
-        saturation: animated.saturation,
-        vignette: animated.vignette,
-        ink: animated.ink,
-      }, { letterbox: false, skipCrop: true })
-      frames.push(scaleCanvasToMax(filtered, 480))
-    }
-    const blob = await encodeGifFromCanvases(frames, 120)
-    downloadBlob(blob, exportName(`${gifStyle}-loop`, 'gif'))
   })
 
   const downloadIcons = () => runExport('파비콘 패키지', async () => {
@@ -1108,6 +1106,15 @@ export default function App() {
               {studio.layerLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
               {studio.layerLocked ? '🔒 위치 잠금' : '위치 잠금 해제'}
             </button>
+            <button
+              type="button"
+              className={clsx('tool-btn', exportBusy && 'is-on')}
+              disabled={exportBusy}
+              onClick={downloadGif}
+              {...magnify('GIF 다운로드', '선택한 모션 프리셋으로 움직이는 GIF를 만들고 바로 저장합니다')}
+            >
+              🎬 GIF 다운로드
+            </button>
             <span className="ml-auto text-[11px] text-zinc-500">
               {aspect.label} · {preset.name} · {activeLayer?.name}
               {hoverPreview ? ' · 호버 프리뷰' : ''}
@@ -1230,6 +1237,15 @@ export default function App() {
               {cropMode ? (
                 <CropOverlay rect={cropDraft} aspectId={cropAspect} onChange={setCropDraft} />
               ) : null}
+              {gifProgress != null ? (
+                <div className="gif-progress-overlay" role="status" aria-live="polite">
+                  <p className="gif-progress-overlay__title">🎬 GIF 렌더링</p>
+                  <div className="gif-progress-overlay__track">
+                    <div className="gif-progress-overlay__bar" style={{ width: `${Math.max(0, Math.min(100, gifProgress))}%` }} />
+                  </div>
+                  <span className="gif-progress-overlay__pct">{Math.max(0, Math.min(100, gifProgress))}%</span>
+                </div>
+              ) : null}
             </div>
           </div>
           {liveStatus ? (
@@ -1314,10 +1330,23 @@ export default function App() {
             <button type="button" disabled={exportBusy} className="export-btn export-btn-jpeg mt-2 w-full" onClick={downloadJpeg} {...magnify('고품질 JPEG', '흰 배경으로 합성해 용량을 줄여 저장합니다')}>
               <Download className="h-4 w-4" /> 📷 고품질 JPEG 다운로드
             </button>
-            <button type="button" disabled={exportBusy} className="export-btn export-btn-gif mt-2 w-full" onClick={downloadGif} {...magnify('움직이는 GIF', '네온 숨쉬기·글리치·크롬 효과가 반복되는 짧은 영상을 만듭니다')}>
-              <Download className="h-4 w-4" /> 🎞️ 움직이는 GIF 애니메이션 생성
+            <button type="button" disabled={exportBusy} className="export-btn export-btn-gif mt-2 w-full" onClick={downloadGif} {...magnify('움직이는 GIF', '네온 펄스·소프트 플로팅·시네마틱 페이드 루프를 만들어 저장합니다')}>
+              <Download className="h-4 w-4" /> 🎬 GIF 다운로드
             </button>
-            <p className="export-hub-sub">루프 스타일: {GIF_STYLE_LABEL[gifStyle]} · 약 2.4초</p>
+            <div className="gif-motion-row">
+              {GIF_MOTIONS.map((motion) => (
+                <button
+                  key={motion.id}
+                  type="button"
+                  className={clsx('gif-motion-chip', gifMotion === motion.id && 'is-on')}
+                  onClick={() => patchStudio({ gifMotion: motion.id }, false)}
+                  {...magnify(motion.name, `${motion.hint}. ${motion.use}`)}
+                >
+                  {motion.name}
+                </button>
+              ))}
+            </div>
+            <p className="export-hub-sub">{GIF_STYLE_LABEL[gifMotion]} · {GIF_MOTIONS.find((item) => item.id === gifMotion)?.hint} · 약 1.8초</p>
             <button type="button" disabled={exportBusy} className="export-btn export-btn-ico mt-2 w-full" onClick={downloadIcons} {...magnify('파비콘 / 앱 아이콘', '32·64·256 PNG와 ICO 파일을 한 번에 받습니다')}>
               <Download className="h-4 w-4" /> 🔷 파비콘 / 앱 아이콘 (.ICO & Multi-size PNG)
             </button>
