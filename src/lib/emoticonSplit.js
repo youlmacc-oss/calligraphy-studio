@@ -2,6 +2,24 @@ export const KAKAO_STICKER_SIZE = 360
 export const KAKAO_SAFE_PAD = 0.06
 export const KAKAO_FIT_RATIO = 0.88
 export const MODE_A_SAFE_PAD = 0.08
+export const SLICE_SCALE_MIN = 50
+export const SLICE_SCALE_MAX = 150
+export const SLICE_SCALE_DEFAULT = 100
+export const EMO_SIDE_MIN = 280
+export const EMO_SIDE_MAX = 600
+export const EMO_SIDE_DEFAULT = 380
+
+export function clampSliceScale(value) {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n)) return SLICE_SCALE_DEFAULT
+  return Math.min(SLICE_SCALE_MAX, Math.max(SLICE_SCALE_MIN, n))
+}
+
+export function clampEmoSideWidth(width) {
+  const n = Math.round(Number(width))
+  if (!Number.isFinite(n)) return EMO_SIDE_DEFAULT
+  return Math.max(EMO_SIDE_MIN, Math.min(EMO_SIDE_MAX, n))
+}
 
 function loadImage(file) {
   return new Promise((resolve, reject) => {
@@ -279,6 +297,20 @@ export function containFitRect(sliceW, sliceH, size = KAKAO_STICKER_SIZE, fitRat
   return {
     maxDim,
     scale,
+    renderW,
+    renderH,
+    renderX: Math.round((size - renderW) / 2),
+    renderY: Math.round((size - renderH) / 2),
+  }
+}
+
+export function applyCustomSliceScale(fit, customScale = SLICE_SCALE_DEFAULT, size = KAKAO_STICKER_SIZE) {
+  const zoom = clampSliceScale(customScale) / 100
+  const renderW = Math.max(1, Math.round((fit?.renderW || 1) * zoom))
+  const renderH = Math.max(1, Math.round((fit?.renderH || 1) * zoom))
+  return {
+    ...fit,
+    customScale: clampSliceScale(customScale),
     renderW,
     renderH,
     renderX: Math.round((size - renderW) / 2),
@@ -613,6 +645,7 @@ export function fitToKakaoCanvas(source, box, {
   customColor = '#111111',
   outline = false,
   lockFrame = false,
+  customScale = SLICE_SCALE_DEFAULT,
 } = {}) {
   const sx = Math.max(0, Math.floor(box.x + 1e-9))
   const sy = Math.max(0, Math.floor(box.y + 1e-9))
@@ -648,7 +681,7 @@ export function fitToKakaoCanvas(source, box, {
     ctx.fillRect(0, 0, size, size)
   }
   const innerRatio = lockFrame ? fitRatio : (1 - pad * 2)
-  const fit = containFitRect(dwSrc, dhSrc, size, innerRatio)
+  const fit = applyCustomSliceScale(containFitRect(dwSrc, dhSrc, size, innerRatio), customScale, size)
   const factor = 3
   const { canvas: hi, ctx: hiCtx } = makeAlphaCanvas(Math.max(2, fit.renderW * factor), Math.max(2, fit.renderH * factor))
   hiCtx.imageSmoothingEnabled = true
@@ -686,6 +719,7 @@ export function sliceSheet(source, {
   textMode = 'original',
   customColor = '#111111',
   outline = false,
+  customScale = SLICE_SCALE_DEFAULT,
 } = {}) {
   const analyzed = analyzeSheet(source)
   const bg = sampleBackground(analyzed.data.data, analyzed.data.width, analyzed.data.height)
@@ -719,6 +753,7 @@ export function sliceSheet(source, {
       outline,
       lockFrame: mode === 'grid',
       pad: mode === 'grid' ? KAKAO_SAFE_PAD : MODE_A_SAFE_PAD,
+      customScale,
     })
     return {
       id: `emo-${index + 1}`,

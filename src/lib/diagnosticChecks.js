@@ -9,9 +9,15 @@ import { inspectStudioFonts } from './fontPreload.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
 import {
+  applyCustomSliceScale,
   applyOutlineAssist,
   applyTextTone,
+  clampEmoSideWidth,
+  clampSliceScale,
   containFitRect,
+  EMO_SIDE_DEFAULT,
+  EMO_SIDE_MAX,
+  EMO_SIDE_MIN,
   enhanceSliceImageData,
   equalSplitGuides,
   fitToKakaoCanvas,
@@ -19,6 +25,7 @@ import {
   KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
   normalizeBounds,
+  SLICE_SCALE_DEFAULT,
   sliceSheet,
   sourceSpan,
   splitGuideBoxes,
@@ -461,6 +468,21 @@ export async function checkEmoticonSlicer() {
   if (fit.renderX < 10 || fit.renderY < 10 || fit.renderW > KAKAO_STICKER_SIZE * KAKAO_FIT_RATIO + 1) {
     return { status: 'error', detail: '360×360 안전 여백 contain-fit이 실패했습니다.' }
   }
+  const half = applyCustomSliceScale(fit, 50)
+  const grown = applyCustomSliceScale(fit, 150)
+  if (half.renderW !== Math.round(fit.renderW * 0.5) || grown.renderW !== Math.round(fit.renderW * 1.5)) {
+    return { status: 'error', detail: '이모티콘 크기 비율 50~150% 스케일이 renderW/H에 반영되지 않습니다.' }
+  }
+  if (clampSliceScale(49) !== 50 || clampSliceScale(151) !== 150 || clampSliceScale(100) !== SLICE_SCALE_DEFAULT) {
+    return { status: 'error', detail: '크기 비율 슬라이더 클램프(50~150)가 실패했습니다.' }
+  }
+  if (clampEmoSideWidth(200) !== EMO_SIDE_MIN || clampEmoSideWidth(900) !== EMO_SIDE_MAX || clampEmoSideWidth(380) !== EMO_SIDE_DEFAULT) {
+    return { status: 'error', detail: '작업창 리사이저 너비 클램프(280~600)가 실패했습니다.' }
+  }
+  const slim = sliceSheet(sheet, { mode: 'smart', transparent: true, customScale: 50 })
+  if (slim.length !== 2) {
+    return { status: 'error', detail: '크기 비율 조절이 모드 A 객체 수에 영향을 줬습니다.' }
+  }
   const kakao = fitToKakaoCanvas(sheet, grid[0])
   if (kakao.width !== KAKAO_STICKER_SIZE || kakao.height !== KAKAO_STICKER_SIZE) {
     return { status: 'error', detail: `360×360 리사이저가 ${kakao.width}×${kakao.height}를 반환했습니다.` }
@@ -531,7 +553,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · CCA원복 · PNG알파 ZIP · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · CCA원복 · PNG알파 ZIP · 스케일50-150 · 패널280-600 · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Download, Maximize2, Minus, Plus, Upload, X } from 'lucide-react'
+import { Download, Maximize2, Minus, Plus, RotateCcw, Upload, X } from 'lucide-react'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { magnify } from './MenuMagnifierHUD.jsx'
 import {
   DEFAULT_CROP_BOUNDS,
+  EMO_SIDE_DEFAULT,
+  EMO_SIDE_MAX,
+  EMO_SIDE_MIN,
   KAKAO_STICKER_SIZE,
+  SLICE_SCALE_DEFAULT,
+  SLICE_SCALE_MAX,
+  SLICE_SCALE_MIN,
+  clampEmoSideWidth,
+  clampSliceScale,
   equalSplitGuides,
   fileToSheetCanvas,
   insertGuide,
@@ -38,6 +46,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const sheetRef = useRef(null)
   const dragRef = useRef(null)
   const sliceGen = useRef(0)
+  const scaleTimer = useRef(null)
   const [mode, setMode] = useState('smart')
   const [cols, setCols] = useState(6)
   const [rows, setRows] = useState(5)
@@ -58,6 +67,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
+  const [customScale, setCustomScale] = useState(SLICE_SCALE_DEFAULT)
+  const [sideWidth, setSideWidth] = useState(EMO_SIDE_DEFAULT)
+  const [sideResizing, setSideResizing] = useState(false)
   const vGuidesRef = useRef(verticalGuides)
   const hGuidesRef = useRef(horizontalGuides)
   const boundsRef = useRef(bounds)
@@ -70,6 +82,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const outlineRef = useRef(outline)
   const zoomRef = useRef(zoom)
   const panRef = useRef(pan)
+  const customScaleRef = useRef(customScale)
+  const sideWidthRef = useRef(sideWidth)
   vGuidesRef.current = verticalGuides
   hGuidesRef.current = horizontalGuides
   boundsRef.current = bounds
@@ -82,6 +96,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   outlineRef.current = outline
   zoomRef.current = zoom
   panRef.current = pan
+  customScaleRef.current = customScale
+  sideWidthRef.current = sideWidth
 
   useEffect(() => {
     const el = viewportRef.current
@@ -97,6 +113,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [open, sheetUrl])
+
+  useEffect(() => () => window.clearTimeout(scaleTimer.current), [])
 
   const cellCount = (verticalGuides.length + 1) * (horizontalGuides.length + 1)
   const zoomLabel = `${Math.round(zoom * 100)}%`
@@ -162,6 +180,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         textMode: patch.nextTextMode ?? textModeRef.current,
         customColor: patch.nextCustomColor ?? customColorRef.current,
         outline: patch.nextOutline ?? outlineRef.current,
+        customScale: patch.nextCustomScale ?? customScaleRef.current,
       })
       if (gen !== sliceGen.current) return
       setSlices(next)
@@ -229,7 +248,53 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     if (patch.textMode) setTextMode(patch.textMode)
     if (patch.customColor) setCustomColor(patch.customColor)
     if (patch.outline != null) setOutline(patch.outline)
+    if (patch.customScale != null) {
+      const next = clampSliceScale(patch.customScale)
+      setCustomScale(next)
+      customScaleRef.current = next
+      patch.nextCustomScale = next
+    }
     if (sheetRef.current) runSlice(patch)
+  }
+
+  const applyScale = (value, immediate = false) => {
+    const next = clampSliceScale(value)
+    setCustomScale(next)
+    customScaleRef.current = next
+    window.clearTimeout(scaleTimer.current)
+    if (!sheetRef.current) return
+    if (immediate) {
+      runSlice({ nextCustomScale: next })
+      return
+    }
+    scaleTimer.current = window.setTimeout(() => {
+      runSlice({ nextCustomScale: next })
+    }, 40)
+  }
+
+  const startSideResize = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const pointerId = event.pointerId
+    const originX = event.clientX
+    const originW = sideWidthRef.current
+    setSideResizing(true)
+    const onMove = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) return
+      const next = clampEmoSideWidth(originW + (moveEvent.clientX - originX))
+      sideWidthRef.current = next
+      setSideWidth(next)
+    }
+    const onUp = (upEvent) => {
+      if (upEvent.pointerId !== pointerId) return
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      setSideResizing(false)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
   }
 
   const commitGuides = () => {
@@ -447,7 +512,35 @@ export default function EmoticonSplitterModal({ open, onClose }) {
           </button>
         </header>
 
-        <div className="emo-split-body">
+        <div className="emo-split-toolbar">
+          <label className="emo-scale-ctrl" {...magnify('이모티콘 크기 비율', '360×360 안에서 캐릭터 렌더 크기만 50~150%로 조절합니다. 감지는 그대로입니다.')}>
+            <span>🔍 이모티콘 크기 비율: {customScale}%</span>
+            <input
+              type="range"
+              min={SLICE_SCALE_MIN}
+              max={SLICE_SCALE_MAX}
+              step="1"
+              value={customScale}
+              disabled={busy && !slices.length}
+              onChange={(event) => applyScale(event.target.value)}
+              onPointerUp={() => applyScale(customScaleRef.current, true)}
+            />
+          </label>
+          <button
+            type="button"
+            className="emo-scale-reset"
+            disabled={customScale === SLICE_SCALE_DEFAULT}
+            onClick={() => applyScale(SLICE_SCALE_DEFAULT, true)}
+            {...magnify('크기 비율 리셋', '렌더 배율을 100%로 되돌립니다')}
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> 리셋
+          </button>
+        </div>
+
+        <div
+          className={clsx('emo-split-body', sideResizing && 'is-resizing')}
+          style={{ '--emo-side-width': `${sideWidth}px` }}
+        >
           <aside className="emo-split-side">
             <p className="emo-split-note">{busy ? '처리 중…' : note}</p>
             <div
@@ -562,6 +655,22 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               <p className="emo-thumbs-empty">분할 결과가 여기에 30칸 그리드로 쌓입니다.</p>
             )}
           </aside>
+
+          <div
+            className={clsx('emo-split-resizer', sideResizing && 'is-on')}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="작업창 너비 조절"
+            aria-valuemin={EMO_SIDE_MIN}
+            aria-valuemax={EMO_SIDE_MAX}
+            aria-valuenow={sideWidth}
+            onPointerDown={startSideResize}
+            onDoubleClick={() => {
+              setSideWidth(EMO_SIDE_DEFAULT)
+              sideWidthRef.current = EMO_SIDE_DEFAULT
+            }}
+            {...magnify('작업창 너비 조절', '드래그로 왼쪽 패널 폭을 280~600px로 바꿉니다. 더블클릭하면 380px로 돌아갑니다')}
+          />
 
           <section className="emo-slicer-workspace">
             <div className="emo-zoom-bar">
