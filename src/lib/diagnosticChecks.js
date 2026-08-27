@@ -553,18 +553,25 @@ export async function checkEmoticonSlicer() {
   const bandCtx = band.getContext('2d')
   bandCtx.fillStyle = '#ff8866'
   bandCtx.fillRect(0, 0, 40, 40)
+  bandCtx.fillStyle = '#9aa0a6'
+  bandCtx.fillRect(2, 28, 6, 8)
   bandCtx.fillStyle = '#141414'
   bandCtx.fillRect(8, 28, 24, 8)
   const local = bandCtx.getImageData(0, 0, 40, 40)
   const bodyAt = (10 * 40 + 20) * 4
+  const furAt = (32 * 40 + 4) * 4
   const textAt = (32 * 40 + 20) * 4
   const bodyBefore = [local.data[bodyAt], local.data[bodyAt + 1], local.data[bodyAt + 2]]
+  const furBefore = [local.data[furAt], local.data[furAt + 1], local.data[furAt + 2]]
   applyTextTone(local, 'custom', '#00ccff')
   if (local.data[bodyAt] !== bodyBefore[0] || local.data[bodyAt + 1] !== bodyBefore[1] || local.data[bodyAt + 2] !== bodyBefore[2]) {
     return { status: 'error', detail: '텍스트 보정이 상단 캐릭터 본체 픽셀을 변경했습니다.' }
   }
-  if (local.data[textAt + 2] <= local.data[textAt]) {
-    return { status: 'warn', detail: 'IDLE · 하단 텍스트 클러스터가 커스텀 색으로 치환되지 않았습니다.' }
+  if (local.data[furAt] !== furBefore[0] || local.data[furAt + 1] !== furBefore[1] || local.data[furAt + 2] !== furBefore[2]) {
+    return { status: 'error', detail: '텍스트 보정이 회색 털/플레이트 픽셀을 침범했습니다.' }
+  }
+  if (local.data[textAt] !== 0 || local.data[textAt + 1] !== 204 || local.data[textAt + 2] !== 255) {
+    return { status: 'warn', detail: 'IDLE · 하단 검정 글자 획이 커스텀 색으로 치환되지 않았습니다.' }
   }
   const ring = document.createElement('canvas')
   ring.width = 40
@@ -582,16 +589,16 @@ export async function checkEmoticonSlicer() {
     return { status: 'error', detail: '외곽선 보강이 상단 캐릭터 영역까지 번졌습니다.' }
   }
   const zip = new JSZip()
-  const dataUrl = kakao.toDataURL('image/png')
-  if (!String(dataUrl).startsWith('data:image/png')) {
-    return { status: 'error', detail: 'ZIP PNG가 toDataURL(image/png) 알파 경로를 쓰지 않습니다.' }
+  const pngBlob = await canvasToPngBlob(kakao)
+  if (!pngBlob || pngBlob.type !== 'image/png') {
+    return { status: 'error', detail: 'ZIP PNG가 canvas.toBlob(image/png) 알파 경로를 쓰지 않습니다.' }
   }
-  zip.file('kakao-360-01.png', dataUrl.split(',')[1], { base64: true })
+  zip.file('kakao-360-01.png', pngBlob)
   const packed = await zip.generateAsync({ type: 'blob' })
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 플러드필알파 · PNG ZIP · 스케일50-150 · 패널280-600 · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 유클리드플러드필 · toBlob PNG · 텍스트획가드 · 스케일50-150 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

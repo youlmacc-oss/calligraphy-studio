@@ -187,7 +187,7 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'emoticon-slicer',
     name: '🧩 이모티콘 슬라이서 & ZIP 엔진 상태',
-    description: '모드 A CCA, 플러드필 투명 PNG, 줌 5% 스텝, 스케일 ±1% 버튼, 패널 리사이저',
+    description: '모드 A CCA, 유클리드 플러드필 투명 PNG, 글자 획만 리컬러, toBlob ZIP',
     diagnosticFunction: checkEmoticonSlicer,
     guideContent: {
       chapterId: 'ai',
@@ -206,9 +206,9 @@ export const APP_FEATURES_REGISTRY = [
         },
         {
           title: '분할 후 카카오 스튜디오에 올린다',
-          body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. 모드 A는 Connected Component / Bounding Box로 객체를 잡고, 모드 B는 절단선을 원본 픽셀에 1:1로 매핑합니다. [배경 투명화]는 플러드필로 바깥 흰/미색만 지웁니다. 상단 크기 비율 슬라이더 양옆 [-]/[+]는 1%씩 조절하고, 미리보기 줌 [-]/[+]는 5%씩(10~200%) 움직입니다.',
-          params: ['줌 5% 스텝 10~200%', '크기 비율 ±1% 버튼', '외곽 플러드필 알파', 'ZIP toDataURL PNG', '좌우 패널 리사이저 280~600px'],
-          tip: '절단선을 맞출 때는 미리보기를 5%씩 키우고, 카카오 여백은 크기 비율 [-]로 1%씩 줄이세요.',
+          body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. [배경 투명화]는 네 모서리 시드로 유클리드 거리 32 플러드필을 돌려 바깥 흰/미색만 rgba(0,0,0,0)으로 지우고, 눈·치아 같은 안쪽 흰색은 남깁니다. [텍스트 가독성]은 하단 검정 글자 획만 바꾸며 털·플레이트·하이라이트는 건드리지 않습니다. ZIP은 canvas.toBlob(image/png) 알파 PNG입니다.',
+          params: ['모서리 플러드필 Tolerance 32', '내부 흰색 보존', '글자 획만 리컬러', 'toBlob RGBA PNG', '줌 5% · 스케일 ±1%'],
+          tip: '카카오에 올렸을 때 흰 사각형이 보이면 배경 투명화를 켠 뒤 다시 ZIP을 받으세요. 초록 얼룩이 보이면 텍스트 모드를 원본 유지로 두세요.',
           fail: '카카오에 JPG나 직사각형 원본을 올리면 거절될 수 있습니다. 반드시 이 분할기가 만든 360 정사각 투명 PNG를 쓰세요.',
         },
       ],

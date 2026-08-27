@@ -412,6 +412,8 @@ function parseHexColor(hex, fallback = [10, 10, 12]) {
   return [r, g, b]
 }
 
+export const FLOOD_FILL_TOLERANCE = 32
+
 function flattenTransparentPixels(imageData) {
   if (!imageData?.data) return imageData
   const { data } = imageData
@@ -426,67 +428,115 @@ function flattenTransparentPixels(imageData) {
   return imageData
 }
 
-function isFloodFillBackground(r, g, b, a, seed, tolerance, bright) {
+function colorEuclid(r, g, b, seed) {
+  const dr = r - seed[0]
+  const dg = g - seed[1]
+  const db = b - seed[2]
+  return Math.sqrt(dr * dr + dg * dg + db * db)
+}
+
+function isLightBackgroundSeed(r, g, b, a) {
+  if (a < 12) return false
+  const luma = pixelLuma(r, g, b)
+  const chroma = pixelChroma(r, g, b)
+  if (luma >= 228 && chroma < 42) return true
+  if (luma >= 210 && chroma < 28) return true
+  return luma >= 198 && chroma < 16
+}
+
+function collectFloodSeeds(data, width, height, extraSeeds = []) {
+  const seeds = []
+  const seen = new Set()
+  const pushSeed = (r, g, b) => {
+    const key = `${r},${g},${b}`
+    if (seen.has(key)) return
+    seen.add(key)
+    seeds.push([r, g, b])
+  }
+  const sample = (x, y) => {
+    const i = (y * width + x) * 4
+    if (!isLightBackgroundSeed(data[i], data[i + 1], data[i + 2], data[i + 3])) return
+    pushSeed(data[i], data[i + 1], data[i + 2])
+  }
+  sample(0, 0)
+  sample(width - 1, 0)
+  sample(0, height - 1)
+  sample(width - 1, height - 1)
+  extraSeeds.forEach((seed) => {
+    if (!Array.isArray(seed) || seed.length < 3) return
+    const a = seed[3] == null ? 255 : seed[3]
+    if (!isLightBackgroundSeed(seed[0], seed[1], seed[2], a) && a >= 12) return
+    if (a < 12) {
+      pushSeed(255, 255, 255)
+      return
+    }
+    pushSeed(seed[0], seed[1], seed[2])
+  })
+  const walk = (x0, y0, dx, dy) => {
+    let x = x0
+    let y = y0
+    for (let step = 0; step < Math.max(width, height); step += 1) {
+      if (x < 0 || y < 0 || x >= width || y >= height) return
+      const i = (y * width + x) * 4
+      if (data[i + 3] >= 12) {
+        sample(x, y)
+        return
+      }
+      x += dx
+      y += dy
+    }
+  }
+  for (let x = 0; x < width; x += 12) {
+    walk(x, 0, 0, 1)
+    walk(x, height - 1, 0, -1)
+  }
+  for (let y = 0; y < height; y += 12) {
+    walk(0, y, 1, 0)
+    walk(width - 1, y, -1, 0)
+  }
+  if (!seeds.length) pushSeed(255, 255, 255)
+  return seeds
+}
+
+function isFloodFillBackground(r, g, b, a, seeds, tolerance) {
   if (a < 12) return true
-  const chroma = Math.max(r, g, b) - Math.min(r, g, b)
-  const luma = r * 0.299 + g * 0.587 + b * 0.114
-  if (chroma > 38 && luma < 250) return false
-  if (r >= bright && g >= bright && b >= bright) return true
-  if (colorDist(r, g, b, seed) <= tolerance) return true
-  return luma >= 232 && chroma < 28
+  for (let i = 0; i < seeds.length; i += 1) {
+    if (colorEuclid(r, g, b, seeds[i]) <= tolerance) return true
+  }
+  return false
 }
 
 export function floodFillAlphaKey(imageData, {
-  bright = 235,
-  tolerance = 52,
-  feather = 2,
+  tolerance = FLOOD_FILL_TOLERANCE,
+  extraSeeds = [],
 } = {}) {
   const width = imageData?.width || 0
   const height = imageData?.height || 0
   const data = imageData?.data
   if (!data || !width || !height) return imageData
-
-  const cornerIdx = [
-    0,
-    (width - 1) * 4,
-    ((height - 1) * width) * 4,
-    ((height - 1) * width + (width - 1)) * 4,
-  ]
-  let sr = 0
-  let sg = 0
-  let sb = 0
-  let counted = 0
-  cornerIdx.forEach((i) => {
-    if (data[i + 3] < 12) return
-    sr += data[i]
-    sg += data[i + 1]
-    sb += data[i + 2]
-    counted += 1
-  })
-  const seed = counted
-    ? [Math.round(sr / counted), Math.round(sg / counted), Math.round(sb / counted)]
-    : [248, 247, 242]
-
+  const seeds = collectFloodSeeds(data, width, height, extraSeeds)
   const fillable = (x, y) => {
     const i = (y * width + x) * 4
-    return isFloodFillBackground(data[i], data[i + 1], data[i + 2], data[i + 3], seed, tolerance, bright)
+    return isFloodFillBackground(data[i], data[i + 1], data[i + 2], data[i + 3], seeds, tolerance)
   }
 
   const outer = new Uint8Array(width * height)
   const queue = []
-  const seeds = [
-    [0, 0],
-    [width - 1, 0],
-    [0, height - 1],
-    [width - 1, height - 1],
-  ]
-  seeds.forEach(([x, y]) => {
-    if (!fillable(x, y)) return
+  const enqueue = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return
     const p = y * width + x
-    if (outer[p]) return
+    if (outer[p] || !fillable(x, y)) return
     outer[p] = 1
     queue.push(p)
-  })
+  }
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0)
+    enqueue(x, height - 1)
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y)
+    enqueue(width - 1, y)
+  }
 
   let head = 0
   while (head < queue.length) {
@@ -494,22 +544,13 @@ export function floodFillAlphaKey(imageData, {
     head += 1
     const cx = cur % width
     const cy = (cur / width) | 0
-    const nexts = [
-      cur - 1,
-      cur + 1,
-      cur - width,
-      cur + width,
-      cur - width - 1,
-      cur - width + 1,
-      cur + width - 1,
-      cur + width + 1,
-    ]
+    const nexts = [cur - 1, cur + 1, cur - width, cur + width]
     for (let k = 0; k < nexts.length; k += 1) {
       const next = nexts[k]
       if (next < 0 || next >= outer.length || outer[next]) continue
       const nx = next % width
       const ny = (next / width) | 0
-      if (Math.abs(nx - cx) > 1 || Math.abs(ny - cy) > 1) continue
+      if (Math.abs(nx - cx) > 1) continue
       if (!fillable(nx, ny)) continue
       outer[next] = 1
       queue.push(next)
@@ -525,8 +566,7 @@ export function floodFillAlphaKey(imageData, {
     data[i + 3] = 0
   }
 
-  const ring = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
-  const strength = Math.max(0.4, Math.min(1.4, Number(feather) || 2)) / 2
+  const ring = [[-1, 0], [1, 0], [0, -1], [0, 1]]
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const p = y * width + x
@@ -543,13 +583,16 @@ export function floodFillAlphaKey(imageData, {
       const r = data[i]
       const g = data[i + 1]
       const b = data[i + 2]
-      const luma = r * 0.299 + g * 0.587 + b * 0.114
-      const chroma = Math.max(r, g, b) - Math.min(r, g, b)
-      if (chroma > 42 && luma < 236) continue
-      if (colorDist(r, g, b, seed) > tolerance + 30 && luma < bright - 12) continue
-      const fade = Math.min(1, (near / 8) * strength * 0.95)
-      const alpha = Math.round(data[i + 3] * (1 - fade))
-      if (alpha < 16) {
+      let close = false
+      for (let s = 0; s < seeds.length; s += 1) {
+        if (colorEuclid(r, g, b, seeds[s]) <= tolerance + 12) {
+          close = true
+          break
+        }
+      }
+      if (!close) continue
+      const alpha = Math.round(data[i + 3] * (1 - Math.min(1, near / 4) * 0.72))
+      if (alpha < 18) {
         data[i] = 0
         data[i + 1] = 0
         data[i + 2] = 0
@@ -559,6 +602,7 @@ export function floodFillAlphaKey(imageData, {
       }
     }
   }
+  flattenTransparentPixels(imageData)
   return imageData
 }
 
@@ -614,6 +658,20 @@ function isColorfulBodyPixel(r, g, b, a) {
   return pixelChroma(r, g, b) > 46 && luma > 28 && luma < 232
 }
 
+function isDarkTextInk(r, g, b, a) {
+  if (a < 40) return false
+  return r < 80 && g < 80 && b < 80
+}
+
+function isPlateOrFurPixel(r, g, b, a) {
+  if (a < 28) return false
+  const luma = pixelLuma(r, g, b)
+  const chroma = pixelChroma(r, g, b)
+  if (luma >= 140) return true
+  if (chroma < 26 && luma > 82 && luma < 188) return true
+  return false
+}
+
 function nearColorfulBody(data, width, height, x, y) {
   for (let dy = -5; dy <= 1; dy += 1) {
     for (let dx = -2; dx <= 2; dx += 1) {
@@ -639,29 +697,29 @@ export function buildTextGlyphMask(imageData, bandStart = TEXT_BAND_RATIO) {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       const a = data[i + 3]
-      if (a < 28) continue
       const r = data[i]
       const g = data[i + 1]
       const b = data[i + 2]
-      if (isColorfulBodyPixel(r, g, b, a)) continue
-      const luma = pixelLuma(r, g, b)
-      const ink = luma <= 102 || luma >= 208
-      if (!ink && nearColorfulBody(data, width, height, x, y)) continue
-      let edge = 0
-      const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-      for (let k = 0; k < n.length; k += 1) {
-        const nx = x + n[k][0]
-        const ny = y + n[k][1]
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
-        const ni = (ny * width + nx) * 4
-        if (data[ni + 3] < 12) {
-          edge = Math.max(edge, luma)
-          continue
+      if (!isDarkTextInk(r, g, b, a)) {
+        if (a < 40 || isColorfulBodyPixel(r, g, b, a) || isPlateOrFurPixel(r, g, b, a)) continue
+        if (nearColorfulBody(data, width, height, x, y)) continue
+        const luma = pixelLuma(r, g, b)
+        if (luma > 96 || pixelChroma(r, g, b) > 30) continue
+        let edge = 0
+        const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+        for (let k = 0; k < n.length; k += 1) {
+          const nx = x + n[k][0]
+          const ny = y + n[k][1]
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+          const ni = (ny * width + nx) * 4
+          if (data[ni + 3] < 12) {
+            edge = Math.max(edge, luma)
+            continue
+          }
+          edge = Math.max(edge, Math.abs(luma - pixelLuma(data[ni], data[ni + 1], data[ni + 2])))
         }
-        edge = Math.max(edge, Math.abs(luma - pixelLuma(data[ni], data[ni + 1], data[ni + 2])))
+        if (edge < 46) continue
       }
-      if (!ink && edge < 34) continue
-      if (edge < 16 && luma > 108 && luma < 188) continue
       raw[y * width + x] = 1
     }
   }
@@ -669,6 +727,8 @@ export function buildTextGlyphMask(imageData, bandStart = TEXT_BAND_RATIO) {
     for (let x = 0; x < width; x += 1) {
       const p = y * width + x
       if (!raw[p]) continue
+      const i = p * 4
+      if (isPlateOrFurPixel(data[i], data[i + 1], data[i + 2], data[i + 3]) && !isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
       let cluster = 0
       for (let dy = -1; dy <= 1; dy += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
@@ -679,9 +739,7 @@ export function buildTextGlyphMask(imageData, bandStart = TEXT_BAND_RATIO) {
           if (raw[ny * width + nx]) cluster += 1
         }
       }
-      const i = p * 4
-      const luma = pixelLuma(data[i], data[i + 1], data[i + 2])
-      if (cluster >= 2 || luma <= 48 || luma >= 230) mask[p] = 1
+      if (isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3]) || cluster >= 2) mask[p] = 1
     }
   }
   return { mask, y0, width, height }
@@ -706,15 +764,13 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
         g = g * (1 - t)
         b = b * (1 - t)
       } else if (mode === 'white') {
-        const t = 0.86
-        r = r + (255 - r) * t
-        g = g + (255 - g) * t
-        b = b + (255 - b) * t
+        r = 250
+        g = 250
+        b = 250
       } else if (mode === 'custom') {
-        const t = 0.92
-        r = r + (tr - r) * t
-        g = g + (tg - g) * t
-        b = b + (tb - b) * t
+        r = tr
+        g = tg
+        b = tb
       }
       data[i] = Math.max(0, Math.min(255, Math.round(r)))
       data[i + 1] = Math.max(0, Math.min(255, Math.round(g)))
@@ -813,6 +869,7 @@ export function fitToKakaoCanvas(source, box, {
     const img = cropCtx.getImageData(0, 0, sw, sh)
     const bg = background || sampleBackground(img.data, sw, sh)
     knockoutImageData(img, bg)
+    floodFillAlphaKey(img, { extraSeeds: [bg] })
     flattenTransparentPixels(img)
     cropCtx.putImageData(img, 0, 0)
     if (!lockFrame) {
@@ -850,9 +907,10 @@ export function fitToKakaoCanvas(source, box, {
   }
   flattenTransparentPixels(enhanced)
   if (transparent) {
-    floodFillAlphaKey(enhanced)
+    floodFillAlphaKey(enhanced, { extraSeeds: background ? [background] : [] })
     flattenTransparentPixels(enhanced)
   }
+  ctx.clearRect(0, 0, size, size)
   ctx.putImageData(enhanced, 0, 0)
   return canvas
 }
