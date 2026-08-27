@@ -6,12 +6,23 @@ import { saveAs } from 'file-saver'
 import { magnify } from './MenuMagnifierHUD.jsx'
 import { canvasToPngBlob } from '../lib/exportFormats.js'
 import {
+  DEFAULT_CROP_BOUNDS,
   KAKAO_STICKER_SIZE,
   equalSplitGuides,
   fileToSheetCanvas,
+  insertGuide,
   moveGuide,
+  normalizeBounds,
+  removeGuide,
   sliceSheet,
 } from '../lib/emoticonSplit.js'
+
+const TEXT_MODES = [
+  { id: 'original', label: '원본 유지' },
+  { id: 'black', label: '고대비 블랙 강화' },
+  { id: 'white', label: '선명한 화이트' },
+  { id: 'custom', label: '커스텀 색상' },
+]
 
 export default function EmoticonSplitterModal({ open, onClose }) {
   const inputRef = useRef(null)
@@ -24,8 +35,12 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [rows, setRows] = useState(5)
   const [verticalGuides, setVerticalGuides] = useState(() => equalSplitGuides(6))
   const [horizontalGuides, setHorizontalGuides] = useState(() => equalSplitGuides(5))
+  const [bounds, setBounds] = useState(DEFAULT_CROP_BOUNDS)
   const [activeGuide, setActiveGuide] = useState(null)
   const [transparent, setTransparent] = useState(true)
+  const [textMode, setTextMode] = useState('original')
+  const [customColor, setCustomColor] = useState('#111111')
+  const [outline, setOutline] = useState(false)
   const [fileName, setFileName] = useState('')
   const [sheetUrl, setSheetUrl] = useState('')
   const [slices, setSlices] = useState([])
@@ -34,37 +49,42 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [dragOver, setDragOver] = useState(false)
   const vGuidesRef = useRef(verticalGuides)
   const hGuidesRef = useRef(horizontalGuides)
+  const boundsRef = useRef(bounds)
   const colsRef = useRef(cols)
   const rowsRef = useRef(rows)
   const modeRef = useRef(mode)
   const transparentRef = useRef(transparent)
+  const textModeRef = useRef(textMode)
+  const customColorRef = useRef(customColor)
+  const outlineRef = useRef(outline)
   vGuidesRef.current = verticalGuides
   hGuidesRef.current = horizontalGuides
+  boundsRef.current = bounds
   colsRef.current = cols
   rowsRef.current = rows
   modeRef.current = mode
   transparentRef.current = transparent
+  textModeRef.current = textMode
+  customColorRef.current = customColor
+  outlineRef.current = outline
+
+  const cellCount = (verticalGuides.length + 1) * (horizontalGuides.length + 1)
 
   const reset = () => {
     setSlices([])
     setSheetUrl('')
     setFileName('')
     sheetRef.current = null
+    setBounds(DEFAULT_CROP_BOUNDS)
+    boundsRef.current = DEFAULT_CROP_BOUNDS
     setVerticalGuides(equalSplitGuides(colsRef.current))
     setHorizontalGuides(equalSplitGuides(rowsRef.current))
     setActiveGuide(null)
     setNote('AI가 만든 스티커 시트(흰 배경 그리드)를 올리면 360×360 PNG로 나눕니다.')
   }
 
-  const runSlice = useCallback(async ({
-    source = sheetRef.current,
-    nextMode = modeRef.current,
-    nextCols = colsRef.current,
-    nextRows = rowsRef.current,
-    nextTransparent = transparentRef.current,
-    nextVertical = vGuidesRef.current,
-    nextHorizontal = hGuidesRef.current,
-  } = {}) => {
+  const runSlice = useCallback(async (patch = {}) => {
+    const source = patch.source ?? sheetRef.current
     if (!source) return
     const gen = sliceGen.current + 1
     sliceGen.current = gen
@@ -73,18 +93,22 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     try {
       await new Promise((resolve) => window.setTimeout(resolve, 16))
       const next = sliceSheet(source, {
-        mode: nextMode,
-        cols: nextCols,
-        rows: nextRows,
-        transparent: nextTransparent,
-        verticalGuides: nextVertical,
-        horizontalGuides: nextHorizontal,
+        mode: patch.nextMode ?? modeRef.current,
+        cols: patch.nextCols ?? colsRef.current,
+        rows: patch.nextRows ?? rowsRef.current,
+        transparent: patch.nextTransparent ?? transparentRef.current,
+        verticalGuides: patch.nextVertical ?? vGuidesRef.current,
+        horizontalGuides: patch.nextHorizontal ?? hGuidesRef.current,
+        bounds: patch.nextBounds ?? boundsRef.current,
+        textMode: patch.nextTextMode ?? textModeRef.current,
+        customColor: patch.nextCustomColor ?? customColorRef.current,
+        outline: patch.nextOutline ?? outlineRef.current,
       })
       if (gen !== sliceGen.current) return
       setSlices(next)
       setNote(next.length
-        ? `${next.length}개로 나눴습니다. 카카오 규격 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} PNG입니다.`
-        : '객체를 찾지 못했습니다. 모드 B에서 절단선을 드래그해 칸을 맞춰 보세요.')
+        ? `${next.length}개로 나눴습니다. 카카오 규격 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · 슈퍼샘플링 PNG입니다.`
+        : '객체를 찾지 못했습니다. 외곽 재단선과 모드 B 절단선을 맞춰 보세요.')
     } catch (error) {
       if (gen !== sliceGen.current) return
       setNote(error.message || '분할에 실패했습니다.')
@@ -106,13 +130,16 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       sheetRef.current = canvas
       setFileName(file.name)
       setSheetUrl(canvas.toDataURL('image/png'))
+      const nextBounds = DEFAULT_CROP_BOUNDS
       const nextV = equalSplitGuides(colsRef.current)
       const nextH = equalSplitGuides(rowsRef.current)
+      setBounds(nextBounds)
       setVerticalGuides(nextV)
       setHorizontalGuides(nextH)
+      boundsRef.current = nextBounds
       vGuidesRef.current = nextV
       hGuidesRef.current = nextH
-      await runSlice({ source: canvas, nextVertical: nextV, nextHorizontal: nextH })
+      await runSlice({ source: canvas, nextBounds, nextVertical: nextV, nextHorizontal: nextH })
     } catch (error) {
       setNote(error.message || '시트를 읽지 못했습니다.')
       setBusy(false)
@@ -120,65 +147,129 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   }
 
   const reSlice = (patch = {}) => {
-    const nextMode = patch.mode ?? mode
-    const nextCols = patch.cols ?? cols
-    const nextRows = patch.rows ?? rows
-    const nextTransparent = patch.transparent ?? transparent
-    let nextVertical = vGuidesRef.current
-    let nextHorizontal = hGuidesRef.current
+    const crop = boundsRef.current
     if (patch.mode) setMode(patch.mode)
     if (patch.cols != null) {
       setCols(patch.cols)
-      nextVertical = equalSplitGuides(patch.cols)
+      const nextVertical = equalSplitGuides(patch.cols, crop.left, crop.right)
       setVerticalGuides(nextVertical)
       vGuidesRef.current = nextVertical
+      patch.nextVertical = nextVertical
+      patch.nextCols = patch.cols
     }
     if (patch.rows != null) {
       setRows(patch.rows)
-      nextHorizontal = equalSplitGuides(patch.rows)
+      const nextHorizontal = equalSplitGuides(patch.rows, crop.top, crop.bottom)
       setHorizontalGuides(nextHorizontal)
       hGuidesRef.current = nextHorizontal
+      patch.nextHorizontal = nextHorizontal
+      patch.nextRows = patch.rows
     }
     if (patch.transparent != null) setTransparent(patch.transparent)
-    if (sheetRef.current) {
-      runSlice({
-        nextMode,
-        nextCols,
-        nextRows,
-        nextTransparent,
-        nextVertical,
-        nextHorizontal,
-      })
-    }
+    if (patch.textMode) setTextMode(patch.textMode)
+    if (patch.customColor) setCustomColor(patch.customColor)
+    if (patch.outline != null) setOutline(patch.outline)
+    if (sheetRef.current) runSlice(patch)
   }
 
-  const startGuideDrag = (axis, index, event) => {
+  const commitGuides = () => {
+    const crop = boundsRef.current
+    const v = vGuidesRef.current.filter((item) => item > crop.left + 0.01 && item < crop.right - 0.01)
+    const h = hGuidesRef.current.filter((item) => item > crop.top + 0.01 && item < crop.bottom - 0.01)
+    if (v.length !== vGuidesRef.current.length) {
+      setVerticalGuides(v)
+      vGuidesRef.current = v
+    }
+    if (h.length !== hGuidesRef.current.length) {
+      setHorizontalGuides(h)
+      hGuidesRef.current = h
+    }
+    setCols(vGuidesRef.current.length + 1)
+    setRows(hGuidesRef.current.length + 1)
+    colsRef.current = vGuidesRef.current.length + 1
+    rowsRef.current = hGuidesRef.current.length + 1
+    if (sheetRef.current) runSlice({ nextMode: modeRef.current })
+  }
+
+  const addLine = (axis) => {
+    const crop = boundsRef.current
+    if (axis === 'v') {
+      const next = insertGuide(vGuidesRef.current, crop.left, crop.right)
+      setVerticalGuides(next)
+      vGuidesRef.current = next
+      setCols(next.length + 1)
+    } else {
+      const next = insertGuide(hGuidesRef.current, crop.top, crop.bottom)
+      setHorizontalGuides(next)
+      hGuidesRef.current = next
+      setRows(next.length + 1)
+    }
+    commitGuides()
+  }
+
+  const deleteLine = (axis, index, event) => {
+    event?.preventDefault()
+    event?.stopPropagation()
+    if (axis === 'v') {
+      if (vGuidesRef.current.length <= 1) return
+      const next = removeGuide(vGuidesRef.current, index)
+      setVerticalGuides(next)
+      vGuidesRef.current = next
+    } else {
+      if (hGuidesRef.current.length <= 1) return
+      const next = removeGuide(hGuidesRef.current, index)
+      setHorizontalGuides(next)
+      hGuidesRef.current = next
+    }
+    commitGuides()
+  }
+
+  const ratioFromEvent = (axis, event) => {
+    const stage = stageRef.current
+    if (!stage) return 0
+    const rect = stage.getBoundingClientRect()
+    return axis === 'v' || axis === 'left' || axis === 'right'
+      ? (event.clientX - rect.left) / Math.max(1, rect.width)
+      : (event.clientY - rect.top) / Math.max(1, rect.height)
+  }
+
+  const startGuideDrag = (kind, key, event) => {
+    if (event.target?.closest?.('.emo-guide-del')) return
     event.preventDefault()
     event.stopPropagation()
     const pointerId = event.pointerId
-    dragRef.current = { axis, index, pointerId }
-    setActiveGuide({ axis, index })
+    dragRef.current = { kind, key, pointerId }
+    setActiveGuide({ kind, key })
     const onMove = (moveEvent) => {
       if (moveEvent.pointerId !== pointerId) return
-      const stage = stageRef.current
-      if (!stage) return
-      const rect = stage.getBoundingClientRect()
-      const ratio = axis === 'v'
-        ? (moveEvent.clientX - rect.left) / Math.max(1, rect.width)
-        : (moveEvent.clientY - rect.top) / Math.max(1, rect.height)
-      if (axis === 'v') {
+      const ratio = ratioFromEvent(kind === 'bound' ? key : kind, moveEvent)
+      const crop = boundsRef.current
+      if (kind === 'v') {
         setVerticalGuides((prev) => {
-          const next = moveGuide(prev, index, ratio)
+          const next = moveGuide(prev, key, ratio, 0.028, crop.left, crop.right)
           vGuidesRef.current = next
           return next
         })
-      } else {
+        return
+      }
+      if (kind === 'h') {
         setHorizontalGuides((prev) => {
-          const next = moveGuide(prev, index, ratio)
+          const next = moveGuide(prev, key, ratio, 0.028, crop.top, crop.bottom)
           hGuidesRef.current = next
           return next
         })
+        return
       }
+      setBounds((prev) => {
+        const crop = { ...prev }
+        if (key === 'left') crop.left = ratio
+        if (key === 'right') crop.right = ratio
+        if (key === 'top') crop.top = ratio
+        if (key === 'bottom') crop.bottom = ratio
+        const next = normalizeBounds(crop)
+        boundsRef.current = next
+        return next
+      })
     }
     const onUp = (upEvent) => {
       if (upEvent.pointerId !== pointerId) return
@@ -187,13 +278,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       window.removeEventListener('pointercancel', onUp)
       dragRef.current = null
       setActiveGuide(null)
-      if (sheetRef.current) {
-        runSlice({
-          nextMode: 'grid',
-          nextVertical: vGuidesRef.current,
-          nextHorizontal: hGuidesRef.current,
-        })
-      }
+      commitGuides()
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -234,7 +319,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       <div className="studio-modal-card emo-split-card">
         <div className="studio-modal-head">
           <div>
-            <p className="studio-modal-kicker">Kakao 360×360 PNG</p>
+            <p className="studio-modal-kicker">Kakao 360×360 PNG · Super-sample</p>
             <h2 id="emo-split-title">🧩 이모티콘 시트 분할기</h2>
           </div>
           <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기">
@@ -242,6 +327,39 @@ export default function EmoticonSplitterModal({ open, onClose }) {
           </button>
         </div>
         <p className="emo-split-note">{busy ? '처리 중…' : note}</p>
+
+        <div className="emo-enhance-bar">
+          <p className="emo-enhance-kicker">텍스트 가독성 보정</p>
+          <div className="emo-enhance-modes">
+            {TEXT_MODES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={clsx('emo-enhance-btn', textMode === item.id && 'is-on')}
+                onClick={() => reSlice({ textMode: item.id, nextTextMode: item.id })}
+              >
+                {item.label}
+              </button>
+            ))}
+            {textMode === 'custom' ? (
+              <label className="emo-color-pick">
+                <input
+                  type="color"
+                  value={customColor}
+                  onChange={(event) => reSlice({ customColor: event.target.value, nextCustomColor: event.target.value })}
+                />
+              </label>
+            ) : null}
+          </div>
+          <label className="emo-check emo-check-inline">
+            <input
+              type="checkbox"
+              checked={outline}
+              onChange={(event) => reSlice({ outline: event.target.checked, nextOutline: event.target.checked })}
+            />
+            1px 외곽선 보강 (Outline Assist)
+          </label>
+        </div>
 
         <div
           className={clsx('emo-drop', dragOver && 'is-over')}
@@ -288,7 +406,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
             type="button"
             className={clsx('emo-mode', mode === 'smart' && 'is-on')}
             disabled={busy}
-            onClick={() => reSlice({ mode: 'smart' })}
+            onClick={() => reSlice({ mode: 'smart', nextMode: 'smart' })}
             {...magnify('스마트 자동 감지', '배경을 빼고 각 이모티콘 외곽 상자를 찾아 자릅니다')}
           >
             모드 A · 스마트 자동 감지
@@ -297,8 +415,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
             type="button"
             className={clsx('emo-mode', mode === 'grid' && 'is-on')}
             disabled={busy}
-            onClick={() => reSlice({ mode: 'grid' })}
-            {...magnify('그리드 분할', '열·행 슬라이더로 균등 배치한 뒤, 미리보기에서 절단선을 드래그해 칸을 맞춥니다')}
+            onClick={() => reSlice({ mode: 'grid', nextMode: 'grid' })}
+            {...magnify('그리드 분할', '1px 절단선과 외곽 재단선을 드래그해 칸을 맞춥니다')}
           >
             모드 B · 그리드 분할
           </button>
@@ -307,26 +425,32 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         {mode === 'grid' ? (
           <div className="emo-grid-ctrls">
             <label>
-              가로 {cols}열
-              <input type="range" min="2" max="10" value={cols} disabled={busy} onChange={(event) => reSlice({ cols: Number(event.target.value) })} />
+              가로 {verticalGuides.length + 1}열
+              <input type="range" min="2" max="12" value={Math.min(12, Math.max(2, verticalGuides.length + 1))} disabled={busy} onChange={(event) => reSlice({ cols: Number(event.target.value) })} />
             </label>
             <label>
-              세로 {rows}행
-              <input type="range" min="2" max="10" value={rows} disabled={busy} onChange={(event) => reSlice({ rows: Number(event.target.value) })} />
+              세로 {horizontalGuides.length + 1}행
+              <input type="range" min="2" max="12" value={Math.min(12, Math.max(2, horizontalGuides.length + 1))} disabled={busy} onChange={(event) => reSlice({ rows: Number(event.target.value) })} />
             </label>
-            <span className="emo-grid-total">{cols * rows}칸</span>
+            <span className="emo-grid-total">{cellCount}칸</span>
           </div>
         ) : null}
 
         {mode === 'grid' ? (
-          <p className="emo-guide-hint">시안(세로)·마젠타(가로) 실선과 가운데 핀을 드래그하면 그 선만 미세 조정됩니다. 슬라이더는 균등 분할로 다시 맞춥니다. 내보내기는 360×360 샤프닝이 자동 적용됩니다.</p>
-        ) : null}
+          <div className="emo-line-actions">
+            <button type="button" className="mini-btn" disabled={busy || verticalGuides.length >= 11} onClick={() => addLine('v')}>+ 세로선 추가</button>
+            <button type="button" className="mini-btn" disabled={busy || horizontalGuides.length >= 11} onClick={() => addLine('h')}>+ 가로선 추가</button>
+            <p className="emo-guide-hint">금색 외곽선으로 여백을 자르고, 시안/마젠타 1px 선을 드래그하세요. ✖ 또는 우클릭으로 선을 지웁니다.</p>
+          </div>
+        ) : (
+          <p className="emo-guide-hint">금색 외곽 재단선을 드래그하면 시트 여백을 잘라 모드 A 감지 범위가 좁아집니다.</p>
+        )}
 
         <label className="emo-check">
           <input
             type="checkbox"
             checked={transparent}
-            onChange={(event) => reSlice({ transparent: event.target.checked })}
+            onChange={(event) => reSlice({ transparent: event.target.checked, nextTransparent: event.target.checked })}
           />
           배경 투명화 (Alpha PNG)
         </label>
@@ -335,37 +459,54 @@ export default function EmoticonSplitterModal({ open, onClose }) {
           <div className="emo-slicer-wrap">
             <div
               ref={stageRef}
-              className={clsx('emo-slicer-stage', mode === 'grid' && 'is-grid')}
+              className={clsx('emo-slicer-stage', 'is-grid')}
               data-emo-slicer="mode-b"
             >
               <img src={sheetUrl} alt="업로드한 이모티콘 시트" className="emo-sheet-preview" draggable={false} />
+              {['left', 'right', 'top', 'bottom'].map((edge) => (
+                <div
+                  key={edge}
+                  className={clsx(
+                    'emo-guide is-bound',
+                    `is-${edge === 'left' || edge === 'right' ? 'v' : 'h'}`,
+                    `is-${edge}`,
+                    activeGuide?.kind === 'bound' && activeGuide.key === edge && 'is-on',
+                  )}
+                  style={edge === 'left' || edge === 'right'
+                    ? { left: `${bounds[edge] * 100}%` }
+                    : { top: `${bounds[edge] * 100}%` }}
+                  role="slider"
+                  aria-label={`외곽 재단선 ${edge}`}
+                  onPointerDown={(event) => startGuideDrag('bound', edge, event)}
+                />
+              ))}
               {mode === 'grid' ? (
                 <>
                   {verticalGuides.map((ratio, index) => (
                     <div
                       key={`v-${index}`}
-                      className={clsx('emo-guide is-v', activeGuide?.axis === 'v' && activeGuide.index === index && 'is-on')}
+                      className={clsx('emo-guide is-v', activeGuide?.kind === 'v' && activeGuide.key === index && 'is-on')}
                       style={{ left: `${ratio * 100}%` }}
                       role="slider"
                       aria-label={`세로 절단선 ${index + 1}`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(ratio * 100)}
                       onPointerDown={(event) => startGuideDrag('v', index, event)}
-                    />
+                      onContextMenu={(event) => deleteLine('v', index, event)}
+                    >
+                      <button type="button" className="emo-guide-del" aria-label="세로선 삭제" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={(event) => deleteLine('v', index, event)}>✖</button>
+                    </div>
                   ))}
                   {horizontalGuides.map((ratio, index) => (
                     <div
                       key={`h-${index}`}
-                      className={clsx('emo-guide is-h', activeGuide?.axis === 'h' && activeGuide.index === index && 'is-on')}
+                      className={clsx('emo-guide is-h', activeGuide?.kind === 'h' && activeGuide.key === index && 'is-on')}
                       style={{ top: `${ratio * 100}%` }}
                       role="slider"
                       aria-label={`가로 절단선 ${index + 1}`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(ratio * 100)}
                       onPointerDown={(event) => startGuideDrag('h', index, event)}
-                    />
+                      onContextMenu={(event) => deleteLine('h', index, event)}
+                    >
+                      <button type="button" className="emo-guide-del is-h-del" aria-label="가로선 삭제" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={(event) => deleteLine('h', index, event)}>✖</button>
+                    </div>
                   ))}
                 </>
               ) : null}

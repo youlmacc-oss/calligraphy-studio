@@ -1375,7 +1375,7 @@ export default function App() {
               className={clsx('tool-btn', emoSplitOpen && 'is-on')}
               onClick={() => setEmoSplitOpen(true)}
               data-tour="emo-split"
-              {...magnify('이모티콘 시트 분할기', 'AI가 만든 스티커 시트를 360×360 PNG와 ZIP으로 나눕니다')}
+              {...magnify('이모티콘 시트 분할기', '1px 절단선·외곽 재단·슈퍼샘플링으로 시트를 360×360 PNG와 ZIP으로 나눕니다')}
             >
               🧩 이모티콘 시트 분할기
             </button>

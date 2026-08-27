@@ -196,10 +196,12 @@ function analyzeSheet(source) {
   }
 }
 
-export function equalSplitGuides(count) {
+export function equalSplitGuides(count, start = 0, end = 1) {
   const n = Math.max(1, Math.min(12, Math.round(count) || 1))
   if (n <= 1) return []
-  return Array.from({ length: n - 1 }, (_, index) => (index + 1) / n)
+  const a = Number(start) || 0
+  const b = Number(end) || 1
+  return Array.from({ length: n - 1 }, (_, index) => a + (b - a) * ((index + 1) / n))
 }
 
 export function clampGuide(value, prev, next, minGap = 0.028) {
@@ -209,18 +211,58 @@ export function clampGuide(value, prev, next, minGap = 0.028) {
   return Math.max(lo, Math.min(hi, Number(value) || 0))
 }
 
-export function moveGuide(list, index, nextRatio, minGap = 0.028) {
+export function moveGuide(list, index, nextRatio, minGap = 0.028, start = 0, end = 1) {
   if (!Array.isArray(list) || index < 0 || index >= list.length) return list
-  const prev = index === 0 ? 0 : list[index - 1]
-  const next = index === list.length - 1 ? 1 : list[index + 1]
+  const prev = index === 0 ? start : list[index - 1]
+  const next = index === list.length - 1 ? end : list[index + 1]
   const copy = list.slice()
   copy[index] = clampGuide(nextRatio, prev, next, minGap)
   return copy
 }
 
-export function splitGuideBoxes(width, height, verticalGuides = [], horizontalGuides = []) {
-  const xs = [0, ...[...verticalGuides].map((item) => Number(item)).filter((item) => Number.isFinite(item)).sort((a, b) => a - b), 1]
-  const ys = [0, ...[...horizontalGuides].map((item) => Number(item)).filter((item) => Number.isFinite(item)).sort((a, b) => a - b), 1]
+export const DEFAULT_CROP_BOUNDS = { left: 0, top: 0, right: 1, bottom: 1 }
+
+export function normalizeBounds(bounds = DEFAULT_CROP_BOUNDS, minGap = 0.05) {
+  const next = { ...DEFAULT_CROP_BOUNDS, ...bounds }
+  next.left = Math.max(0, Math.min(1 - minGap, Number(next.left) || 0))
+  next.right = Math.min(1, Math.max(next.left + minGap, Number(next.right) || 1))
+  next.top = Math.max(0, Math.min(1 - minGap, Number(next.top) || 0))
+  next.bottom = Math.min(1, Math.max(next.top + minGap, Number(next.bottom) || 1))
+  return next
+}
+
+export function insertGuide(list, start = 0, end = 1, maxLines = 11) {
+  const items = Array.isArray(list) ? list.slice() : []
+  if (items.length >= maxLines) return items
+  const edges = [start, ...items, end]
+  let best = 0
+  let gap = 0
+  for (let i = 0; i < edges.length - 1; i += 1) {
+    const size = edges[i + 1] - edges[i]
+    if (size > gap) {
+      gap = size
+      best = i
+    }
+  }
+  items.splice(best, 0, (edges[best] + edges[best + 1]) / 2)
+  return items
+}
+
+export function removeGuide(list, index) {
+  if (!Array.isArray(list) || index < 0 || index >= list.length) return list
+  return list.filter((_, i) => i !== index)
+}
+
+export function splitGuideBoxes(width, height, verticalGuides = [], horizontalGuides = [], bounds = DEFAULT_CROP_BOUNDS) {
+  const b = normalizeBounds(bounds)
+  const xs = [b.left, ...[...verticalGuides]
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > b.left + 0.008 && item < b.right - 0.008)
+    .sort((a, c) => a - c), b.right]
+  const ys = [b.top, ...[...horizontalGuides]
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item) && item > b.top + 0.008 && item < b.bottom - 0.008)
+    .sort((a, c) => a - c), b.bottom]
   const boxes = []
   for (let row = 0; row < ys.length - 1; row += 1) {
     for (let col = 0; col < xs.length - 1; col += 1) {
@@ -239,16 +281,144 @@ export function splitGuideBoxes(width, height, verticalGuides = [], horizontalGu
   return boxes
 }
 
-export function splitGridBoxes(width, height, cols, rows, verticalGuides, horizontalGuides) {
+export function splitGridBoxes(width, height, cols, rows, verticalGuides, horizontalGuides, bounds) {
   const safeCols = Math.max(1, Math.min(12, Math.round(cols) || 1))
   const safeRows = Math.max(1, Math.min(12, Math.round(rows) || 1))
-  const v = Array.isArray(verticalGuides) && verticalGuides.length === safeCols - 1
-    ? verticalGuides
-    : equalSplitGuides(safeCols)
-  const h = Array.isArray(horizontalGuides) && horizontalGuides.length === safeRows - 1
-    ? horizontalGuides
-    : equalSplitGuides(safeRows)
-  return splitGuideBoxes(width, height, v, h)
+  const v = Array.isArray(verticalGuides) ? verticalGuides : equalSplitGuides(safeCols)
+  const h = Array.isArray(horizontalGuides) ? horizontalGuides : equalSplitGuides(safeRows)
+  return splitGuideBoxes(width, height, v, h, bounds)
+}
+
+function parseHexColor(hex, fallback = [10, 10, 12]) {
+  const raw = String(hex || '').replace('#', '')
+  if (raw.length !== 6) return fallback
+  const r = Number.parseInt(raw.slice(0, 2), 16)
+  const g = Number.parseInt(raw.slice(2, 4), 16)
+  const b = Number.parseInt(raw.slice(4, 6), 16)
+  if ([r, g, b].some((item) => Number.isNaN(item))) return fallback
+  return [r, g, b]
+}
+
+function downsampleStepped(source, destW, destH) {
+  let cur = source
+  let w = source.width
+  let h = source.height
+  while (w > destW * 1.7 || h > destH * 1.7) {
+    const nextW = Math.max(destW, Math.round(w * 0.5))
+    const nextH = Math.max(destH, Math.round(h * 0.5))
+    const tmp = document.createElement('canvas')
+    tmp.width = nextW
+    tmp.height = nextH
+    const ctx = tmp.getContext('2d')
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(cur, 0, 0, nextW, nextH)
+    cur = tmp
+    w = nextW
+    h = nextH
+  }
+  if (w === destW && h === destH) return cur
+  const out = document.createElement('canvas')
+  out.width = destW
+  out.height = destH
+  const ctx = out.getContext('2d')
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(cur, 0, 0, destW, destH)
+  return out
+}
+
+export function applyTextTone(imageData, mode = 'original', customHex = '#111111') {
+  if (!imageData?.data || mode === 'original') return imageData
+  const { data } = imageData
+  const [tr, tg, tb] = parseHexColor(customHex)
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 12) continue
+    const luma = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255
+    let r = data[i]
+    let g = data[i + 1]
+    let b = data[i + 2]
+    if (mode === 'black') {
+      const t = 0.78 * (1 - luma)
+      r = r * (1 - t)
+      g = g * (1 - t)
+      b = b * (1 - t)
+    } else if (mode === 'white') {
+      const t = 0.72
+      r = r + (255 - r) * t
+      g = g + (255 - g) * t
+      b = b + (255 - b) * t
+    } else if (mode === 'custom') {
+      const t = 0.82 * (1 - luma)
+      r = r + (tr - r) * t
+      g = g + (tg - g) * t
+      b = b + (tb - b) * t
+    }
+    data[i] = Math.max(0, Math.min(255, Math.round(r)))
+    data[i + 1] = Math.max(0, Math.min(255, Math.round(g)))
+    data[i + 2] = Math.max(0, Math.min(255, Math.round(b)))
+  }
+  return imageData
+}
+
+export function applyOutlineAssist(imageData, hex = '#111111') {
+  if (!imageData?.data) return imageData
+  const { data, width, height } = imageData
+  const src = new Uint8ClampedArray(data)
+  const [sr, sg, sb] = parseHexColor(hex, [12, 12, 14])
+  const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4
+      if (src[i + 3] >= 18) continue
+      const hit = n.some(([dx, dy]) => {
+        const nx = x + dx
+        const ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false
+        return src[(ny * width + nx) * 4 + 3] > 90
+      })
+      if (!hit) continue
+      data[i] = sr
+      data[i + 1] = sg
+      data[i + 2] = sb
+      data[i + 3] = 220
+    }
+  }
+  return imageData
+}
+
+export function enhanceSliceImageData(imageData, { amount = 0.42, contrast = 1.07 } = {}) {
+  if (!imageData?.data) return imageData
+  const { data, width, height } = imageData
+  const src = new Uint8ClampedArray(data)
+  const mid = 128
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4
+      if (src[i + 3] < 10) continue
+      for (let channel = 0; channel < 3; channel += 1) {
+        let sum = 0
+        let count = 0
+        for (let oy = -1; oy <= 1; oy += 1) {
+          for (let ox = -1; ox <= 1; ox += 1) {
+            const nx = Math.max(0, Math.min(width - 1, x + ox))
+            const ny = Math.max(0, Math.min(height - 1, y + oy))
+            sum += src[(ny * width + nx) * 4 + channel]
+            count += 1
+          }
+        }
+        const value = src[i + channel]
+        const blur = sum / count
+        const diff = value - blur
+        const edge = Math.min(1, Math.abs(diff) / 36)
+        const adaptive = amount * (0.45 + edge * 0.85)
+        const sharp = value + diff * adaptive
+        const contrasted = (sharp - mid) * contrast + mid
+        data[i + channel] = Math.max(0, Math.min(255, Math.round(contrasted)))
+      }
+    }
+  }
+  return imageData
 }
 
 export function fitToKakaoCanvas(source, box, {
@@ -256,6 +426,9 @@ export function fitToKakaoCanvas(source, box, {
   pad = KAKAO_SAFE_PAD,
   transparent = true,
   background,
+  textMode = 'original',
+  customColor = '#111111',
+  outline = false,
 } = {}) {
   const sx = Math.max(0, Math.floor(box.x))
   const sy = Math.max(0, Math.floor(box.y))
@@ -287,48 +460,36 @@ export function fitToKakaoCanvas(source, box, {
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
-  if (transparent) {
-    ctx.clearRect(0, 0, size, size)
-  } else {
+  if (transparent) ctx.clearRect(0, 0, size, size)
+  else {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, size, size)
   }
   const inner = size * (1 - pad * 2)
   const scale = Math.min(inner / dwSrc, inner / dhSrc)
-  const dw = dwSrc * scale
-  const dh = dhSrc * scale
+  const dw = Math.max(1, Math.round(dwSrc * scale))
+  const dh = Math.max(1, Math.round(dhSrc * scale))
+  const factor = 3
+  const hi = document.createElement('canvas')
+  hi.width = Math.max(2, dw * factor)
+  hi.height = Math.max(2, dh * factor)
+  const hiCtx = hi.getContext('2d')
+  hiCtx.imageSmoothingEnabled = true
+  hiCtx.imageSmoothingQuality = 'high'
+  hiCtx.drawImage(crop, dx, dy, dwSrc, dhSrc, 0, 0, hi.width, hi.height)
+  const scaled = downsampleStepped(hi, dw, dh)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(crop, dx, dy, dwSrc, dhSrc, (size - dw) / 2, (size - dh) / 2, dw, dh)
+  ctx.drawImage(scaled, Math.round((size - dw) / 2), Math.round((size - dh) / 2))
   const enhanced = ctx.getImageData(0, 0, size, size)
   enhanceSliceImageData(enhanced)
+  applyTextTone(enhanced, textMode, customColor)
+  if (outline) {
+    const stroke = textMode === 'white' ? '#ffffff' : textMode === 'custom' ? customColor : '#111111'
+    applyOutlineAssist(enhanced, stroke)
+  }
   ctx.putImageData(enhanced, 0, 0)
   return canvas
-}
-
-export function enhanceSliceImageData(imageData, { amount = 0.22, contrast = 1.08 } = {}) {
-  if (!imageData?.data) return imageData
-  const { data, width, height } = imageData
-  const src = new Uint8ClampedArray(data)
-  const mid = 128
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = (y * width + x) * 4
-      if (src[i + 3] < 10) continue
-      const left = x > 0 ? i - 4 : i
-      const right = x < width - 1 ? i + 4 : i
-      const up = y > 0 ? i - width * 4 : i
-      const down = y < height - 1 ? i + width * 4 : i
-      for (let channel = 0; channel < 3; channel += 1) {
-        const value = src[i + channel]
-        const lap = value * 4 - src[left + channel] - src[right + channel] - src[up + channel] - src[down + channel]
-        const sharp = value + lap * amount
-        const contrasted = (sharp - mid) * contrast + mid
-        data[i + channel] = Math.max(0, Math.min(255, Math.round(contrasted)))
-      }
-    }
-  }
-  return imageData
 }
 
 export async function fileToSheetCanvas(file) {
@@ -343,11 +504,22 @@ export function sliceSheet(source, {
   transparent = true,
   verticalGuides,
   horizontalGuides,
+  bounds,
+  textMode = 'original',
+  customColor = '#111111',
+  outline = false,
 } = {}) {
   const analyzed = analyzeSheet(source)
   const bg = sampleBackground(analyzed.data.data, analyzed.data.width, analyzed.data.height)
-  const boxes = mode === 'grid'
-    ? splitGridBoxes(source.width, source.height, cols, rows, verticalGuides, horizontalGuides)
+  const crop = normalizeBounds(bounds)
+  const frame = {
+    x: crop.left * source.width,
+    y: crop.top * source.height,
+    w: (crop.right - crop.left) * source.width,
+    h: (crop.bottom - crop.top) * source.height,
+  }
+  const raw = mode === 'grid'
+    ? splitGridBoxes(source.width, source.height, cols, rows, verticalGuides, horizontalGuides, crop)
     : findContentBoxes(analyzed.data).map((box) => ({
       x: box.x / analyzed.scale,
       y: box.y / analyzed.scale,
@@ -355,8 +527,24 @@ export function sliceSheet(source, {
       h: box.h / analyzed.scale,
       count: box.count,
     }))
+  const boxes = mode === 'grid'
+    ? raw
+    : raw.map((box) => {
+      const x = Math.max(box.x, frame.x)
+      const y = Math.max(box.y, frame.y)
+      const r = Math.min(box.x + box.w, frame.x + frame.w)
+      const b = Math.min(box.y + box.h, frame.y + frame.h)
+      if (r - x < 4 || b - y < 4) return null
+      return { ...box, x, y, w: r - x, h: b - y }
+    }).filter(Boolean)
   return boxes.map((box, index) => {
-    const canvas = fitToKakaoCanvas(source, box, { transparent, background: bg })
+    const canvas = fitToKakaoCanvas(source, box, {
+      transparent,
+      background: bg,
+      textMode,
+      customColor,
+      outline,
+    })
     return {
       id: `emo-${index + 1}`,
       index,

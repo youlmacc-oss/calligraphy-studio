@@ -1981,6 +1981,77 @@ body {
   color: #cbd5e1;
 }
 
+.emo-enhance-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+  margin: 0 0 0.85rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.emo-enhance-kicker {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fde68a;
+}
+
+.emo-enhance-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.emo-enhance-btn {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  border-radius: 999px;
+  padding: 0.28rem 0.62rem;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.emo-enhance-btn.is-on {
+  border-color: rgba(250, 204, 21, 0.7);
+  background: rgba(250, 204, 21, 0.18);
+  color: #fef9c3;
+}
+
+.emo-color-pick {
+  display: inline-flex;
+  align-items: center;
+}
+
+.emo-color-pick input {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.emo-check-inline {
+  margin-top: 0;
+  font-size: 12px;
+}
+
+.emo-line-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  margin-top: 0.55rem;
+}
+
 .emo-drop {
   display: flex;
   flex-wrap: wrap;
@@ -2091,7 +2162,7 @@ body {
   position: relative;
   display: inline-block;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
   vertical-align: top;
   border-radius: 0.85rem;
   border: 1px solid rgba(34, 211, 238, 0.22);
@@ -2111,12 +2182,17 @@ body {
   height: auto;
   max-height: min(48vh, 420px);
   pointer-events: none;
+  border-radius: 0.85rem;
 }
 
 .emo-guide {
   position: absolute;
   z-index: 4;
   pointer-events: auto;
+}
+
+.emo-guide.is-bound {
+  z-index: 5;
 }
 
 .emo-guide.is-v {
@@ -2141,14 +2217,11 @@ body {
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 2px;
-  margin-left: -1px;
+  width: 1px;
+  margin-left: 0;
   background: #00f2fe;
   border: 0;
-  box-shadow:
-    0 0 0 1px #041014,
-    0 0 2px #000,
-    0 0 6px rgba(0, 242, 254, 0.85);
+  box-shadow: 0 0 1px #000, 0 0 4px #00f2fe;
 }
 
 .emo-guide.is-h::before {
@@ -2157,14 +2230,21 @@ body {
   left: 0;
   right: 0;
   top: 50%;
-  height: 2px;
-  margin-top: -1px;
+  height: 1px;
+  margin-top: 0;
   background: #ff007f;
   border: 0;
-  box-shadow:
-    0 0 0 1px #1a0010,
-    0 0 2px #000,
-    0 0 6px rgba(255, 0, 127, 0.9);
+  box-shadow: 0 0 1px #000, 0 0 4px #00f2fe;
+}
+
+.emo-guide.is-bound.is-v::before {
+  background: #facc15;
+  box-shadow: 0 0 1px #000, 0 0 4px #facc15;
+}
+
+.emo-guide.is-bound.is-h::before {
+  background: #facc15;
+  box-shadow: 0 0 1px #000, 0 0 4px #facc15;
 }
 
 .emo-guide.is-v::after,
@@ -2194,34 +2274,77 @@ body {
   box-shadow: 0 0 8px rgba(255, 0, 127, 0.95), 0 0 2px #000;
 }
 
+.emo-guide.is-bound.is-v::after,
+.emo-guide.is-bound.is-h::after {
+  background: #facc15;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.95), 0 0 2px #000;
+}
+
 .emo-guide:hover,
 .emo-guide.is-on {
-  background: rgba(0, 242, 254, 0.12);
+  background: rgba(0, 242, 254, 0.08);
 }
 
 .emo-guide.is-h:hover,
 .emo-guide.is-h.is-on {
-  background: rgba(255, 0, 127, 0.14);
+  background: rgba(255, 0, 127, 0.1);
+}
+
+.emo-guide.is-bound:hover,
+.emo-guide.is-bound.is-on {
+  background: rgba(250, 204, 21, 0.1);
 }
 
 .emo-guide.is-v:hover::before,
-.emo-guide.is-v.is-on::before {
-  width: 4px;
-  margin-left: -2px;
-}
-
+.emo-guide.is-v.is-on::before,
 .emo-guide.is-h:hover::before,
 .emo-guide.is-h.is-on::before {
-  height: 4px;
-  margin-top: -2px;
+  box-shadow: 0 0 1px #000, 0 0 6px #00f2fe;
+}
+
+.emo-guide.is-bound:hover::before,
+.emo-guide.is-bound.is-on::before {
+  box-shadow: 0 0 1px #000, 0 0 6px #facc15;
 }
 
 .emo-guide:hover::after,
 .emo-guide.is-on::after {
-  width: 14px;
-  height: 14px;
-  margin: -8px 0 0 -8px;
   border-color: #fff;
+}
+
+.emo-guide-del {
+  position: absolute;
+  z-index: 7;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid #041014;
+  border-radius: 999px;
+  background: #0b1220;
+  color: #fda4af;
+  font-size: 9px;
+  line-height: 14px;
+  cursor: pointer;
+  box-shadow: 0 0 1px #000, 0 0 4px #00f2fe;
+}
+
+.emo-guide.is-v .emo-guide-del {
+  top: 4px;
+  left: 50%;
+  margin-left: -8px;
+}
+
+.emo-guide.is-h .emo-guide-del,
+.emo-guide-del.is-h-del {
+  top: 50%;
+  left: 4px;
+  margin-top: -8px;
+  margin-left: 0;
+}
+
+.emo-guide-del:hover {
+  background: #7f1d1d;
+  color: #fff;
 }
 
 .emo-actions {
