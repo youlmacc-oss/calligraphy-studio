@@ -368,6 +368,22 @@ export async function checkZStack(ctx) {
   if (!(mainRank > subRank)) {
     return { status: 'error', detail: '메인 타이틀 페인트 랭크가 서브보다 앞에 있지 않습니다.' }
   }
+  if (typeof document !== 'undefined') {
+    const overlay = document.querySelector('.layer-guide-overlay')
+    const toggle = document.querySelector('.canvas-bg-toggle')
+    const canvas = document.querySelector('#main-canvas-area canvas')
+    if (overlay && toggle && canvas) {
+      const overlayZ = Number.parseInt(getComputedStyle(overlay).zIndex, 10)
+      const toggleZ = Number.parseInt(getComputedStyle(toggle).zIndex, 10)
+      const canvasZ = Number.parseInt(getComputedStyle(canvas).zIndex, 10)
+      if (!(canvasZ < overlayZ && overlayZ < toggleZ)) {
+        return {
+          status: 'warn',
+          detail: `가이드 오버레이 스택 canvas ${canvasZ} / overlay ${overlayZ} / toggle ${toggleZ}`,
+        }
+      }
+    }
+  }
   return {
     status: 'ok',
     detail: `${ids.length}개 레이어 · 서브 ${subRank.toFixed(2)} → 메인 ${mainRank.toFixed(2)} · 선택 박스 최상단 규칙이 유효합니다.`,

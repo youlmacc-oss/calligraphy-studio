@@ -117,6 +117,7 @@ export function studioFromParsed(parsed) {
   if (!layers.some((layer) => layer.role === 'sub')) {
     layers.splice(1, 0, createDefaultLayers()[1])
   }
+  const mainId = layers.find((item) => item.role === 'main')?.id ?? layers[0]?.id ?? null
   const exportScale = [1, 2, 4].includes(Number(parsed.exportScale)) ? Number(parsed.exportScale) : 1
   const previewBg = ['checker', 'dark', 'light'].includes(parsed.previewBg) ? parsed.previewBg : 'dark'
   return {
@@ -127,9 +128,7 @@ export function studioFromParsed(parsed) {
     exportScale,
     background: { ...base.background, ...(parsed.background ?? {}) },
     viewEdit: { ...base.viewEdit, ...(parsed.viewEdit ?? {}) },
-    activeLayerId: layers.some((item) => item.id === parsed.activeLayerId)
-      ? parsed.activeLayerId
-      : layers[0]?.id ?? null,
+    activeLayerId: mainId,
   }
 }
 

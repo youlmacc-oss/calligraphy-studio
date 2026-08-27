@@ -7,7 +7,7 @@ const EXPORT_SIZE = 1024
 const FONTS_BY_ID = Object.fromEntries(FONTS.map((item) => [item.id, item]))
 const PRESETS_BY_ID = Object.fromEntries(PRESETS.map((item) => [item.id, item]))
 const BOX_SAFETY_PAD = 14
-const ROTATE_PIN_GAP = 22
+export const ROTATE_PIN_GAP = 22
 
 let metricsCanvas
 let bboxProbe

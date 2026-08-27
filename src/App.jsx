@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Copy,
@@ -26,6 +26,7 @@ import EmoticonSplitterModal from './components/EmoticonSplitterModal.jsx'
 import MotionGifStudioModal from './components/MotionGifStudio/MotionGifStudioModal.jsx'
 import GuidebookModal from './components/GuidebookModal.jsx'
 import LayerEditCard from './components/LayerEditCard.jsx'
+import LayerGuideOverlay from './components/LayerGuideOverlay.jsx'
 import MenuMagnifierHUD, { magnify } from './components/MenuMagnifierHUD.jsx'
 import OnboardingTour from './components/OnboardingTour.jsx'
 import ProgressModal from './components/ProgressModal.jsx'
@@ -198,6 +199,7 @@ export default function App() {
   const [favoriteFonts, setFavoriteFonts] = useState(() => loadFavoriteFonts())
   const [customFonts, setCustomFonts] = useState([])
   const [snapGuide, setSnapGuide] = useState({ x: false, y: false })
+  const [canvasCss, setCanvasCss] = useState({ w: 0, h: 0 })
   const [leftCollapsed, setLeftCollapsed] = useState(() => loadPanelCollapse().left)
   const [rightCollapsed, setRightCollapsed] = useState(() => loadPanelCollapse().right)
   const [tourOpen, setTourOpen] = useState(false)
@@ -294,7 +296,7 @@ export default function App() {
       },
       gridOn: studio.gridOn,
       selectedId: studio.activeLayerId,
-      showOverlay: true,
+      showOverlay: false,
       exportW: aspect.w,
       exportH: aspect.h,
       previewBg: studio.previewBg || 'dark',
@@ -305,6 +307,13 @@ export default function App() {
     [liveLayers, font, preset, studio, aspect, cropMode, fontsById],
   )
   renderOptionsRef.current = renderOptions
+
+  const guideMeasure = useMemo(() => ({
+    fontsById,
+    preset,
+    stickerOn: studio.stickerOn,
+    presetsById: PRESETS_BY_ID,
+  }), [fontsById, preset, studio.stickerOn])
 
   const paintCanvas = useCallback((options) => {
     const canvas = canvasRef.current
@@ -454,17 +463,39 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useLayoutEffect(() => {
+    const node = canvasRef.current
+    if (!node) return
+    const w = Math.round(node.clientWidth || 0)
+    const h = Math.round(node.clientHeight || 0)
+    if (w > 0 && h > 0) setCanvasCss((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))
+  }, [studio.aspectId, leftCollapsed, rightCollapsed, leftPanelWidth, cropMode])
+
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       paintCanvas(renderOptions)
     })
-    return () => cancelAnimationFrame(frame)
+    const fontsReady = document.fonts?.ready?.then(() => {
+      if (canvasRef.current) paintCanvas(renderOptionsRef.current)
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      fontsReady?.catch?.(() => {})
+    }
   }, [paintCanvas, renderOptions])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
     const redraw = () => {
+      const node = canvasRef.current
+      if (node) {
+        const w = Math.round(node.clientWidth || 0)
+        const h = Math.round(node.clientHeight || 0)
+        if (w > 0 && h > 0) {
+          setCanvasCss((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))
+        }
+      }
       paintCanvas()
     }
     const observer = new ResizeObserver(redraw)
@@ -767,11 +798,16 @@ export default function App() {
       preset,
     })
     if (!hit) {
-      if (!studio.bgLocked) patchStudio({ activeLayerId: studio.layers[0]?.id }, false)
+      const mainId = studio.layers.find((item) => item.role === 'main')?.id ?? studio.layers[0]?.id
+      if (!studio.bgLocked && mainId) {
+        patchStudio({ activeLayerId: mainId }, false)
+        requestAnimationFrame(() => paintCanvas({ ...renderOptionsRef.current, selectedId: mainId }))
+      }
       return
     }
     event.currentTarget.setPointerCapture?.(event.pointerId)
     patchStudio({ activeLayerId: hit.layer.id }, false)
+    requestAnimationFrame(() => paintCanvas({ ...renderOptionsRef.current, selectedId: hit.layer.id }))
     if (studio.layerLocked && hit.handle === 'move') return
     dragRef.current = {
       handle: hit.handle,
@@ -1537,6 +1573,15 @@ export default function App() {
                 onPointerMove={onCanvasPointerMove}
                 onPointerUp={onCanvasPointerUp}
                 onPointerCancel={onCanvasPointerUp}
+              />
+              <LayerGuideOverlay
+                layer={activeLayer}
+                viewW={canvasCss.w}
+                viewH={canvasCss.h}
+                scale={canvasCss.w && canvasCss.h ? Math.min(canvasCss.w, canvasCss.h) / 512 : 1}
+                previewBg={studio.previewBg || 'dark'}
+                measureOptions={guideMeasure}
+                hidden={cropMode || studio.viewMode === 'mask' || !activeLayer}
               />
               {snapGuide.x ? <span className="snap-guide snap-guide-v" /> : null}
               {snapGuide.y ? <span className="snap-guide snap-guide-h" /> : null}
