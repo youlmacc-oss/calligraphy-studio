@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Download, Maximize2, Minus, Plus, RotateCcw, Upload, X } from 'lucide-react'
+import { Download, Maximize2, Minus, Plus, RotateCcw, Upload, X, Bug } from 'lucide-react'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { magnify } from './MenuMagnifierHUD.jsx'
@@ -35,6 +35,7 @@ import {
   sliceSheet,
   stepPreviewZoomPercent,
 } from '../lib/emoticonSplit.js'
+import { buildDiagnosticReport, copyDiagnosticLog } from '../utils/debugger.js'
 
 const TEXT_MODES = [
   { id: 'original', label: '원본 유지', hint: '하단 텍스트와 캐릭터 색을 모두 그대로 둡니다' },
@@ -84,6 +85,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [textZone, setTextZone] = useState(TEXT_ZONE_DEFAULT)
   const [sideWidth, setSideWidth] = useState(EMO_SIDE_DEFAULT)
   const [sideResizing, setSideResizing] = useState(false)
+  const [logCopied, setLogCopied] = useState(false)
   const vGuidesRef = useRef(verticalGuides)
   const hGuidesRef = useRef(horizontalGuides)
   const boundsRef = useRef(bounds)
@@ -208,8 +210,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       })
       if (gen !== sliceGen.current) return
       setSlices(next)
+      const suspects = next.filter((item) => item.diagnostics?.suspects?.length).length
       setNote(next.length
-        ? `${next.length}개로 나눴습니다. 카카오 규격 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · 하단 텍스트만 색 보정 · 슈퍼샘플링 PNG입니다.`
+        ? `${next.length}개로 나눴습니다. 카카오 규격 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · Crop→Flood T18→획치환${suspects ? ` · 진단 의심 ${suspects}칸` : ''}.`
         : '객체를 찾지 못했습니다. 외곽 재단선과 모드 B 절단선을 맞춰 보세요.')
     } catch (error) {
       if (gen !== sliceGen.current) return
@@ -545,6 +548,27 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     }
   }
 
+  const copySliceDiagnostics = async () => {
+    if (!slices.length) return
+    try {
+      const report = buildDiagnosticReport(slices, {
+        mode: modeRef.current,
+        textMode: textModeRef.current,
+        outline: outlineRef.current,
+        customScale: customScaleRef.current,
+        textZonePercent: textZoneRef.current,
+        transparent: transparentRef.current,
+        previewZoomPercent: Math.round(zoomRef.current * 100),
+      })
+      await copyDiagnosticLog(report)
+      setLogCopied(true)
+      window.setTimeout(() => setLogCopied(false), 1600)
+      setNote(`진단 로그 ${report.slices.length}칸을 클립보드에 복사했습니다. F12 콘솔 테이블도 확인하세요.`)
+    } catch (error) {
+      setNote(error.message || '진단 로그를 복사하지 못했습니다.')
+    }
+  }
+
   if (!open) return null
 
   return (
@@ -648,6 +672,15 @@ export default function EmoticonSplitterModal({ open, onClose }) {
             {...magnify('크기 비율 리셋', '렌더 배율을 100%로 되돌립니다')}
           >
             <RotateCcw className="h-3.5 w-3.5" /> 리셋
+          </button>
+          <button
+            type="button"
+            className="emo-debug-btn"
+            disabled={!slices.length || busy}
+            onClick={copySliceDiagnostics}
+            {...magnify('진단 로그', '슬라이스 좌표·알파·흰 패치·인접 행 침범을 JSON으로 복사하고 콘솔 테이블을 출력합니다')}
+          >
+            <Bug className="h-3.5 w-3.5" /> {logCopied ? '복사됨' : '🐞 진단 로그'}
           </button>
         </div>
 

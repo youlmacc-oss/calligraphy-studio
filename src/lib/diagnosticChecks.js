@@ -45,6 +45,7 @@ import {
   TEXT_ZONE_DEFAULT,
   textZoneStartY,
 } from './emoticonSplit.js'
+import { inspectRenderedSlice } from '../utils/debugger.js'
 import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
@@ -546,8 +547,8 @@ export async function checkEmoticonSlicer() {
   if (eyePx < 180) {
     return { status: 'error', detail: '플러드필이 캐릭터 내부 흰색을 지웠습니다.' }
   }
-  if (FLOOD_FILL_TOLERANCE !== 22) {
-    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 22).` }
+  if (FLOOD_FILL_TOLERANCE !== 18) {
+    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 18).` }
   }
   if (OUTLINE_DEFAULT !== true) {
     return { status: 'error', detail: 'Outline 외곽선 보강 기본값이 ON이 아닙니다.' }
@@ -702,6 +703,19 @@ export async function checkEmoticonSlicer() {
   if (outline.data[(5 * 40 + 18) * 4 + 3] > 20) {
     return { status: 'error', detail: '외곽선 보강이 상단 캐릭터 영역까지 번졌습니다.' }
   }
+  const inspected = inspectRenderedSlice({
+    canvas: kakao,
+    source: sheet,
+    box: grid[0],
+    index: 0,
+    name: 'kakao-360-01.png',
+    mode: 'grid',
+    textZonePercent: TEXT_ZONE_DEFAULT,
+    transparent: true,
+  })
+  if (!inspected?.cornerAlpha || typeof inspected.hasBoundingBoxArtifact !== 'boolean') {
+    return { status: 'error', detail: '슬라이스 진단 인스펙터가 4대 지표를 기록하지 못했습니다.' }
+  }
   const zip = new JSZip()
   const pngBlob = await canvasToPngBlob(kakao)
   if (!pngBlob || pngBlob.type !== 'image/png') {
@@ -712,7 +726,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 유클리드플러드필T${FLOOD_FILL_TOLERANCE} · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · 텍스트획가드 · 스케일50-150 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 파이프라인CropFloodT${FLOOD_FILL_TOLERANCE} · 진단인스펙터 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · Outline기본ON · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

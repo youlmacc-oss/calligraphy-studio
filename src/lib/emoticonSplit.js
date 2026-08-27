@@ -1,3 +1,5 @@
+import { inspectRenderedSlice } from '../utils/debugger.js'
+
 export const KAKAO_STICKER_SIZE = 360
 export const KAKAO_SAFE_PAD = 0.06
 export const KAKAO_FIT_RATIO = 0.88
@@ -13,6 +15,7 @@ export const PREVIEW_ZOOM_MAX = 200
 export const PREVIEW_ZOOM_STEP = 5
 export const PREVIEW_ZOOM_DEFAULT = 35
 export const OUTLINE_DEFAULT = true
+export const SLICE_PIPELINE = 'crop → flood-fill-alpha(T=18) → pixel-text-recolor'
 
 export function clampSliceScale(value) {
   const n = Math.round(Number(value))
@@ -175,37 +178,6 @@ export function findContentBoxes(imageData, { minArea = 80, threshold = 42 } = {
   boxes.sort((a, b) => a.y - b.y || a.x - b.x)
   const gap = Math.max(8, Math.round(Math.min(width, height) * 0.012))
   return mergeNearbyBoxes(boxes, gap).sort((a, b) => a.y - b.y || a.x - b.x)
-}
-
-function knockoutImageData(imageData, bg, threshold = 42) {
-  const { data, width, height } = imageData
-  if (!data || !width || !height) return imageData
-  const soft = threshold + 28
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (x > 0 && y > 0 && x < width - 1 && y < height - 1) continue
-      const i = (y * width + x) * 4
-      if (data[i + 3] < 18) {
-        data[i] = 0
-        data[i + 1] = 0
-        data[i + 2] = 0
-        data[i + 3] = 0
-        continue
-      }
-      if (isCharacterStrokePixel(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
-      if (bg[3] < 18) continue
-      const dist = colorDist(data[i], data[i + 1], data[i + 2], bg)
-      if (dist <= threshold) {
-        data[i] = 0
-        data[i + 1] = 0
-        data[i + 2] = 0
-        data[i + 3] = 0
-      } else if (dist < soft) {
-        data[i + 3] = Math.round(data[i + 3] * ((dist - threshold) / (soft - threshold)))
-      }
-    }
-  }
-  return imageData
 }
 
 function opaqueBounds(imageData) {
@@ -419,7 +391,7 @@ function parseHexColor(hex, fallback = [10, 10, 12]) {
   return [r, g, b]
 }
 
-export const FLOOD_FILL_TOLERANCE = 22
+export const FLOOD_FILL_TOLERANCE = 18
 
 function flattenTransparentPixels(imageData) {
   if (!imageData?.data) return imageData
@@ -899,11 +871,12 @@ export function fitToKakaoCanvas(source, box, {
   let dy = 0
   let dwSrc = sw
   let dhSrc = sh
+  const bg = background || (transparent
+    ? sampleBackground(cropCtx.getImageData(0, 0, sw, sh).data, sw, sh)
+    : null)
   if (transparent) {
     const img = cropCtx.getImageData(0, 0, sw, sh)
-    const bg = background || sampleBackground(img.data, sw, sh)
-    knockoutImageData(img, bg)
-    floodFillAlphaKey(img, { extraSeeds: [bg] })
+    floodFillAlphaKey(img, { extraSeeds: bg ? [bg] : [] })
     flattenTransparentPixels(img)
     cropCtx.putImageData(img, 0, 0)
     if (!lockFrame) {
@@ -915,9 +888,7 @@ export function fitToKakaoCanvas(source, box, {
     }
   }
   const { canvas, ctx } = makeAlphaCanvas(size, size)
-  if (transparent) {
-    ctx.clearRect(0, 0, size, size)
-  } else {
+  if (!transparent) {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, size, size)
   }
@@ -932,15 +903,11 @@ export function fitToKakaoCanvas(source, box, {
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(scaled, fit.renderX, fit.renderY)
-  let pixels = ctx.getImageData(0, 0, size, size)
-  enhanceSliceImageData(pixels)
-  ctx.putImageData(pixels, 0, 0)
   if (transparent) {
-    applyFloodFillTransparency(ctx, size, size, {
-      extraSeeds: background ? [background] : [],
-    })
+    applyFloodFillTransparency(ctx, size, size, { extraSeeds: bg ? [bg] : [] })
   }
-  pixels = ctx.getImageData(0, 0, size, size)
+  const pixels = ctx.getImageData(0, 0, size, size)
+  enhanceSliceImageData(pixels)
   if (transparent) clearTextPlatePixels(pixels, textZonePercent)
   const inkMask = outline ? buildTextGlyphMask(pixels, { textZonePercent }) : null
   applyTextTone(pixels, textMode, customColor, { textZonePercent })
@@ -953,7 +920,6 @@ export function fitToKakaoCanvas(source, box, {
     })
   }
   flattenTransparentPixels(pixels)
-  ctx.clearRect(0, 0, size, size)
   ctx.putImageData(pixels, 0, 0)
   return canvas
 }
@@ -1002,12 +968,27 @@ export function sliceSheet(source, {
       customScale,
       textZonePercent,
     })
+    const name = `kakao-360-${String(index + 1).padStart(2, '0')}.png`
+    const diagnostics = inspectRenderedSlice({
+      canvas,
+      source,
+      box,
+      index,
+      name,
+      mode,
+      textMode,
+      outline,
+      customScale,
+      textZonePercent,
+      transparent,
+    })
     return {
       id: `emo-${index + 1}`,
       index,
-      name: `kakao-360-${String(index + 1).padStart(2, '0')}.png`,
+      name,
       canvas,
       preview: canvas.toDataURL('image/png'),
+      diagnostics,
     }
   })
 }
