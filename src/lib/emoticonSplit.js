@@ -328,46 +328,144 @@ function downsampleStepped(source, destW, destH) {
   return out
 }
 
-export function applyTextTone(imageData, mode = 'original', customHex = '#111111') {
-  if (!imageData?.data || mode === 'original') return imageData
-  const { data } = imageData
-  const [tr, tg, tb] = parseHexColor(customHex)
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 12) continue
-    const luma = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255
-    let r = data[i]
-    let g = data[i + 1]
-    let b = data[i + 2]
-    if (mode === 'black') {
-      const t = 0.78 * (1 - luma)
-      r = r * (1 - t)
-      g = g * (1 - t)
-      b = b * (1 - t)
-    } else if (mode === 'white') {
-      const t = 0.72
-      r = r + (255 - r) * t
-      g = g + (255 - g) * t
-      b = b + (255 - b) * t
-    } else if (mode === 'custom') {
-      const t = 0.82 * (1 - luma)
-      r = r + (tr - r) * t
-      g = g + (tg - g) * t
-      b = b + (tb - b) * t
+export const TEXT_BAND_RATIO = 0.65
+
+function pixelLuma(r, g, b) {
+  return r * 0.299 + g * 0.587 + b * 0.114
+}
+
+function pixelChroma(r, g, b) {
+  return Math.max(r, g, b) - Math.min(r, g, b)
+}
+
+export function textBandStartY(height, bandStart = TEXT_BAND_RATIO) {
+  return Math.max(0, Math.floor(Number(height) * (Number(bandStart) || TEXT_BAND_RATIO)))
+}
+
+function isColorfulBodyPixel(r, g, b, a) {
+  if (a < 28) return false
+  const luma = pixelLuma(r, g, b)
+  return pixelChroma(r, g, b) > 46 && luma > 28 && luma < 232
+}
+
+function nearColorfulBody(data, width, height, x, y) {
+  for (let dy = -5; dy <= 1; dy += 1) {
+    for (let dx = -2; dx <= 2; dx += 1) {
+      const nx = x + dx
+      const ny = y + dy
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+      const i = (ny * width + nx) * 4
+      if (isColorfulBodyPixel(data[i], data[i + 1], data[i + 2], data[i + 3])) return true
     }
-    data[i] = Math.max(0, Math.min(255, Math.round(r)))
-    data[i + 1] = Math.max(0, Math.min(255, Math.round(g)))
-    data[i + 2] = Math.max(0, Math.min(255, Math.round(b)))
+  }
+  return false
+}
+
+export function buildTextGlyphMask(imageData, bandStart = TEXT_BAND_RATIO) {
+  const width = imageData?.width || 0
+  const height = imageData?.height || 0
+  const data = imageData?.data
+  const mask = new Uint8Array(Math.max(0, width * height))
+  if (!data || !width || !height) return { mask, y0: 0, width, height }
+  const y0 = textBandStartY(height, bandStart)
+  const raw = new Uint8Array(width * height)
+  for (let y = y0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4
+      const a = data[i + 3]
+      if (a < 28) continue
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      if (isColorfulBodyPixel(r, g, b, a)) continue
+      const luma = pixelLuma(r, g, b)
+      const ink = luma <= 102 || luma >= 208
+      if (!ink && nearColorfulBody(data, width, height, x, y)) continue
+      let edge = 0
+      const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+      for (let k = 0; k < n.length; k += 1) {
+        const nx = x + n[k][0]
+        const ny = y + n[k][1]
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+        const ni = (ny * width + nx) * 4
+        if (data[ni + 3] < 12) {
+          edge = Math.max(edge, luma)
+          continue
+        }
+        edge = Math.max(edge, Math.abs(luma - pixelLuma(data[ni], data[ni + 1], data[ni + 2])))
+      }
+      if (!ink && edge < 34) continue
+      if (edge < 16 && luma > 108 && luma < 188) continue
+      raw[y * width + x] = 1
+    }
+  }
+  for (let y = y0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const p = y * width + x
+      if (!raw[p]) continue
+      let cluster = 0
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (!dx && !dy) continue
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
+          if (raw[ny * width + nx]) cluster += 1
+        }
+      }
+      const i = p * 4
+      const luma = pixelLuma(data[i], data[i + 1], data[i + 2])
+      if (cluster >= 2 || luma <= 48 || luma >= 230) mask[p] = 1
+    }
+  }
+  return { mask, y0, width, height }
+}
+
+export function applyTextTone(imageData, mode = 'original', customHex = '#111111', { bandStart = TEXT_BAND_RATIO } = {}) {
+  if (!imageData?.data || mode === 'original') return imageData
+  const { data, width, height } = imageData
+  const [tr, tg, tb] = parseHexColor(customHex)
+  const { mask, y0 } = buildTextGlyphMask(imageData, bandStart)
+  for (let y = y0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!mask[y * width + x]) continue
+      const i = (y * width + x) * 4
+      const luma = pixelLuma(data[i], data[i + 1], data[i + 2]) / 255
+      let r = data[i]
+      let g = data[i + 1]
+      let b = data[i + 2]
+      if (mode === 'black') {
+        const t = 0.88 * (1 - luma)
+        r = r * (1 - t)
+        g = g * (1 - t)
+        b = b * (1 - t)
+      } else if (mode === 'white') {
+        const t = 0.86
+        r = r + (255 - r) * t
+        g = g + (255 - g) * t
+        b = b + (255 - b) * t
+      } else if (mode === 'custom') {
+        const t = 0.92
+        r = r + (tr - r) * t
+        g = g + (tg - g) * t
+        b = b + (tb - b) * t
+      }
+      data[i] = Math.max(0, Math.min(255, Math.round(r)))
+      data[i + 1] = Math.max(0, Math.min(255, Math.round(g)))
+      data[i + 2] = Math.max(0, Math.min(255, Math.round(b)))
+    }
   }
   return imageData
 }
 
-export function applyOutlineAssist(imageData, hex = '#111111') {
+export function applyOutlineAssist(imageData, hex = '#111111', { bandStart = TEXT_BAND_RATIO } = {}) {
   if (!imageData?.data) return imageData
   const { data, width, height } = imageData
   const src = new Uint8ClampedArray(data)
   const [sr, sg, sb] = parseHexColor(hex, [12, 12, 14])
+  const { mask, y0 } = buildTextGlyphMask({ data: src, width, height }, bandStart)
   const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-  for (let y = 0; y < height; y += 1) {
+  for (let y = y0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       if (src[i + 3] >= 18) continue
@@ -375,7 +473,7 @@ export function applyOutlineAssist(imageData, hex = '#111111') {
         const nx = x + dx
         const ny = y + dy
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) return false
-        return src[(ny * width + nx) * 4 + 3] > 90
+        return mask[ny * width + nx] === 1
       })
       if (!hit) continue
       data[i] = sr

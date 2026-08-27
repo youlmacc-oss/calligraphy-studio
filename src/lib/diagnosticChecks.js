@@ -470,24 +470,39 @@ export async function checkEmoticonSlicer() {
   if (before.data[edge] === sample) {
     return { status: 'warn', detail: 'IDLE · 360 슬라이스 샤프닝/대비 보정이 가장자리 픽셀을 바꾸지 않았습니다.' }
   }
-  const tone = brush.getImageData(0, 0, 8, 8)
-  const mid = (4 * 8 + 4) * 4
-  const beforeTone = tone.data[mid]
-  applyTextTone(tone, 'black')
-  if (tone.data[mid] >= beforeTone) {
-    return { status: 'warn', detail: 'IDLE · 고대비 블랙 텍스트 톤 보정이 픽셀을 어둡게 하지 않았습니다.' }
+  const band = document.createElement('canvas')
+  band.width = 40
+  band.height = 40
+  const bandCtx = band.getContext('2d')
+  bandCtx.fillStyle = '#ff8866'
+  bandCtx.fillRect(0, 0, 40, 40)
+  bandCtx.fillStyle = '#141414'
+  bandCtx.fillRect(8, 28, 24, 8)
+  const local = bandCtx.getImageData(0, 0, 40, 40)
+  const bodyAt = (10 * 40 + 20) * 4
+  const textAt = (32 * 40 + 20) * 4
+  const bodyBefore = [local.data[bodyAt], local.data[bodyAt + 1], local.data[bodyAt + 2]]
+  applyTextTone(local, 'custom', '#00ccff')
+  if (local.data[bodyAt] !== bodyBefore[0] || local.data[bodyAt + 1] !== bodyBefore[1] || local.data[bodyAt + 2] !== bodyBefore[2]) {
+    return { status: 'error', detail: '텍스트 보정이 상단 캐릭터 본체 픽셀을 변경했습니다.' }
+  }
+  if (local.data[textAt + 2] <= local.data[textAt]) {
+    return { status: 'warn', detail: 'IDLE · 하단 텍스트 클러스터가 커스텀 색으로 치환되지 않았습니다.' }
   }
   const ring = document.createElement('canvas')
-  ring.width = 6
-  ring.height = 6
+  ring.width = 40
+  ring.height = 40
   const ringCtx = ring.getContext('2d')
-  ringCtx.clearRect(0, 0, 6, 6)
+  ringCtx.clearRect(0, 0, 40, 40)
   ringCtx.fillStyle = '#111111'
-  ringCtx.fillRect(2, 2, 2, 2)
-  const outline = ringCtx.getImageData(0, 0, 6, 6)
+  ringCtx.fillRect(18, 32, 4, 4)
+  const outline = ringCtx.getImageData(0, 0, 40, 40)
   applyOutlineAssist(outline, '#111111')
-  if (outline.data[(1 * 6 + 2) * 4 + 3] < 80) {
-    return { status: 'warn', detail: 'IDLE · 1px 외곽선 보강이 알파 엣지에 스트로크를 넣지 않았습니다.' }
+  if (outline.data[(31 * 40 + 18) * 4 + 3] < 80) {
+    return { status: 'warn', detail: 'IDLE · 하단 글자 1px 외곽선 보강이 알파 엣지에 스트로크를 넣지 않았습니다.' }
+  }
+  if (outline.data[(5 * 40 + 18) * 4 + 3] > 20) {
+    return { status: 'error', detail: '외곽선 보강이 상단 캐릭터 영역까지 번졌습니다.' }
   }
   const zip = new JSZip()
   zip.file('kakao-360-01.png', await canvasToPngBlob(kakao))
@@ -495,7 +510,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 커스텀 절단 ${custom.length}칸 · 외곽재단 ${framed.length}칸 · 슈퍼샘플/샤프닝 ON · 텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 커스텀 절단 ${custom.length}칸 · 외곽재단 ${framed.length}칸 · 슈퍼샘플/샤프닝 ON · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 
