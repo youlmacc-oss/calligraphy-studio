@@ -187,7 +187,7 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'emoticon-slicer',
     name: '🧩 이모티콘 슬라이서 & ZIP 엔진 상태',
-    description: '업로드 후 모드 A 자동 트리거, 기본 줌 35%, 플러드필 투명 PNG, toBlob ZIP',
+    description: '모드 B 엄격 셀 경계, 업로드 자동 트리거, 기본 줌 35%, 플러드필 투명 PNG',
     diagnosticFunction: checkEmoticonSlicer,
     guideContent: {
       chapterId: 'ai',
@@ -206,9 +206,9 @@ export const APP_FEATURES_REGISTRY = [
         },
         {
           title: '분할 후 카카오 스튜디오에 올린다',
-          body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. 시트를 올리면 줌 35% → 모드 A 스마트 감지 → 모드 B 절단선 좌표 세팅이 한 번만 자동 실행됩니다. 감지·플러드필·절단선 계산식은 그대로입니다. [배경 투명화]는 바깥 흰/미색만 지우고, [텍스트 가독성]은 하단 글자 획만 바꿉니다. ZIP은 canvas.toBlob(image/png)입니다.',
-          params: ['업로드 후 자동 트리거 1회', '기본 줌 35%', '모드 A 스마트 감지', '모드 B 가이드 백그라운드 세팅', 'toBlob RGBA PNG'],
-          tip: '모달을 열면 미리보기가 35%로 잡혀 시트 전체가 한눈에 보입니다. [-]/[+]로 5%씩 맞추세요.',
+          body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. 시트를 올리면 줌 35% → 모드 A 스마트 감지 → 모드 B 절단선 세팅이 한 번 실행됩니다. 모드 B는 절단선과 외곽 재단선 사이만 자르며 아래 행으로 높이를 늘리지 않습니다. 감지·플러드필·텍스트 획 치환은 그대로입니다. ZIP은 canvas.toBlob(image/png)입니다.',
+          params: ['모드 B 엄격 셀 경계 Y1~Y2', '업로드 후 자동 트리거 1회', '기본 줌 35%', '모드 A CCA 원형 보존', 'toBlob RGBA PNG'],
+          tip: '아래 칸 글자가 위 칸 ZIP에 섞이면 모드 B에서 가로 절단선을 글자 바로 아래에 맞추세요. 칸을 임의로 아래로 확장하지 않습니다.',
           fail: '카카오에 JPG나 직사각형 원본을 올리면 거절될 수 있습니다. 반드시 이 분할기가 만든 360 정사각 투명 PNG를 쓰세요.',
         },
       ],

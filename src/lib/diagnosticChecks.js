@@ -458,6 +458,9 @@ export async function checkEmoticonSlicer() {
   if (!custom[0] || Math.abs(custom[0].w - 25) > 1 || Math.abs(custom[2]?.y - 30) > 2) {
     return { status: 'error', detail: '모드 B 커스텀 절단선 좌표가 Bounding Box에 반영되지 않습니다.' }
   }
+  if (custom[0].y + custom[0].h > custom[2].y) {
+    return { status: 'error', detail: '모드 B 행 상자가 다음 행 가이드선을 침범합니다.' }
+  }
   if (even.length !== 2 || Math.abs(even[0] - 1 / 3) > 1e-6) {
     return { status: 'error', detail: '균등 가이드 생성이 실패했습니다.' }
   }

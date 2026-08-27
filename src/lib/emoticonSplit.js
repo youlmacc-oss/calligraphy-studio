@@ -945,17 +945,7 @@ export function sliceSheet(source, {
       h: box.h / analyzed.scale,
       count: box.count,
     }))
-  const boxes = mode === 'grid'
-    ? raw.map((box) => {
-      const nextY = raw
-        .map((item) => item.y)
-        .filter((item) => item > box.y + 1)
-        .sort((a, b) => a - b)[0]
-      const bleed = Math.round(Math.max(8, box.h * 0.18))
-      const limitY = nextY != null ? Math.min(source.height, nextY + bleed) : source.height
-      return expandBoxFooter(source, box, limitY)
-    })
-    : raw
+  const boxes = raw
   return boxes.map((box, index) => {
     const canvas = fitToKakaoCanvas(source, box, {
       transparent,
