@@ -119,7 +119,7 @@ export default function SelfDiagnosticModal({
       <div className="studio-modal-card diag-hud">
         <header className="studio-modal-head">
           <div>
-            <p className="studio-modal-kicker">Live Diagnostic HUD · APP_FEATURES_REGISTRY</p>
+            <p className="studio-modal-kicker">Live Diagnostic HUD · HUD1~{total} 파이프라인 동기화</p>
             <h2 id="diag-title">🩺 {total}단계 시스템 정밀 자가진단</h2>
           </div>
           <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" {...magnify('닫기', '모니터링 창을 닫습니다')}>

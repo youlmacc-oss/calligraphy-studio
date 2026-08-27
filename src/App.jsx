@@ -1151,7 +1151,7 @@ export default function App() {
               type="button"
               className="nav-utility-btn"
               onClick={() => setDiagOpen(true)}
-              {...magnify('시스템 정밀 자가진단', `${DIAG_STEPS.length}단계 Live HUD로 캔버스·폰트·즐겨찾기·인포 바·익스포트·AI 마스크를 실시간 점검합니다`)}
+              {...magnify('시스템 정밀 자가진단', `${DIAG_STEPS.length}단계 Live HUD로 뷰포트·줌 35%·모드 A/B 분할·Flood T=18·텍스트 상하단·Inspector·ZIP을 실시간 점검합니다`)}
             >
               🩺 시스템 정밀 자가진단
             </button>

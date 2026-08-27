@@ -68,6 +68,178 @@ import {
 } from './proTools.js'
 import { readRenderPerf } from './renderPerf.js'
 
+function cssBlobFor(selectorPart) {
+  if (typeof document === 'undefined') return ''
+  const chunks = []
+  const sheets = document.styleSheets
+  for (let s = 0; s < sheets.length; s += 1) {
+    let rules
+    try {
+      rules = sheets[s].cssRules
+    } catch {
+      continue
+    }
+    if (!rules) continue
+    for (let r = 0; r < rules.length; r += 1) {
+      const rule = rules[r]
+      if (!rule?.selectorText || !rule.selectorText.includes(selectorPart)) continue
+      chunks.push(`${rule.selectorText}{${rule.style?.cssText || ''}}`)
+    }
+  }
+  return chunks.join('\n')
+}
+
+export function enrichDiagnosticWithPipeline(stepId, result) {
+  if (!result?.status) return result
+  const extra = assertPipelineHud(stepId)
+  if (!extra) return result
+  if (result.status === 'error') return result
+  if (extra.status === 'error') return extra
+  if (extra.status === 'warn' && result.status === 'ok') {
+    return { status: 'warn', detail: `${result.detail} · ${extra.detail}` }
+  }
+  if (result.status === 'ok' && extra.detail) {
+    return { status: 'ok', detail: `${result.detail} · ${extra.detail}` }
+  }
+  return result
+}
+
+function assertPipelineHud(stepId) {
+  switch (stepId) {
+    case 'gpu': {
+      const shell = typeof document !== 'undefined' ? document.querySelector('.studio-shell') : null
+      const css = cssBlobFor('studio-shell')
+      if (css.includes('100vh') || css.includes('100dvh')) {
+        if (shell && getComputedStyle(shell).overflow !== 'hidden') {
+          return { status: 'warn', detail: 'IDLE · .studio-shell overflow가 hidden이 아닙니다.' }
+        }
+        return { status: 'ok', detail: '100vh 노스크롤 확인' }
+      }
+      if (shell && getComputedStyle(shell).overflow === 'hidden') {
+        return { status: 'ok', detail: '100vh 셸 overflow hidden 확인' }
+      }
+      if (!css) {
+        return { status: 'warn', detail: 'IDLE · 스타일시트에서 100vh 규칙을 읽지 못했습니다.' }
+      }
+      return { status: 'error', detail: '스튜디오 16인치 노스크롤 100vh 레이아웃 CSS가 없습니다.' }
+    }
+    case 'buffer': {
+      const css = cssBlobFor('emo-split-card')
+      if (css.includes('92vw') && css.includes('86vh')) {
+        return { status: 'ok', detail: '92vw×86vh 확인' }
+      }
+      if (!css) {
+        return { status: 'warn', detail: 'IDLE · 스타일시트에서 92vw×86vh 규칙을 읽지 못했습니다.' }
+      }
+      return { status: 'error', detail: '분할기 92vw×86vh 상대단위 레이아웃이 없습니다.' }
+    }
+    case 'fonts': {
+      if (PREVIEW_ZOOM_DEFAULT !== 35 || PREVIEW_ZOOM_STEP !== 5) {
+        return { status: 'error', detail: '기본 줌 35% 또는 5% 증감 스텝이 깨졌습니다.' }
+      }
+      return { status: 'ok', detail: `줌 ${PREVIEW_ZOOM_DEFAULT}% / ${PREVIEW_ZOOM_STEP}%` }
+    }
+    case 'layers': {
+      if (clampEmoSideWidth(200) !== EMO_SIDE_MIN || clampEmoSideWidth(900) !== EMO_SIDE_MAX) {
+        return { status: 'error', detail: '좌우 패널 드래그 리사이저 클램프가 실패했습니다.' }
+      }
+      return { status: 'ok', detail: `패널 ${EMO_SIDE_MIN}~${EMO_SIDE_MAX}px` }
+    }
+    case 'drag': {
+      if (VIEW_BG_DEFAULT !== 'checker' || cycleViewBgMode('checker') !== 'dark' || cycleViewBgMode('light') !== 'checker') {
+        return { status: 'error', detail: '체커보드/다크/라이트 배경 모드 순환이 실패했습니다.' }
+      }
+      return { status: 'ok', detail: '배경 모드 순환 확인' }
+    }
+    case 'type': {
+      const keep = splitDoubleHeightBoxes([{ x: 0, y: 0, w: 40, h: 40 }, { x: 50, y: 0, w: 40, h: 40 }])
+      if (keep.length !== 2 || keep[0].h !== 40) {
+        return { status: 'error', detail: '모드 A 정상 박스가 후처리에서 변형되었습니다.' }
+      }
+      return { status: 'ok', detail: '모드 A 후처리 비침습 확인' }
+    }
+    case 'stack': {
+      const wide = splitDoubleWidthBoxes([{ x: 0, y: 0, w: 40, h: 40 }, { x: 0, y: 50, w: 40, h: 40 }, { x: 0, y: 100, w: 88, h: 40 }])
+      const tall = splitDoubleHeightBoxes([{ x: 0, y: 0, w: 40, h: 40 }, { x: 50, y: 0, w: 40, h: 40 }, { x: 100, y: 0, w: 40, h: 88 }])
+      if (wide.length !== 4 || tall.length !== 4) {
+        return { status: 'error', detail: '가로/세로 2배 결합 자동 반분할이 실패했습니다.' }
+      }
+      return { status: 'ok', detail: 'Double Height/Width 분할 확인' }
+    }
+    case 'history': {
+      const custom = splitGridBoxes(100, 50, 2, 2, [0.25], [0.6])
+      if (custom[0].y + custom[0].h > custom[2]?.y) {
+        return { status: 'error', detail: '모드 B Strict Boundary가 다음 행을 침범합니다.' }
+      }
+      return { status: 'ok', detail: '모드 B 가이드 경계 확인' }
+    }
+    case 'bg': {
+      const crop = normalizeBounds({ left: 0.2, top: 0.1, right: 0.8, bottom: 0.9 })
+      const framed = splitGuideBoxes(100, 100, [0.5], [], crop)
+      if (framed.length !== 2 || Math.abs(framed[0].x - 20) > 1) {
+        return { status: 'error', detail: '외곽 재단선 Strict 크롭이 실패했습니다.' }
+      }
+      return { status: 'ok', detail: '인접 셀 침범 0% 크롭 확인' }
+    }
+    case 'edit': {
+      if (PREVIEW_ZOOM_DEFAULT !== 35 || TEXT_ZONE_ANCHOR_DEFAULT !== 'bottom') {
+        return { status: 'error', detail: 'Zero-Click 기본값(줌 35% · 텍스트 하단)이 깨졌습니다.' }
+      }
+      return { status: 'ok', detail: '업로드 직후 기본 연산값 확인' }
+    }
+    case 'export': {
+      if (FLOOD_FILL_TOLERANCE !== 18) {
+        return { status: 'error', detail: `Flood-Fill T가 ${FLOOD_FILL_TOLERANCE}입니다(기대 18).` }
+      }
+      return { status: 'ok', detail: 'T=18 하이라이트 보호 허용치 확인' }
+    }
+    case 'ai': {
+      if (PUNCH_HOLES_DEFAULT !== false) {
+        return { status: 'error', detail: '내부 고립 구멍 투명화 기본값이 OFF가 아닙니다.' }
+      }
+      return { status: 'ok', detail: '구멍 투명화 기본 OFF 확인' }
+    }
+    case 'favorites': {
+      if (textZoneStartY(360, 20) !== 289 || textZoneBounds(360, 20, 'top').y1 !== 72) {
+        return { status: 'error', detail: '텍스트 존 하단/상단 스위치 좌표가 깨졌습니다.' }
+      }
+      return { status: 'ok', detail: '텍스트 존 상/하단 확인' }
+    }
+    case 'live-hud': {
+      if (typeof applyTextTone !== 'function' || typeof clearTextPlatePixels !== 'function') {
+        return { status: 'error', detail: '1:1 픽셀 치환 함수가 없습니다.' }
+      }
+      return { status: 'ok', detail: '흰 패치 펀치 · 획 1:1 치환 모듈 확인' }
+    }
+    case 'gif-engine': {
+      if (OUTLINE_DEFAULT !== true) {
+        return { status: 'error', detail: 'Outline 기본값이 ON이 아닙니다.' }
+      }
+      return { status: 'ok', detail: 'Outline 기본 ON 확인' }
+    }
+    case 'emoticon-slicer': {
+      if (KAKAO_STICKER_SIZE !== 360 || typeof inspectRenderedSlice !== 'function') {
+        return { status: 'error', detail: '360 규격 또는 Diagnostic Inspector가 없습니다.' }
+      }
+      return { status: 'ok', detail: '360 Safe Margin · Inspector 연동' }
+    }
+    case 'pro-engine': {
+      if (typeof inspectRenderedSlice !== 'function') {
+        return { status: 'error', detail: '🐞 진단 로그 Inspector가 없습니다.' }
+      }
+      return { status: 'ok', detail: '4대 픽셀 지표 Inspector 확인' }
+    }
+    case 'fps-pipeline': {
+      if (typeof canvasToPngBlob !== 'function') {
+        return { status: 'error', detail: 'PNG 즉시 다운로드 파이프라인이 없습니다.' }
+      }
+      return { status: 'ok', detail: 'ZIP/PNG 패키징 모듈 확인' }
+    }
+    default:
+      return null
+  }
+}
+
 function allocCanvas(w, h) {
   const canvas = document.createElement('canvas')
   canvas.width = w

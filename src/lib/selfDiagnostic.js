@@ -1,4 +1,5 @@
 import { DIAG_STEPS, getDiagnosticFeatures } from './featureRegistry.js'
+import { enrichDiagnosticWithPipeline } from './diagnosticChecks.js'
 import { saveFavoriteFonts, loadFavoriteFonts } from './fontFavorites.js'
 import { inspectStudioFonts, preloadStudioFonts } from './fontPreload.js'
 
@@ -72,6 +73,7 @@ export async function runLiveDiagnostics({
     if (!result || !result.status) {
       result = { status: 'warn', detail: 'IDLE · 진단 결과가 비어 다음 단계로 진행합니다.' }
     }
+    result = enrichDiagnosticWithPipeline(step.id, result)
     const ms = Math.max(1, Math.round((performance.now() - started) * 10) / 10)
     const item = {
       id: step.id,
