@@ -177,25 +177,31 @@ export function findContentBoxes(imageData, { minArea = 80, threshold = 42 } = {
 }
 
 function knockoutImageData(imageData, bg, threshold = 42) {
-  const data = imageData.data
+  const { data, width, height } = imageData
+  if (!data || !width || !height) return imageData
   const soft = threshold + 28
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 18) {
-      data[i] = 0
-      data[i + 1] = 0
-      data[i + 2] = 0
-      data[i + 3] = 0
-      continue
-    }
-    if (bg[3] < 18) continue
-    const dist = colorDist(data[i], data[i + 1], data[i + 2], bg)
-    if (dist <= threshold) {
-      data[i] = 0
-      data[i + 1] = 0
-      data[i + 2] = 0
-      data[i + 3] = 0
-    } else if (dist < soft) {
-      data[i + 3] = Math.round(data[i + 3] * ((dist - threshold) / (soft - threshold)))
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (x > 0 && y > 0 && x < width - 1 && y < height - 1) continue
+      const i = (y * width + x) * 4
+      if (data[i + 3] < 18) {
+        data[i] = 0
+        data[i + 1] = 0
+        data[i + 2] = 0
+        data[i + 3] = 0
+        continue
+      }
+      if (isCharacterStrokePixel(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
+      if (bg[3] < 18) continue
+      const dist = colorDist(data[i], data[i + 1], data[i + 2], bg)
+      if (dist <= threshold) {
+        data[i] = 0
+        data[i + 1] = 0
+        data[i + 2] = 0
+        data[i + 3] = 0
+      } else if (dist < soft) {
+        data[i + 3] = Math.round(data[i + 3] * ((dist - threshold) / (soft - threshold)))
+      }
     }
   }
   return imageData
@@ -412,7 +418,7 @@ function parseHexColor(hex, fallback = [10, 10, 12]) {
   return [r, g, b]
 }
 
-export const FLOOD_FILL_TOLERANCE = 32
+export const FLOOD_FILL_TOLERANCE = 18
 
 function flattenTransparentPixels(imageData) {
   if (!imageData?.data) return imageData
@@ -498,8 +504,19 @@ function collectFloodSeeds(data, width, height, extraSeeds = []) {
   return seeds
 }
 
+function isCharacterStrokePixel(r, g, b, a) {
+  if (a < 28) return false
+  const luma = pixelLuma(r, g, b)
+  const chroma = pixelChroma(r, g, b)
+  if (luma <= 118) return true
+  if (luma <= 168 && chroma >= 16) return true
+  return false
+}
+
 function isFloodFillBackground(r, g, b, a, seeds, tolerance) {
   if (a < 12) return true
+  if (isCharacterStrokePixel(r, g, b, a)) return false
+  if (!isLightBackgroundSeed(r, g, b, a)) return false
   for (let i = 0; i < seeds.length; i += 1) {
     if (colorEuclid(r, g, b, seeds[i]) <= tolerance) return true
   }
@@ -552,6 +569,8 @@ export function floodFillAlphaKey(imageData, {
       const ny = (next / width) | 0
       if (Math.abs(nx - cx) > 1) continue
       if (!fillable(nx, ny)) continue
+      const ni = next * 4
+      if (isCharacterStrokePixel(data[ni], data[ni + 1], data[ni + 2], data[ni + 3])) continue
       outer[next] = 1
       queue.push(next)
     }
@@ -583,9 +602,11 @@ export function floodFillAlphaKey(imageData, {
       const r = data[i]
       const g = data[i + 1]
       const b = data[i + 2]
+      if (isCharacterStrokePixel(r, g, b, data[i + 3])) continue
+      if (!isLightBackgroundSeed(r, g, b, data[i + 3])) continue
       let close = false
       for (let s = 0; s < seeds.length; s += 1) {
-        if (colorEuclid(r, g, b, seeds[s]) <= tolerance + 12) {
+        if (colorEuclid(r, g, b, seeds[s]) <= tolerance) {
           close = true
           break
         }

@@ -24,6 +24,7 @@ import {
   equalSplitGuides,
   fitToKakaoCanvas,
   floodFillAlphaKey,
+  FLOOD_FILL_TOLERANCE,
   insertGuide,
   KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
@@ -542,6 +543,36 @@ export async function checkEmoticonSlicer() {
   if (eyePx < 180) {
     return { status: 'error', detail: '플러드필이 캐릭터 내부 흰색을 지웠습니다.' }
   }
+  if (FLOOD_FILL_TOLERANCE !== 18) {
+    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 18).` }
+  }
+  const halo = document.createElement('canvas')
+  halo.width = 48
+  halo.height = 48
+  const haloCtx = halo.getContext('2d')
+  haloCtx.fillStyle = '#f7f2ea'
+  haloCtx.fillRect(0, 0, 48, 48)
+  haloCtx.fillStyle = '#1a1410'
+  haloCtx.beginPath()
+  haloCtx.arc(24, 24, 16, 0, Math.PI * 2)
+  haloCtx.fill()
+  haloCtx.fillStyle = '#f2e4c8'
+  haloCtx.beginPath()
+  haloCtx.arc(24, 24, 12, 0, Math.PI * 2)
+  haloCtx.fill()
+  const guarded = floodFillAlphaKey(haloCtx.getImageData(0, 0, 48, 48))
+  const paperPx = guarded.data[1 * 4 + 3]
+  const strokePx = guarded.data[((24 * 48) + 9) * 4 + 3]
+  const highlightPx = guarded.data[((24 * 48) + 24) * 4 + 3]
+  if (paperPx > 12) {
+    return { status: 'error', detail: '외곽 플러드필이 원형 테두리 밖 배경을 투명으로 바꾸지 못했습니다.' }
+  }
+  if (strokePx < 180) {
+    return { status: 'error', detail: '플러드필이 캐릭터 진한 외곽선을 넘었습니다.' }
+  }
+  if (highlightPx < 200) {
+    return { status: 'error', detail: '플러드필이 원형 테두리 안 하이라이트를 뚫었습니다.' }
+  }
   const probe = document.createElement('canvas')
   probe.width = 8
   probe.height = 8
@@ -625,7 +656,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 유클리드플러드필 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · 텍스트획가드 · 스케일50-150 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 유클리드플러드필T${FLOOD_FILL_TOLERANCE} · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · 텍스트획가드 · 스케일50-150 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 
