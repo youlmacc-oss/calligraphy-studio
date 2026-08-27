@@ -206,6 +206,47 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     }
   }, [])
 
+  const applyPreviewZoomPercent = (percent = PREVIEW_ZOOM_DEFAULT) => {
+    const next = clampZoom(Number(percent) / 100)
+    setZoom(next)
+    zoomRef.current = next
+    setPan({ x: 0, y: 0 })
+    panRef.current = { x: 0, y: 0 }
+  }
+
+  const initModeBGuides = () => {
+    const nextVertical = equalSplitGuides(colsRef.current)
+    const nextHorizontal = equalSplitGuides(rowsRef.current)
+    setVerticalGuides(nextVertical)
+    setHorizontalGuides(nextHorizontal)
+    vGuidesRef.current = nextVertical
+    hGuidesRef.current = nextHorizontal
+    return { nextVertical, nextHorizontal }
+  }
+
+  const runModeASmartDetection = (source, patch = {}) => {
+    setMode('smart')
+    modeRef.current = 'smart'
+    return runSlice({
+      ...patch,
+      source,
+      nextMode: 'smart',
+    })
+  }
+
+  const triggerAfterSheetLoad = async (canvas) => {
+    applyPreviewZoomPercent(35)
+    const nextBounds = DEFAULT_CROP_BOUNDS
+    setBounds(nextBounds)
+    boundsRef.current = nextBounds
+    const { nextVertical, nextHorizontal } = initModeBGuides()
+    await runModeASmartDetection(canvas, {
+      nextBounds,
+      nextVertical,
+      nextHorizontal,
+    })
+  }
+
   const handleFile = async (file) => {
     if (!file || !file.type.startsWith('image/')) {
       setNote('이미지 파일만 올릴 수 있습니다.')
@@ -218,17 +259,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       sheetRef.current = canvas
       setFileName(file.name)
       setSheetUrl(canvas.toDataURL('image/png'))
-      const nextBounds = DEFAULT_CROP_BOUNDS
-      const nextV = equalSplitGuides(colsRef.current)
-      const nextH = equalSplitGuides(rowsRef.current)
-      setBounds(nextBounds)
-      setVerticalGuides(nextV)
-      setHorizontalGuides(nextH)
-      boundsRef.current = nextBounds
-      vGuidesRef.current = nextV
-      hGuidesRef.current = nextH
-      resetView()
-      await runSlice({ source: canvas, nextBounds, nextVertical: nextV, nextHorizontal: nextH })
+      await triggerAfterSheetLoad(canvas)
     } catch (error) {
       setNote(error.message || '시트를 읽지 못했습니다.')
       setBusy(false)
