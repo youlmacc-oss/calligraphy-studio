@@ -41,6 +41,7 @@ import {
   scaleCanvasToMax,
 } from './lib/exportFormats.js'
 import { composeGifFrame, GIF_MOTIONS, resolveGifMotion } from './lib/gifMotion.js'
+import { clampFontSize, FONT_SIZE_EXTRA_DEFAULT, FONT_SIZE_SEAL_DEFAULT } from './lib/fontSize.js'
 import {
   drawLivePreview,
   hitTestStudio,
@@ -689,7 +690,7 @@ export default function App() {
         type: 'seal',
         name: '낙관 / 인장',
         text: '印',
-        fontSize: 48,
+        fontSize: FONT_SIZE_SEAL_DEFAULT,
         ox: 0.28,
         oy: 0.3,
         role: 'extra',
@@ -698,7 +699,7 @@ export default function App() {
         name: `텍스트 레이어 ${studio.layers.filter((layer) => layer.role === 'extra').length + 1}`,
         role: 'extra',
         presetId: '',
-        fontSize: 36,
+        fontSize: FONT_SIZE_EXTRA_DEFAULT,
         oy: 0.32,
       })
     patchStudio((prev) => ({ ...prev, layers: [...prev.layers, next], activeLayerId: next.id }))
@@ -832,7 +833,7 @@ export default function App() {
       patch = { rotation: Math.round((angle * 180) / Math.PI + 90) }
     } else if (drag.handle === 'scale') {
       setSnapGuide({ x: false, y: false })
-      patch = { fontSize: Math.max(20, Math.min(350, origin.fontSize + (point.x - drag.startX) * 0.35)) }
+      patch = { fontSize: clampFontSize(origin.fontSize + (point.x - drag.startX) * 0.35) }
     } else {
       const rawX = Math.max(-0.45, Math.min(0.45, origin.ox + dx))
       const rawY = Math.max(-0.45, Math.min(0.45, origin.oy + dy))

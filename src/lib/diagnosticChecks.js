@@ -7,6 +7,12 @@ import {
 import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
 import { liveStatusFromLayer } from './liveStatus.js'
+import {
+  clampFontSize,
+  FONT_SIZE_MAIN_DEFAULT,
+  FONT_SIZE_MAX,
+  FONT_SIZE_MIN,
+} from './fontSize.js'
 import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
 import {
   applyCustomSliceScale,
@@ -351,7 +357,17 @@ export async function checkTypography() {
   if (aligned('center', 200, 80) !== 0 || aligned('left', 200, 80) >= 0) {
     return { status: 'error', detail: '3단 정렬 좌표 연산이 기대와 다릅니다.' }
   }
-  return { status: 'ok', detail: '줄바꿈 3행 · 행간 클램프 · 좌/중/우 정렬 좌표가 일치합니다.' }
+  const mid = (FONT_SIZE_MIN + FONT_SIZE_MAX) / 2
+  if (FONT_SIZE_MAIN_DEFAULT !== mid) {
+    return { status: 'error', detail: `기본 크기 ${FONT_SIZE_MAIN_DEFAULT}px가 슬라이더 중앙(${mid}px)과 다릅니다.` }
+  }
+  if (clampFontSize(1) !== FONT_SIZE_MIN || clampFontSize(999) !== FONT_SIZE_MAX) {
+    return { status: 'error', detail: `크기 슬라이더 클램프 ${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px가 실패했습니다.` }
+  }
+  if (clampFontSize(FONT_SIZE_MAIN_DEFAULT) !== FONT_SIZE_MAIN_DEFAULT) {
+    return { status: 'error', detail: '기본 폰트 크기가 슬라이더 범위 밖으로 잘립니다.' }
+  }
+  return { status: 'ok', detail: `줄바꿈 3행 · 행간 클램프 · 좌/중/우 정렬 · 크기 ${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px(기본 ${FONT_SIZE_MAIN_DEFAULT}px 중앙)이 일치합니다.` }
 }
 
 export async function checkZStack(ctx) {

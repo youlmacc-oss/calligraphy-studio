@@ -1,4 +1,9 @@
 import { DEFAULT_TEXT, FONTS, PRESETS } from '../presets.js'
+import {
+  FONT_SIZE_EXTRA_DEFAULT,
+  FONT_SIZE_MAIN_DEFAULT,
+  FONT_SIZE_SUB_DEFAULT,
+} from './fontSize.js'
 import { defaultViewEdit } from './viewEdit.js'
 
 export const STORAGE_KEY = 'styler-studio-pro-v1'
@@ -15,7 +20,7 @@ export function createLayer(partial = {}) {
     name: '서브 타이틀',
     text: 'Calligraphy Studio',
     fontId: FONTS[0].id,
-    fontSize: 42,
+    fontSize: FONT_SIZE_EXTRA_DEFAULT,
     letterSpacing: 0,
     lineHeight: 1.2,
     align: 'center',
@@ -46,7 +51,7 @@ export function createDefaultLayers() {
       text: DEFAULT_TEXT,
       fontId: PRESETS[0].fontId,
       presetId: PRESETS[0].id,
-      fontSize: 104,
+      fontSize: FONT_SIZE_MAIN_DEFAULT,
       fontWeight: 700,
       opacity: 1,
       oy: 0,
@@ -56,7 +61,7 @@ export function createDefaultLayers() {
       text: 'AI Text Styler',
       fontId: 'great-vibes',
       presetId: '',
-      fontSize: 40,
+      fontSize: FONT_SIZE_SUB_DEFAULT,
       opacity: 1,
       oy: 0.24,
       color: '#e0f2fe',

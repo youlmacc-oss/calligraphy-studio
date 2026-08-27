@@ -1,4 +1,5 @@
 import { FONTS, PRESETS } from '../presets.js'
+import { FONT_SIZE_MAX, FONT_SIZE_MIN } from './fontSize.js'
 import { curveExtraPad } from './proTools.js'
 import { paintStickers } from './stickers.js'
 import { applyViewEdit } from './viewEdit.js'
@@ -884,8 +885,8 @@ function alignedX(align, maxW, total) {
 }
 
 export function fitLayerFontSize(layer, font, viewW, viewH = viewW, {
-  min = 20,
-  max = 350,
+  min = FONT_SIZE_MIN,
+  max = FONT_SIZE_MAX,
   fill = 0.85,
 } = {}) {
   if (typeof document === 'undefined') return Math.round(layer.fontSize || min)

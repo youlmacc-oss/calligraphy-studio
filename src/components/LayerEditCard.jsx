@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import FontPicker from './FontPicker.jsx'
 import { magnify } from './MenuMagnifierHUD.jsx'
 import { fitLayerFontSize, resolveWeight } from '../lib/renderStyle.js'
+import { clampFontSize, FONT_SIZE_MAX, FONT_SIZE_MIN, fontSizeSliderRange } from '../lib/fontSize.js'
 import {
   CALLIGRAPHY_PRESET_IDS,
   FONTS,
@@ -25,20 +26,6 @@ function layerMeta(layer) {
   if (layer.role === 'main') return { icon: '👑', title: '메인 타이틀 편집 카드', hint: '대표 타이포 · 독립 스타일' }
   if (layer.role === 'sub') return { icon: '✨', title: '서브 타이틀 편집 카드', hint: '보조 타이포 · 독립 스타일' }
   return { icon: '🏷️', title: `${layer.name} 편집 카드`, hint: '추가 텍스트 레이어' }
-}
-
-const FONT_SIZE_MIN = 20
-const FONT_SIZE_MAX = 350
-
-function clampFontSize(value) {
-  const next = Number(value)
-  if (!Number.isFinite(next)) return FONT_SIZE_MIN
-  return Math.round(Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, next)))
-}
-
-function sizeRange(layer) {
-  if (layer.type === 'seal') return { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX }
-  return { min: FONT_SIZE_MIN, max: FONT_SIZE_MAX }
 }
 
 export default function LayerEditCard({
@@ -66,7 +53,7 @@ export default function LayerEditCard({
   const meta = layerMeta(layer)
   const font = extraFonts.find((item) => item.id === layer.fontId) ?? FONTS_BY_ID[layer.fontId] ?? FONTS[0]
   const weight = resolveWeight(font, layer.fontWeight ?? 400)
-  const range = sizeRange(layer)
+  const range = fontSizeSliderRange()
   const aspect = getAspect(studio?.aspectId || '1:1')
   const layerPreset = PRESETS.find((item) => item.id === layer.presetId) ?? null
   const shader = layerPreset?.shader
@@ -226,7 +213,7 @@ export default function LayerEditCard({
 
           <div className="size-fit-block mt-3">
             <div className="size-fit-head">
-              <label className="ui-label" {...magnify('폰트 크기', '20~350px. 긴 문장은 화면 맞춤으로 한 번에 줄입니다')}>
+              <label className="ui-label" {...magnify('폰트 크기', `${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px. 기본 70px가 슬라이더 정중앙입니다. 긴 문장은 화면 맞춤으로 한 번에 줄입니다`)}>
                 🔠 크기
               </label>
               <input
@@ -235,7 +222,7 @@ export default function LayerEditCard({
                 min={range.min}
                 max={range.max}
                 step={1}
-                value={Math.round(layer.fontSize)}
+                value={clampFontSize(layer.fontSize)}
                 onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
                 onBlur={onCommit}
                 {...magnify('크기 숫자 입력', '원하는 px 값을 직접 입력합니다')}
@@ -245,7 +232,10 @@ export default function LayerEditCard({
                 type="button"
                 className="size-fit-btn"
                 onClick={() => onPatch(layer.id, {
-                  fontSize: fitLayerFontSize(layer, font, aspect.w, aspect.h),
+                  fontSize: fitLayerFontSize(layer, font, aspect.w, aspect.h, {
+                    min: FONT_SIZE_MIN,
+                    max: FONT_SIZE_MAX,
+                  }),
                 })}
                 {...magnify('화면 맞춤', '캔버스 가로의 약 85% 안에 글자가 들어오도록 크기를 자동 계산합니다')}
               >
@@ -258,10 +248,10 @@ export default function LayerEditCard({
               max={range.max}
               step={1}
               className="ctrl-slider mt-1.5"
-              value={Math.round(layer.fontSize)}
+              value={clampFontSize(layer.fontSize)}
               onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
               onPointerUp={onCommit}
-              {...magnify('폰트 크기 슬라이더', '20px부터 350px까지 1px 단위로 조절합니다')}
+              {...magnify('폰트 크기 슬라이더', `${FONT_SIZE_MIN}px부터 ${FONT_SIZE_MAX}px까지 1px 단위입니다. 기본 70px가 정중앙입니다`)}
             />
           </div>
           <label className="ui-label mt-2" {...magnify('자간', '글자 사이 간격을 조절합니다')}>
