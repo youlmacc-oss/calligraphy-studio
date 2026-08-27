@@ -286,12 +286,14 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   }
 
   const ratioFromEvent = (axis, event) => {
-    const stage = stageRef.current
-    if (!stage) return 0
-    const rect = stage.getBoundingClientRect()
-    return axis === 'v' || axis === 'left' || axis === 'right'
+    const board = stageRef.current?.querySelector('.emo-sheet-preview') || stageRef.current
+    if (!board) return 0
+    const rect = board.getBoundingClientRect()
+    const value = axis === 'v' || axis === 'left' || axis === 'right'
       ? (event.clientX - rect.left) / Math.max(1, rect.width)
       : (event.clientY - rect.top) / Math.max(1, rect.height)
+    if (!Number.isFinite(value)) return 0
+    return Math.max(0, Math.min(1, value))
   }
 
   const startGuideDrag = (kind, key, event) => {

@@ -1,5 +1,6 @@
 export const KAKAO_STICKER_SIZE = 360
-export const KAKAO_SAFE_PAD = 0.08
+export const KAKAO_SAFE_PAD = 0.06
+export const KAKAO_FIT_RATIO = 0.88
 
 function loadImage(file) {
   return new Promise((resolve, reject) => {
@@ -253,28 +254,86 @@ export function removeGuide(list, index) {
   return list.filter((_, i) => i !== index)
 }
 
+export function sourceSpan(startRatio, endRatio, originSize) {
+  const size = Math.max(1, Math.round(Number(originSize) || 1))
+  const a = Math.max(0, Math.min(1, Number(startRatio) || 0)) * size
+  const b = Math.max(0, Math.min(1, Number(endRatio) || 0)) * size
+  const origin = Math.max(0, Math.min(size - 1, Math.floor(Math.min(a, b) + 1e-9)))
+  const end = Math.max(origin + 1, Math.min(size, Math.ceil(Math.max(a, b) - 1e-9)))
+  return { origin, size: end - origin }
+}
+
+export function containFitRect(sliceW, sliceH, size = KAKAO_STICKER_SIZE, fitRatio = KAKAO_FIT_RATIO) {
+  const maxDim = size * fitRatio
+  const scale = Math.min(maxDim / Math.max(1, sliceW), maxDim / Math.max(1, sliceH))
+  const renderW = Math.max(1, Math.round(sliceW * scale))
+  const renderH = Math.max(1, Math.round(sliceH * scale))
+  return {
+    maxDim,
+    scale,
+    renderW,
+    renderH,
+    renderX: Math.round((size - renderW) / 2),
+    renderY: Math.round((size - renderH) / 2),
+  }
+}
+
+export function expandBoxFooter(source, box, limitY) {
+  const width = source.width
+  const height = source.height
+  const x = Math.max(0, Math.floor(box.x))
+  const y = Math.max(0, Math.floor(box.y))
+  const w = Math.max(1, Math.min(width - x, Math.ceil(box.w)))
+  const h = Math.max(1, Math.min(height - y, Math.ceil(box.h)))
+  const y1 = y + h
+  const cap = Math.min(height, Math.max(y1, Math.floor(Number(limitY) || y1)))
+  if (cap <= y1) return { x, y, w, h }
+  const ctx = source.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return { x, y, w, h }
+  const band = ctx.getImageData(x, y1, w, cap - y1)
+  let last = -1
+  let empty = 0
+  for (let row = 0; row < band.height; row += 1) {
+    let ink = 0
+    for (let col = 0; col < w; col += 1) {
+      const i = (row * w + col) * 4
+      if (band.data[i + 3] < 28) continue
+      const luma = pixelLuma(band.data[i], band.data[i + 1], band.data[i + 2])
+      const chroma = pixelChroma(band.data[i], band.data[i + 1], band.data[i + 2])
+      if (chroma < 42 && (luma <= 118 || luma >= 205)) ink += 1
+    }
+    if (ink > w * 0.018) {
+      last = row
+      empty = 0
+    } else {
+      empty += 1
+      if (last >= 0 && empty >= 3) break
+    }
+  }
+  if (last < 0) return { x, y, w, h }
+  return { x, y, w, h: h + last + 1 }
+}
+
 export function splitGuideBoxes(width, height, verticalGuides = [], horizontalGuides = [], bounds = DEFAULT_CROP_BOUNDS) {
   const b = normalizeBounds(bounds)
   const xs = [b.left, ...[...verticalGuides]
     .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > b.left + 0.008 && item < b.right - 0.008)
+    .filter((item) => Number.isFinite(item) && item > b.left + 0.002 && item < b.right - 0.002)
     .sort((a, c) => a - c), b.right]
   const ys = [b.top, ...[...horizontalGuides]
     .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > b.top + 0.008 && item < b.bottom - 0.008)
+    .filter((item) => Number.isFinite(item) && item > b.top + 0.002 && item < b.bottom - 0.002)
     .sort((a, c) => a - c), b.bottom]
   const boxes = []
   for (let row = 0; row < ys.length - 1; row += 1) {
+    const ySpan = sourceSpan(ys[row], ys[row + 1], height)
     for (let col = 0; col < xs.length - 1; col += 1) {
-      const x0 = xs[col] * width
-      const x1 = xs[col + 1] * width
-      const y0 = ys[row] * height
-      const y1 = ys[row + 1] * height
+      const xSpan = sourceSpan(xs[col], xs[col + 1], width)
       boxes.push({
-        x: Math.round(x0),
-        y: Math.round(y0),
-        w: Math.max(1, Math.round(x1 - x0)),
-        h: Math.max(1, Math.round(y1 - y0)),
+        x: xSpan.origin,
+        y: ySpan.origin,
+        w: xSpan.size,
+        h: ySpan.size,
       })
     }
   }
@@ -522,16 +581,18 @@ export function enhanceSliceImageData(imageData, { amount = 0.42, contrast = 1.0
 export function fitToKakaoCanvas(source, box, {
   size = KAKAO_STICKER_SIZE,
   pad = KAKAO_SAFE_PAD,
+  fitRatio = KAKAO_FIT_RATIO,
   transparent = true,
   background,
   textMode = 'original',
   customColor = '#111111',
   outline = false,
+  lockFrame = false,
 } = {}) {
-  const sx = Math.max(0, Math.floor(box.x))
-  const sy = Math.max(0, Math.floor(box.y))
-  const sw = Math.max(1, Math.min(source.width - sx, Math.ceil(box.w)))
-  const sh = Math.max(1, Math.min(source.height - sy, Math.ceil(box.h)))
+  const sx = Math.max(0, Math.floor(box.x + 1e-9))
+  const sy = Math.max(0, Math.floor(box.y + 1e-9))
+  const sw = Math.max(1, Math.min(source.width - sx, Math.max(1, Math.round(box.w))))
+  const sh = Math.max(1, Math.min(source.height - sy, Math.max(1, Math.round(box.h))))
   const crop = document.createElement('canvas')
   crop.width = sw
   crop.height = sh
@@ -548,11 +609,13 @@ export function fitToKakaoCanvas(source, box, {
     const bg = background || sampleBackground(img.data, sw, sh)
     knockoutImageData(img, bg)
     cropCtx.putImageData(img, 0, 0)
-    const trimmed = opaqueBounds(img)
-    dx = trimmed.x
-    dy = trimmed.y
-    dwSrc = trimmed.w
-    dhSrc = trimmed.h
+    if (!lockFrame) {
+      const trimmed = opaqueBounds(img)
+      dx = trimmed.x
+      dy = Math.min(trimmed.y, Math.floor(sh * 0.08))
+      dwSrc = trimmed.w
+      dhSrc = sh - dy
+    }
   }
   const canvas = document.createElement('canvas')
   canvas.width = size
@@ -563,22 +626,19 @@ export function fitToKakaoCanvas(source, box, {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, size, size)
   }
-  const inner = size * (1 - pad * 2)
-  const scale = Math.min(inner / dwSrc, inner / dhSrc)
-  const dw = Math.max(1, Math.round(dwSrc * scale))
-  const dh = Math.max(1, Math.round(dhSrc * scale))
+  const fit = containFitRect(dwSrc, dhSrc, size, fitRatio ?? (1 - pad * 2))
   const factor = 3
   const hi = document.createElement('canvas')
-  hi.width = Math.max(2, dw * factor)
-  hi.height = Math.max(2, dh * factor)
+  hi.width = Math.max(2, fit.renderW * factor)
+  hi.height = Math.max(2, fit.renderH * factor)
   const hiCtx = hi.getContext('2d')
   hiCtx.imageSmoothingEnabled = true
   hiCtx.imageSmoothingQuality = 'high'
   hiCtx.drawImage(crop, dx, dy, dwSrc, dhSrc, 0, 0, hi.width, hi.height)
-  const scaled = downsampleStepped(hi, dw, dh)
+  const scaled = downsampleStepped(hi, fit.renderW, fit.renderH)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(scaled, Math.round((size - dw) / 2), Math.round((size - dh) / 2))
+  ctx.drawImage(scaled, fit.renderX, fit.renderY)
   const enhanced = ctx.getImageData(0, 0, size, size)
   enhanceSliceImageData(enhanced)
   applyTextTone(enhanced, textMode, customColor)
@@ -625,7 +685,7 @@ export function sliceSheet(source, {
       h: box.h / analyzed.scale,
       count: box.count,
     }))
-  const boxes = mode === 'grid'
+  const clipped = mode === 'grid'
     ? raw
     : raw.map((box) => {
       const x = Math.max(box.x, frame.x)
@@ -635,6 +695,15 @@ export function sliceSheet(source, {
       if (r - x < 4 || b - y < 4) return null
       return { ...box, x, y, w: r - x, h: b - y }
     }).filter(Boolean)
+  const rowStarts = [...new Set(clipped.map((box) => Math.round(box.y)))].sort((a, b) => a - b)
+  const boxes = clipped.map((box) => {
+    const nextRow = rowStarts.find((item) => item > Math.round(box.y) + 1)
+    const bleed = Math.round(Math.max(8, box.h * 0.18))
+    const limitY = nextRow != null
+      ? Math.min(source.height, nextRow + bleed)
+      : Math.min(source.height, frame.y + frame.h)
+    return expandBoxFooter(source, box, limitY)
+  })
   return boxes.map((box, index) => {
     const canvas = fitToKakaoCanvas(source, box, {
       transparent,
@@ -642,6 +711,7 @@ export function sliceSheet(source, {
       textMode,
       customColor,
       outline,
+      lockFrame: mode === 'grid',
     })
     return {
       id: `emo-${index + 1}`,

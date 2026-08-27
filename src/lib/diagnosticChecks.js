@@ -11,13 +11,16 @@ import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
 import {
   applyOutlineAssist,
   applyTextTone,
+  containFitRect,
   enhanceSliceImageData,
   equalSplitGuides,
   fitToKakaoCanvas,
   insertGuide,
+  KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
   normalizeBounds,
   sliceSheet,
+  sourceSpan,
   splitGuideBoxes,
   splitGridBoxes,
 } from './emoticonSplit.js'
@@ -447,6 +450,14 @@ export async function checkEmoticonSlicer() {
   if (Math.abs(crop.left - 0.2) > 1e-6 || framed.length !== 2 || Math.abs(framed[0].x - 20) > 1) {
     return { status: 'error', detail: '외곽 재단선이 분할 상자에 반영되지 않습니다.' }
   }
+  const mapped = sourceSpan(0.5, 1, 240)
+  if (mapped.origin !== 120 || mapped.size !== 120) {
+    return { status: 'error', detail: '가이드 비율이 원본 픽셀과 1:1로 매핑되지 않습니다.' }
+  }
+  const fit = containFitRect(200, 100, KAKAO_STICKER_SIZE, KAKAO_FIT_RATIO)
+  if (fit.renderX < 10 || fit.renderY < 10 || fit.renderW > KAKAO_STICKER_SIZE * KAKAO_FIT_RATIO + 1) {
+    return { status: 'error', detail: '360×360 안전 여백 contain-fit이 실패했습니다.' }
+  }
   const kakao = fitToKakaoCanvas(sheet, grid[0])
   if (kakao.width !== KAKAO_STICKER_SIZE || kakao.height !== KAKAO_STICKER_SIZE) {
     return { status: 'error', detail: `360×360 리사이저가 ${kakao.width}×${kakao.height}를 반환했습니다.` }
@@ -510,7 +521,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 커스텀 절단 ${custom.length}칸 · 외곽재단 ${framed.length}칸 · 슈퍼샘플/샤프닝 ON · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

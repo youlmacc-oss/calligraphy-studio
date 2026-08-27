@@ -2347,11 +2347,12 @@ body {
   max-width: none;
   overflow: visible;
   vertical-align: top;
-  border-radius: 0.85rem;
-  border: 1px solid rgba(34, 211, 238, 0.22);
+  border: 0;
+  border-radius: 0;
   background: repeating-conic-gradient(#1e1e28 0% 25%, #12121a 0% 50%) 50% / 16px 16px;
   user-select: none;
   touch-action: none;
+  line-height: 0;
 }
 
 .emo-slicer-stage.is-grid {
@@ -2365,7 +2366,7 @@ body {
   height: auto;
   max-height: none;
   pointer-events: none;
-  border-radius: 0.85rem;
+  border-radius: 0;
 }
 
 .emo-guide {
