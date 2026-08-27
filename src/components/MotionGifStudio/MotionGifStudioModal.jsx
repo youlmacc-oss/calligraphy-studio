@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { saveAs } from 'file-saver'
+import JSZip from 'jszip'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { magnify } from '../MenuMagnifierHUD.jsx'
-import { encodeMotionGif, revokeGifUrl } from './gifEngine.js'
+import { encodeMotionGif, formatEta, revokeGifUrl } from './gifEngine.js'
 import {
   MOTION_PRESETS,
   clampIntensity,
   clampLoopSeconds,
   paintMotionFrame,
 } from './motionPresets.js'
+import { PLATFORM_PRESETS, resolvePlatformSize } from './platformPresets.js'
+import { getEmoticonCuts, subscribeEmoticonCuts } from './cutSnapshot.js'
 import './motionGifStudio.css'
 
 const VIEW_BG = [
@@ -18,11 +21,7 @@ const VIEW_BG = [
   { id: 'light', label: '⬜ 라이트' },
 ]
 
-const SIZE_OPTIONS = [
-  { id: '360', label: '카카오 360×360', width: 360, height: 360 },
-  { id: '500', label: '500×500', width: 500, height: 500 },
-  { id: 'original', label: '원본 비율' },
-]
+const SIZE_OPTIONS = PLATFORM_PRESETS
 
 function parseInitialSource(initialSource) {
   if (!initialSource) return { dataUrl: null, cuts: [] }
@@ -65,16 +64,8 @@ function sourceSize(image) {
 }
 
 function outputSize(sizeId, image) {
-  if (sizeId === '500') return { width: 500, height: 500 }
-  if (sizeId === 'original' && image) {
-    const { width, height } = sourceSize(image)
-    const scale = Math.min(1, 1024 / Math.max(width, height, 1))
-    return {
-      width: Math.max(1, Math.round(width * scale)),
-      height: Math.max(1, Math.round(height * scale)),
-    }
-  }
-  return { width: 360, height: 360 }
+  const resolved = resolvePlatformSize(sizeId, image)
+  return { width: resolved.width, height: resolved.height, fps: resolved.fps }
 }
 
 function fitSource(image, width, height) {
@@ -110,13 +101,14 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const abortRef = useRef(false)
   const objectUrlsRef = useRef([])
   const paramsRef = useRef({})
+  const encodeStartedRef = useRef(0)
   const fileRef = useRef(null)
   const cutsFileRef = useRef(null)
 
   const parsed = useMemo(() => parseInitialSource(initialSource), [initialSource])
   const [sourceTab, setSourceTab] = useState('canvas')
   const [localUrl, setLocalUrl] = useState(null)
-  const [cuts, setCuts] = useState([])
+  const [cuts, setCuts] = useState(() => getEmoticonCuts())
   const [selectedCut, setSelectedCut] = useState('')
   const [dropOver, setDropOver] = useState(false)
   const [dropNote, setDropNote] = useState('')
@@ -126,8 +118,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const [preset, setPreset] = useState('jellyBounce')
   const [loopSeconds, setLoopSeconds] = useState(2)
   const [intensity, setIntensity] = useState(70)
-  const [fps, setFps] = useState(12)
-  const [sizeId, setSizeId] = useState('360')
+  const [fps, setFps] = useState(24)
+  const [sizeId, setSizeId] = useState('kakao')
+  const [eta, setEta] = useState('')
   const [hasSource, setHasSource] = useState(false)
   const [loading, setLoading] = useState(false)
   const [encoding, setEncoding] = useState(false)
@@ -276,16 +269,18 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       setPlaying(true)
       setLocalUrl(null)
       setSelectedCut('')
-      setCuts([])
       setDropNote('')
       setSourceTab('canvas')
+      setEta('')
       setStatus('엔진 대기 중 (Ready)')
       playRef.current = { playing: true, startedAt: 0, pausedT: 0 }
       return undefined
     }
     abortRef.current = false
-    setCuts(parsed.cuts)
-    if (parsed.cuts[0]) setSelectedCut(cutUrl(parsed.cuts[0]))
+    const snapshotCuts = getEmoticonCuts()
+    const nextCuts = parsed.cuts.length ? parsed.cuts : snapshotCuts
+    setCuts(nextCuts)
+    if (nextCuts[0]) setSelectedCut(cutUrl(nextCuts[0]))
     const onKey = (event) => {
       if (event.key === 'Escape') onClose?.()
     }
@@ -296,6 +291,13 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, parsed.dataUrl])
+
+  useEffect(() => subscribeEmoticonCuts((next) => {
+    setCuts((current) => {
+      if (current.some((item) => String(item.id || '').startsWith('local-cut-'))) return current
+      return next
+    })
+  }), [])
 
   useEffect(() => {
     if (!isOpen || !hasSource || !imageRef.current) return undefined
@@ -321,6 +323,12 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     else ingestUrl(localUrl)
   }, [sourceTab, selectedCut, localUrl, parsed.dataUrl, isOpen, ingestUrl])
 
+  useEffect(() => {
+    if (sourceTab !== 'cuts' || selectedCut) return
+    const first = cutUrl(cuts[0] || parsed.cuts[0])
+    if (first) setSelectedCut(first)
+  }, [sourceTab, selectedCut, cuts, parsed.cuts])
+
   const requestClose = useCallback(() => {
     if (encoding) {
       abortRef.current = true
@@ -333,30 +341,35 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     const source = fittedRef.current
     if (!source || encoding) return
     abortRef.current = false
+    encodeStartedRef.current = performance.now()
     setEncoding(true)
     setProgress(0)
+    setEta('')
     setStatusKind('ok')
     setFrameHint('')
     const size = outputSize(sizeId, imageRef.current || source)
+    const exportFps = size.fps || fps
     try {
       const result = await encodeMotionGif({
         source,
         width: size.width,
         height: size.height,
-        fps,
+        fps: exportFps,
         loopSeconds: loop,
         preset,
         intensity,
         signal: { get aborted() { return abortRef.current } },
         onProgress: (pct, index, total) => {
           setProgress(pct)
+          setEta(formatEta(encodeStartedRef.current, pct))
           setFrameHint(total ? `프레임 ${index} / ${total}` : '')
           setStatus(`인코딩 중 ${pct}%`)
         },
       })
       setProgress(100)
+      setEta('')
       setStatus(`완료 ${Math.round(result.byteLength / 1024)} KB`)
-      saveAs(result.blob, `motion-studio-${size.width}.gif`)
+      saveAs(result.blob, `motion-studio-${size.width}x${size.height}.gif`)
       revokeGifUrl(result.url)
     } catch (error) {
       setStatusKind(abortRef.current ? 'ok' : 'error')
@@ -366,6 +379,61 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       if (!abortRef.current && hasSource && playing) startLoop()
     }
   }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop])
+
+  const handleBatchExport = useCallback(async () => {
+    const list = (cuts.length ? cuts : parsed.cuts).filter((cut) => cutUrl(cut))
+    if (!list.length || encoding) return
+    abortRef.current = false
+    encodeStartedRef.current = performance.now()
+    setEncoding(true)
+    setProgress(0)
+    setEta('')
+    setStatusKind('ok')
+    const size = outputSize(sizeId, imageRef.current)
+    const exportFps = size.fps || fps
+    const zip = new JSZip()
+    const folder = zip.folder('motion-studio-batch')
+    try {
+      for (let i = 0; i < list.length; i += 1) {
+        if (abortRef.current) throw new Error('내보내기를 취소했습니다.')
+        const url = cutUrl(list[i])
+        const image = await loadImage(url)
+        const fitted = fitSource(image, size.width, size.height)
+        const result = await encodeMotionGif({
+          source: fitted,
+          width: size.width,
+          height: size.height,
+          fps: exportFps,
+          loopSeconds: loop,
+          preset,
+          intensity,
+          signal: { get aborted() { return abortRef.current } },
+          onProgress: (pct) => {
+            const overall = Math.round(((i + pct / 100) / list.length) * 100)
+            setProgress(overall)
+            setEta(formatEta(encodeStartedRef.current, overall))
+            setFrameHint(`컷 ${i + 1} / ${list.length}`)
+            setStatus(`일괄 변환 중 ${overall}%`)
+          },
+        })
+        const name = String(list[i].name || `cut-${String(i + 1).padStart(2, '0')}`).replace(/\.(png|jpe?g)$/i, '')
+        folder.file(`${name}.gif`, result.uint8)
+        revokeGifUrl(result.url)
+        releaseCanvas(fitted)
+      }
+      const packed = await zip.generateAsync({ type: 'blob' })
+      setProgress(100)
+      setEta('')
+      setStatus(`배치 완료 ${list.length}개`)
+      saveAs(packed, 'motion-studio-batch.zip')
+    } catch (error) {
+      setStatusKind(abortRef.current ? 'ok' : 'error')
+      setStatus(error.message || '일괄 변환에 실패했습니다.')
+    } finally {
+      setEncoding(false)
+      if (!abortRef.current && hasSource && playing) startLoop()
+    }
+  }, [cuts, encoding, fps, hasSource, intensity, loop, parsed.cuts, playing, preset, sizeId, startLoop])
 
   if (!isOpen) return null
 
@@ -440,8 +508,17 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                     })}
                   </div>
                 ) : (
-                  <p className="mgs-hint">분할된 컷이 없으면 PNG/JPG를 여러 장 올려 픽업할 수 있습니다.</p>
+                  <p className="mgs-hint">분할기에서 시트를 나누면 여기에 컷이 나타납니다. PNG/JPG를 여러 장 올려도 됩니다.</p>
                 )}
+                <button
+                  type="button"
+                  className="mgs-tab mgs-batch"
+                  disabled={encoding || !visibleCuts.length}
+                  onClick={handleBatchExport}
+                  {...magnify('전체 컷 GIF', '선택된 모션을 모든 컷에 적용해 ZIP으로 받습니다')}
+                >
+                  전체 28컷 일괄 변환 (Batch Export)
+                </button>
                 <label className="mgs-drop">
                   컷 이미지 여러 장 올리기 (최대 28)
                   <input
@@ -551,7 +628,17 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
             </div>
             <label className="mgs-slider">
               캔버스 규격
-              <select className="mgs-select" value={sizeId} disabled={encoding} onChange={(event) => setSizeId(event.target.value)}>
+              <select
+                className="mgs-select"
+                value={sizeId}
+                disabled={encoding}
+                onChange={(event) => {
+                  const nextId = event.target.value
+                  setSizeId(nextId)
+                  const resolved = resolvePlatformSize(nextId, imageRef.current)
+                  if (resolved.fps) setFps(resolved.fps)
+                }}
+              >
                 {SIZE_OPTIONS.map((option) => (
                   <option key={option.id} value={option.id}>{option.label}</option>
                 ))}
@@ -562,7 +649,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
         <footer className="mgs-foot">
           <div className={clsx('mgs-status', statusKind === 'error' && 'is-error')}>
-            {status}{frameHint ? ` · ${frameHint}` : ''}
+            {status}{frameHint ? ` · ${frameHint}` : ''}{eta ? ` · ${eta}` : ''}
             <div className="mgs-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
               <span style={{ width: `${progress}%` }} />
             </div>

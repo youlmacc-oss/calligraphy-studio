@@ -1,8 +1,15 @@
-import { GIFEncoder, quantize, applyPalette } from 'gifenc'
 import { clampLoopSeconds, paintMotionFrame } from './motionPresets.js'
+import { delayMsFromOptions, encodeRgbaFrames, wrapGifBytes } from './gifEncodeCore.js'
 
-const ALPHA_CUT = 16
-const GIF_HEADER = 'GIF89a'
+function yieldFrame() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+export function countGifFrames(fps, loopSeconds) {
+  const rate = Math.max(1, Math.round(Number(fps) || 12))
+  const seconds = clampLoopSeconds(loopSeconds)
+  return Math.max(2, Math.round(rate * seconds))
+}
 
 function readFramePixels(frame, width, height) {
   if (frame?.data && frame.width && frame.height) {
@@ -17,101 +24,76 @@ function readFramePixels(frame, width, height) {
   return { data: image.data, width: w, height: h }
 }
 
-function withTransparentIndex(rgba, palette) {
-  const table = palette.map((color) => color.slice(0, 3))
-  if (!table.length) table.push([0, 0, 0])
-  const transparentIndex = Math.min(255, table.length)
-  const index = applyPalette(rgba, table, 'rgb565')
-  for (let p = 0, i = 0; i < index.length; i += 1, p += 4) {
-    if (rgba[p + 3] < ALPHA_CUT) index[i] = transparentIndex
-  }
-  if (table.length < 256) table.push([0, 0, 0])
-  return { index, palette: table, transparentIndex }
-}
-
-function delayMsFromOptions(options) {
-  if (Number.isFinite(Number(options.delay)) && Number(options.delay) > 0) {
-    return Math.max(20, Math.round(Number(options.delay)))
-  }
-  const fps = Math.max(1, Number(options.fps) || 12)
-  return Math.max(20, Math.round(1000 / fps))
-}
-
-function headerText(bytes, length) {
-  let out = ''
-  const n = Math.min(length, bytes.length)
-  for (let i = 0; i < n; i += 1) out += String.fromCharCode(bytes[i])
-  return out
-}
-
-function assertValidGif(uint8) {
-  if (!uint8?.byteLength) throw new Error('GIF 인코더가 0바이트 파일을 반환했습니다.')
-  if (headerText(uint8, 6) !== GIF_HEADER) {
-    throw new Error('유효한 GIF89a Blob이 아닙니다.')
-  }
-}
-
-export function countGifFrames(fps, loopSeconds) {
-  const rate = fps === 24 ? 24 : 12
-  const seconds = clampLoopSeconds(loopSeconds)
-  return Math.max(2, Math.round(rate * seconds))
-}
-
 export async function renderFramesToGif(frames, options = {}) {
   const list = Array.isArray(frames) ? frames.filter(Boolean) : []
-  if (!list.length) throw new Error('인코딩할 프레임이 없습니다.')
-  const first = readFramePixels(list[0], options.width, options.height)
-  const width = Math.max(1, Math.round(Number(options.width) || first.width))
-  const height = Math.max(1, Math.round(Number(options.height) || first.height))
-  const delay = delayMsFromOptions(options)
-  const transparent = options.transparent !== false
-  const gif = GIFEncoder()
+  const rgba = list.map((frame) => readFramePixels(frame, options.width, options.height))
+  const uint8 = encodeRgbaFrames(rgba, options)
+  return wrapGifBytes(uint8, {
+    width: options.width || rgba[0]?.width,
+    height: options.height || rgba[0]?.height,
+    frames: rgba.length,
+  })
+}
 
-  for (let i = 0; i < list.length; i += 1) {
-    if (options.signal?.aborted) throw new Error('내보내기를 취소했습니다.')
-    const pixels = readFramePixels(list[i], width, height)
-    if (pixels.width !== width || pixels.height !== height) {
-      throw new Error('모든 GIF 프레임 크기가 같아야 합니다.')
-    }
-    const maxColors = transparent ? 255 : 256
-    const palette = quantize(pixels.data, maxColors, { format: 'rgb565' })
-    const mapped = transparent
-      ? withTransparentIndex(pixels.data, palette)
-      : {
-        index: applyPalette(pixels.data, palette, 'rgb565'),
-        palette,
-        transparentIndex: 0,
+function encodeWithWorker(buffers, options) {
+  if (typeof Worker === 'undefined') return null
+  try {
+    const worker = new Worker(new URL('./gifEncodeWorker.js', import.meta.url), { type: 'module' })
+    return new Promise((resolve, reject) => {
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      const timer = setInterval(() => {
+        if (!options.signal?.aborted) return
+        clearInterval(timer)
+        worker.terminate()
+        reject(new Error('내보내기를 취소했습니다.'))
+      }, 80)
+      worker.onmessage = (event) => {
+        if (event.data?.id !== id) return
+        if (event.data.type === 'progress') options.onProgress?.(event.data.pct, event.data.index, event.data.total)
+        if (event.data.type === 'done') {
+          clearInterval(timer)
+          worker.terminate()
+          resolve(new Uint8Array(event.data.buffer))
+        }
+        if (event.data.type === 'error') {
+          clearInterval(timer)
+          worker.terminate()
+          reject(new Error(event.data.message))
+        }
       }
-    gif.writeFrame(mapped.index, width, height, {
-      palette: mapped.palette,
-      delay,
-      repeat: i === 0 ? 0 : -1,
-      transparent,
-      transparentIndex: mapped.transparentIndex,
+      worker.onerror = (error) => {
+        clearInterval(timer)
+        worker.terminate()
+        reject(new Error(error?.message || '워커 인코딩에 실패했습니다.'))
+      }
+      worker.postMessage({
+        id,
+        width: options.width,
+        height: options.height,
+        delay: delayMsFromOptions(options),
+        transparent: options.transparent !== false,
+        buffers,
+      }, buffers)
     })
-    options.onProgress?.(Math.round(((i + 1) / list.length) * 100), i + 1, list.length)
+  } catch {
+    return null
   }
-
-  gif.finish()
-  const bytes = gif.bytes()
-  const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-  assertValidGif(uint8)
-  const blob = new Blob([uint8], { type: 'image/gif' })
-  if (!blob.size) throw new Error('GIF Blob 크기가 0입니다.')
-  const url = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-    ? URL.createObjectURL(blob)
-    : ''
-  return { blob, url, uint8, byteLength: uint8.byteLength, width, height, frames: list.length }
 }
 
-function releaseCanvas(canvas) {
-  if (!canvas) return
-  canvas.width = 0
-  canvas.height = 0
-}
-
-function yieldFrame() {
-  return new Promise((resolve) => setTimeout(resolve, 0))
+async function encodeRgbaNonBlocking(frames, options) {
+  const workerJob = encodeWithWorker(frames.map((frame) => frame.data.buffer), options)
+  if (workerJob) return workerJob
+  let lastYield = 0
+  return encodeRgbaFrames(frames, {
+    ...options,
+    onProgress: async (pct, index, total) => {
+      options.onProgress?.(pct, index, total)
+      if (index - lastYield >= 1) {
+        lastYield = index
+        await yieldFrame()
+      }
+    },
+  })
 }
 
 export async function encodeMotionGif({
@@ -129,40 +111,53 @@ export async function encodeMotionGif({
   const w = Math.max(1, Math.round(width || source.width || 360))
   const h = Math.max(1, Math.round(height || source.height || 360))
   const frameCount = countGifFrames(fps, loopSeconds)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   const frames = []
-  onProgress?.(0, 0, frameCount)
+  onProgress?.(0, 0, frameCount, 'render')
   try {
     for (let i = 0; i < frameCount; i += 1) {
       if (signal?.aborted) throw new Error('내보내기를 취소했습니다.')
-      const canvas = document.createElement('canvas')
-      canvas.width = w
-      canvas.height = h
-      paintMotionFrame(canvas.getContext('2d', { willReadFrequently: true }), source, {
+      paintMotionFrame(ctx, source, {
         width: w,
         height: h,
         time01: i / frameCount,
         preset,
         intensity,
       })
-      frames.push(canvas)
-      onProgress?.(Math.round(((i + 1) / frameCount) * 70), i + 1, frameCount)
-      if (i % 2 === 0) await yieldFrame()
+      const pixels = ctx.getImageData(0, 0, w, h)
+      frames.push({ data: new Uint8ClampedArray(pixels.data), width: w, height: h })
+      onProgress?.(Math.round(((i + 1) / frameCount) * 45), i + 1, frameCount, 'render')
+      await yieldFrame()
     }
-    const result = await renderFramesToGif(frames, {
+    const uint8 = await encodeRgbaNonBlocking(frames, {
       width: w,
       height: h,
       fps,
       transparent: true,
       signal,
-      onProgress: (pct) => onProgress?.(70 + Math.round(pct * 0.3), frameCount, frameCount),
+      onProgress: (pct, index, total) => {
+        onProgress?.(45 + Math.round(pct * 0.55), index, total, 'encode')
+      },
     })
-    onProgress?.(100, frameCount, frameCount)
-    return result
+    onProgress?.(100, frameCount, frameCount, 'done')
+    return wrapGifBytes(uint8, { width: w, height: h, frames: frameCount })
   } finally {
-    frames.forEach(releaseCanvas)
+    canvas.width = 0
+    canvas.height = 0
   }
 }
 
 export function revokeGifUrl(url) {
   if (url) URL.revokeObjectURL(url)
+}
+
+export function formatEta(startedAt, pct) {
+  if (!startedAt || pct < 3) return ''
+  const elapsed = performance.now() - startedAt
+  const remain = elapsed * ((100 - pct) / pct)
+  const seconds = Math.max(1, Math.ceil(remain / 1000))
+  return `남은 약 ${seconds}초`
 }

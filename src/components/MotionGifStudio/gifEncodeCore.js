@@ -1,0 +1,96 @@
+import { GIFEncoder, quantize, applyPalette } from 'gifenc'
+
+export const ALPHA_CUT = 16
+export const GIF_HEADER = 'GIF89a'
+
+export function delayMsFromOptions(options = {}) {
+  if (Number.isFinite(Number(options.delay)) && Number(options.delay) > 0) {
+    return Math.max(20, Math.round(Number(options.delay)))
+  }
+  const fps = Math.max(1, Number(options.fps) || 12)
+  return Math.max(20, Math.round(1000 / fps))
+}
+
+function headerText(bytes, length) {
+  let out = ''
+  const n = Math.min(length, bytes.length)
+  for (let i = 0; i < n; i += 1) out += String.fromCharCode(bytes[i])
+  return out
+}
+
+export function assertValidGif(uint8) {
+  if (!uint8?.byteLength) throw new Error('GIF 인코더가 0바이트 파일을 반환했습니다.')
+  if (headerText(uint8, 6) !== GIF_HEADER) {
+    throw new Error('유효한 GIF89a Blob이 아닙니다.')
+  }
+}
+
+function withTransparentIndex(rgba, palette) {
+  const table = palette.map((color) => color.slice(0, 3))
+  if (!table.length) table.push([0, 0, 0])
+  const transparentIndex = Math.min(255, table.length)
+  const index = applyPalette(rgba, table, 'rgb565')
+  for (let p = 0, i = 0; i < index.length; i += 1, p += 4) {
+    if (rgba[p + 3] < ALPHA_CUT) index[i] = transparentIndex
+  }
+  if (table.length < 256) table.push([0, 0, 0])
+  return { index, palette: table, transparentIndex }
+}
+
+export function encodeRgbaFrames(frames, options = {}) {
+  const list = Array.isArray(frames) ? frames.filter(Boolean) : []
+  if (!list.length) throw new Error('인코딩할 프레임이 없습니다.')
+  const width = Math.max(1, Math.round(Number(options.width) || list[0].width || 1))
+  const height = Math.max(1, Math.round(Number(options.height) || list[0].height || 1))
+  const delay = delayMsFromOptions(options)
+  const transparent = options.transparent !== false
+  const gif = GIFEncoder()
+
+  for (let i = 0; i < list.length; i += 1) {
+    if (options.signal?.aborted) throw new Error('내보내기를 취소했습니다.')
+    const pixels = list[i]
+    if (pixels.width !== width || pixels.height !== height) {
+      throw new Error('모든 GIF 프레임 크기가 같아야 합니다.')
+    }
+    const maxColors = transparent ? 255 : 256
+    const palette = quantize(pixels.data, maxColors, { format: 'rgb565' })
+    const mapped = transparent
+      ? withTransparentIndex(pixels.data, palette)
+      : {
+        index: applyPalette(pixels.data, palette, 'rgb565'),
+        palette,
+        transparentIndex: 0,
+      }
+    gif.writeFrame(mapped.index, width, height, {
+      palette: mapped.palette,
+      delay,
+      repeat: i === 0 ? 0 : -1,
+      transparent,
+      transparentIndex: mapped.transparentIndex,
+    })
+    options.onProgress?.(Math.round(((i + 1) / list.length) * 100), i + 1, list.length)
+  }
+
+  gif.finish()
+  const bytes = gif.bytes()
+  const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  assertValidGif(uint8)
+  return uint8
+}
+
+export function wrapGifBytes(uint8, meta = {}) {
+  const blob = new Blob([uint8], { type: 'image/gif' })
+  if (!blob.size) throw new Error('GIF Blob 크기가 0입니다.')
+  const url = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+    ? URL.createObjectURL(blob)
+    : ''
+  return {
+    blob,
+    url,
+    uint8,
+    byteLength: uint8.byteLength,
+    width: meta.width,
+    height: meta.height,
+    frames: meta.frames,
+  }
+}

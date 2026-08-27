@@ -40,6 +40,7 @@ import {
   cycleViewBgMode,
 } from '../lib/emoticonSplit.js'
 import { buildDiagnosticReport, copyDiagnosticLog, publishInspectorHud } from '../utils/debugger.js'
+import { publishEmoticonCuts } from './MotionGifStudio/cutSnapshot.js'
 
 const TEXT_MODES = [
   { id: 'original', label: '원본 유지', hint: '텍스트 감지 영역과 캐릭터 색을 모두 그대로 둡니다' },
@@ -196,6 +197,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
 
   const reset = () => {
     setSlices([])
+    publishEmoticonCuts([])
     setSheetUrl('')
     setFileName('')
     sheetRef.current = null
@@ -244,6 +246,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       })
       if (gen !== sliceGen.current) return
       setSlices(next)
+      publishEmoticonCuts(next)
       const suspects = next.filter((item) => item.diagnostics?.suspects?.length).length
       publishInspectorHud({
         status: next.length ? (suspects ? 'warn' : 'ok') : 'idle',
@@ -257,6 +260,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       if (gen !== sliceGen.current) return
       setNote(error.message || '분할에 실패했습니다.')
       setSlices([])
+      publishEmoticonCuts([])
       publishInspectorHud({ status: 'idle', suspectCount: 0, sliceCount: 0 })
     } finally {
       if (gen === sliceGen.current) setBusy(false)
