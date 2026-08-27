@@ -1,6 +1,7 @@
 export const KAKAO_STICKER_SIZE = 360
 export const KAKAO_SAFE_PAD = 0.06
 export const KAKAO_FIT_RATIO = 0.88
+export const MODE_A_SAFE_PAD = 0.08
 
 function loadImage(file) {
   return new Promise((resolve, reject) => {
@@ -19,10 +20,11 @@ function loadImage(file) {
 }
 
 export function imageToCanvas(image) {
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.max(1, image.naturalWidth || image.width)
-  canvas.height = Math.max(1, image.naturalHeight || image.height)
-  canvas.getContext('2d').drawImage(image, 0, 0)
+  const { canvas, ctx } = makeAlphaCanvas(
+    Math.max(1, image.naturalWidth || image.width),
+    Math.max(1, image.naturalHeight || image.height),
+  )
+  ctx.drawImage(image, 0, 0)
   return canvas
 }
 
@@ -147,12 +149,18 @@ function knockoutImageData(imageData, bg, threshold = 42) {
   const soft = threshold + 28
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] < 18) {
+      data[i] = 0
+      data[i + 1] = 0
+      data[i + 2] = 0
       data[i + 3] = 0
       continue
     }
     if (bg[3] < 18) continue
     const dist = colorDist(data[i], data[i + 1], data[i + 2], bg)
     if (dist <= threshold) {
+      data[i] = 0
+      data[i + 1] = 0
+      data[i + 2] = 0
       data[i + 3] = 0
     } else if (dist < soft) {
       data[i + 3] = Math.round(data[i + 3] * ((dist - threshold) / (soft - threshold)))
@@ -358,6 +366,29 @@ function parseHexColor(hex, fallback = [10, 10, 12]) {
   return [r, g, b]
 }
 
+function flattenTransparentPixels(imageData) {
+  if (!imageData?.data) return imageData
+  const { data } = imageData
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 10) {
+      data[i] = 0
+      data[i + 1] = 0
+      data[i + 2] = 0
+      data[i + 3] = 0
+    }
+  }
+  return imageData
+}
+
+function makeAlphaCanvas(width, height) {
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, width)
+  canvas.height = Math.max(1, height)
+  const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  return { canvas, ctx }
+}
+
 function downsampleStepped(source, destW, destH) {
   let cur = source
   let w = source.width
@@ -365,10 +396,7 @@ function downsampleStepped(source, destW, destH) {
   while (w > destW * 1.7 || h > destH * 1.7) {
     const nextW = Math.max(destW, Math.round(w * 0.5))
     const nextH = Math.max(destH, Math.round(h * 0.5))
-    const tmp = document.createElement('canvas')
-    tmp.width = nextW
-    tmp.height = nextH
-    const ctx = tmp.getContext('2d')
+    const { canvas: tmp, ctx } = makeAlphaCanvas(nextW, nextH)
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(cur, 0, 0, nextW, nextH)
@@ -377,10 +405,7 @@ function downsampleStepped(source, destW, destH) {
     h = nextH
   }
   if (w === destW && h === destH) return cur
-  const out = document.createElement('canvas')
-  out.width = destW
-  out.height = destH
-  const ctx = out.getContext('2d')
+  const { canvas: out, ctx } = makeAlphaCanvas(destW, destH)
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(cur, 0, 0, destW, destH)
@@ -593,10 +618,7 @@ export function fitToKakaoCanvas(source, box, {
   const sy = Math.max(0, Math.floor(box.y + 1e-9))
   const sw = Math.max(1, Math.min(source.width - sx, Math.max(1, Math.round(box.w))))
   const sh = Math.max(1, Math.min(source.height - sy, Math.max(1, Math.round(box.h))))
-  const crop = document.createElement('canvas')
-  crop.width = sw
-  crop.height = sh
-  const cropCtx = crop.getContext('2d', { willReadFrequently: true, alpha: true })
+  const { canvas: crop, ctx: cropCtx } = makeAlphaCanvas(sw, sh)
   cropCtx.imageSmoothingEnabled = true
   cropCtx.imageSmoothingQuality = 'high'
   cropCtx.drawImage(source, sx, sy, sw, sh, 0, 0, sw, sh)
@@ -608,30 +630,27 @@ export function fitToKakaoCanvas(source, box, {
     const img = cropCtx.getImageData(0, 0, sw, sh)
     const bg = background || sampleBackground(img.data, sw, sh)
     knockoutImageData(img, bg)
+    flattenTransparentPixels(img)
     cropCtx.putImageData(img, 0, 0)
     if (!lockFrame) {
       const trimmed = opaqueBounds(img)
       dx = trimmed.x
-      dy = Math.min(trimmed.y, Math.floor(sh * 0.08))
+      dy = trimmed.y
       dwSrc = trimmed.w
-      dhSrc = sh - dy
+      dhSrc = trimmed.h
     }
   }
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
-  if (transparent) ctx.clearRect(0, 0, size, size)
-  else {
+  const { canvas, ctx } = makeAlphaCanvas(size, size)
+  if (transparent) {
+    ctx.clearRect(0, 0, size, size)
+  } else {
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, size, size)
   }
-  const fit = containFitRect(dwSrc, dhSrc, size, fitRatio ?? (1 - pad * 2))
+  const innerRatio = lockFrame ? fitRatio : (1 - pad * 2)
+  const fit = containFitRect(dwSrc, dhSrc, size, innerRatio)
   const factor = 3
-  const hi = document.createElement('canvas')
-  hi.width = Math.max(2, fit.renderW * factor)
-  hi.height = Math.max(2, fit.renderH * factor)
-  const hiCtx = hi.getContext('2d')
+  const { canvas: hi, ctx: hiCtx } = makeAlphaCanvas(Math.max(2, fit.renderW * factor), Math.max(2, fit.renderH * factor))
   hiCtx.imageSmoothingEnabled = true
   hiCtx.imageSmoothingQuality = 'high'
   hiCtx.drawImage(crop, dx, dy, dwSrc, dhSrc, 0, 0, hi.width, hi.height)
@@ -646,6 +665,7 @@ export function fitToKakaoCanvas(source, box, {
     const stroke = textMode === 'white' ? '#ffffff' : textMode === 'custom' ? customColor : '#111111'
     applyOutlineAssist(enhanced, stroke)
   }
+  flattenTransparentPixels(enhanced)
   ctx.putImageData(enhanced, 0, 0)
   return canvas
 }
@@ -670,12 +690,6 @@ export function sliceSheet(source, {
   const analyzed = analyzeSheet(source)
   const bg = sampleBackground(analyzed.data.data, analyzed.data.width, analyzed.data.height)
   const crop = normalizeBounds(bounds)
-  const frame = {
-    x: crop.left * source.width,
-    y: crop.top * source.height,
-    w: (crop.right - crop.left) * source.width,
-    h: (crop.bottom - crop.top) * source.height,
-  }
   const raw = mode === 'grid'
     ? splitGridBoxes(source.width, source.height, cols, rows, verticalGuides, horizontalGuides, crop)
     : findContentBoxes(analyzed.data).map((box) => ({
@@ -685,25 +699,17 @@ export function sliceSheet(source, {
       h: box.h / analyzed.scale,
       count: box.count,
     }))
-  const clipped = mode === 'grid'
-    ? raw
-    : raw.map((box) => {
-      const x = Math.max(box.x, frame.x)
-      const y = Math.max(box.y, frame.y)
-      const r = Math.min(box.x + box.w, frame.x + frame.w)
-      const b = Math.min(box.y + box.h, frame.y + frame.h)
-      if (r - x < 4 || b - y < 4) return null
-      return { ...box, x, y, w: r - x, h: b - y }
-    }).filter(Boolean)
-  const rowStarts = [...new Set(clipped.map((box) => Math.round(box.y)))].sort((a, b) => a - b)
-  const boxes = clipped.map((box) => {
-    const nextRow = rowStarts.find((item) => item > Math.round(box.y) + 1)
-    const bleed = Math.round(Math.max(8, box.h * 0.18))
-    const limitY = nextRow != null
-      ? Math.min(source.height, nextRow + bleed)
-      : Math.min(source.height, frame.y + frame.h)
-    return expandBoxFooter(source, box, limitY)
-  })
+  const boxes = mode === 'grid'
+    ? raw.map((box) => {
+      const nextY = raw
+        .map((item) => item.y)
+        .filter((item) => item > box.y + 1)
+        .sort((a, b) => a - b)[0]
+      const bleed = Math.round(Math.max(8, box.h * 0.18))
+      const limitY = nextY != null ? Math.min(source.height, nextY + bleed) : source.height
+      return expandBoxFooter(source, box, limitY)
+    })
+    : raw
   return boxes.map((box, index) => {
     const canvas = fitToKakaoCanvas(source, box, {
       transparent,
@@ -712,6 +718,7 @@ export function sliceSheet(source, {
       customColor,
       outline,
       lockFrame: mode === 'grid',
+      pad: mode === 'grid' ? KAKAO_SAFE_PAD : MODE_A_SAFE_PAD,
     })
     return {
       id: `emo-${index + 1}`,

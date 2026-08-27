@@ -429,6 +429,9 @@ export async function checkEmoticonSlicer() {
   ctx.fillRect(12, 12, 84, 84)
   ctx.fillRect(140, 18, 72, 72)
   const smart = sliceSheet(sheet, { mode: 'smart', transparent: true })
+  if (smart.length !== 2) {
+    return { status: 'error', detail: `모드 A 스마트 감지가 ${smart.length}객체를 반환했습니다(기대 2).` }
+  }
   const grid = splitGridBoxes(240, 120, 2, 1)
   const custom = splitGridBoxes(100, 50, 2, 2, [0.25], [0.6])
   const even = equalSplitGuides(3)
@@ -465,6 +468,9 @@ export async function checkEmoticonSlicer() {
   const corner = kakao.getContext('2d').getImageData(2, 2, 1, 1).data
   if (corner[3] > 40) {
     return { status: 'warn', detail: 'IDLE · 360×360 알파 채널이 불투명합니다.' }
+  }
+  if (corner[3] < 10 && corner[0] + corner[1] + corner[2] > 24) {
+    return { status: 'warn', detail: 'IDLE · 투명 픽셀 RGB가 남아 ZIP에서 검은 배경으로 보일 수 있습니다.' }
   }
   const probe = document.createElement('canvas')
   probe.width = 8
@@ -516,12 +522,16 @@ export async function checkEmoticonSlicer() {
     return { status: 'error', detail: '외곽선 보강이 상단 캐릭터 영역까지 번졌습니다.' }
   }
   const zip = new JSZip()
-  zip.file('kakao-360-01.png', await canvasToPngBlob(kakao))
+  const dataUrl = kakao.toDataURL('image/png')
+  if (!String(dataUrl).startsWith('data:image/png')) {
+    return { status: 'error', detail: 'ZIP PNG가 toDataURL(image/png) 알파 경로를 쓰지 않습니다.' }
+  }
+  zip.file('kakao-360-01.png', dataUrl.split(',')[1], { base64: true })
   const packed = await zip.generateAsync({ type: 'blob' })
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · CCA원복 · PNG알파 ZIP · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

@@ -4,7 +4,6 @@ import { Download, Maximize2, Minus, Plus, Upload, X } from 'lucide-react'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { magnify } from './MenuMagnifierHUD.jsx'
-import { canvasToPngBlob } from '../lib/exportFormats.js'
 import {
   DEFAULT_CROP_BOUNDS,
   KAKAO_STICKER_SIZE,
@@ -376,7 +375,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   }
 
   const downloadOne = async (item) => {
-    const blob = await canvasToPngBlob(item.canvas)
+    const dataUrl = item.canvas.toDataURL('image/png')
+    const blob = await (await fetch(dataUrl)).blob()
     saveAs(blob, item.name)
   }
 
@@ -388,8 +388,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       const zip = new JSZip()
       const folder = zip.folder('kakao-emoticons-360')
       for (const item of slices) {
-        const blob = await canvasToPngBlob(item.canvas)
-        folder.file(item.name, blob)
+        const dataUrl = item.canvas.toDataURL('image/png')
+        folder.file(item.name, dataUrl.split(',')[1], { base64: true })
       }
       const packed = await zip.generateAsync({ type: 'blob' })
       saveAs(packed, 'kakao-emoticons-360.zip')
