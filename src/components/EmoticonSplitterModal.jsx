@@ -522,10 +522,14 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     try {
       const zip = new JSZip()
       const folder = zip.folder('kakao-emoticons-360')
+      const nextPreviews = []
       for (const item of slices) {
+        const preview = item.canvas.toDataURL('image/png')
+        nextPreviews.push({ ...item, preview })
         const blob = await canvasToPngBlob(item.canvas)
         folder.file(item.name, blob)
       }
+      setSlices(nextPreviews)
       const packed = await zip.generateAsync({ type: 'blob' })
       saveAs(packed, 'kakao-emoticons-360.zip')
       setNote(`${slices.length}개를 kakao-emoticons-360.zip 으로 저장했습니다.`)

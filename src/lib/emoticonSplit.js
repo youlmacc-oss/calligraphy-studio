@@ -418,7 +418,7 @@ function parseHexColor(hex, fallback = [10, 10, 12]) {
   return [r, g, b]
 }
 
-export const FLOOD_FILL_TOLERANCE = 18
+export const FLOOD_FILL_TOLERANCE = 22
 
 function flattenTransparentPixels(imageData) {
   if (!imageData?.data) return imageData
@@ -516,7 +516,10 @@ function isCharacterStrokePixel(r, g, b, a) {
 function isFloodFillBackground(r, g, b, a, seeds, tolerance) {
   if (a < 12) return true
   if (isCharacterStrokePixel(r, g, b, a)) return false
-  if (!isLightBackgroundSeed(r, g, b, a)) return false
+  const luma = pixelLuma(r, g, b)
+  const chroma = pixelChroma(r, g, b)
+  if (luma >= 232 && chroma < 20) return true
+  if (luma < 186) return false
   for (let i = 0; i < seeds.length; i += 1) {
     if (colorEuclid(r, g, b, seeds[i]) <= tolerance) return true
   }
@@ -603,15 +606,7 @@ export function floodFillAlphaKey(imageData, {
       const g = data[i + 1]
       const b = data[i + 2]
       if (isCharacterStrokePixel(r, g, b, data[i + 3])) continue
-      if (!isLightBackgroundSeed(r, g, b, data[i + 3])) continue
-      let close = false
-      for (let s = 0; s < seeds.length; s += 1) {
-        if (colorEuclid(r, g, b, seeds[s]) <= tolerance) {
-          close = true
-          break
-        }
-      }
-      if (!close) continue
+      if (!isFloodFillBackground(r, g, b, data[i + 3], seeds, tolerance)) continue
       const alpha = Math.round(data[i + 3] * (1 - Math.min(1, near / 4) * 0.72))
       if (alpha < 18) {
         data[i] = 0
@@ -625,6 +620,27 @@ export function floodFillAlphaKey(imageData, {
   }
   flattenTransparentPixels(imageData)
   return imageData
+}
+
+export function applyFloodFillTransparency(ctx, width = KAKAO_STICKER_SIZE, height = width, options = {}) {
+  if (!ctx?.getImageData || !ctx.putImageData) return ctx
+  const w = Math.max(1, Math.round(Number(width) || KAKAO_STICKER_SIZE))
+  const h = Math.max(1, Math.round(Number(height) || w))
+  const imageData = ctx.getImageData(0, 0, w, h)
+  const { data } = imageData
+  const extraSeeds = Array.isArray(options.extraSeeds) ? options.extraSeeds.slice() : []
+  const corners = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]]
+  corners.forEach(([x, y]) => {
+    const i = (y * w + x) * 4
+    extraSeeds.push([data[i], data[i + 1], data[i + 2], data[i + 3]])
+  })
+  floodFillAlphaKey(imageData, {
+    tolerance: options.tolerance ?? FLOOD_FILL_TOLERANCE,
+    extraSeeds,
+  })
+  flattenTransparentPixels(imageData)
+  ctx.putImageData(imageData, 0, 0)
+  return ctx
 }
 
 function makeAlphaCanvas(width, height) {
@@ -801,6 +817,7 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
     for (let x = 0; x < width; x += 1) {
       if (!mask[y * width + x]) continue
       const i = (y * width + x) * 4
+      if (!isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
       const luma = pixelLuma(data[i], data[i + 1], data[i + 2]) / 255
       let r = data[i]
       let g = data[i + 1]
@@ -949,20 +966,23 @@ export function fitToKakaoCanvas(source, box, {
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(scaled, fit.renderX, fit.renderY)
-  const enhanced = ctx.getImageData(0, 0, size, size)
-  enhanceSliceImageData(enhanced)
-  applyTextTone(enhanced, textMode, customColor, { textZonePercent })
+  let pixels = ctx.getImageData(0, 0, size, size)
+  enhanceSliceImageData(pixels)
+  ctx.putImageData(pixels, 0, 0)
+  if (transparent) {
+    applyFloodFillTransparency(ctx, size, size, {
+      extraSeeds: background ? [background] : [],
+    })
+  }
+  pixels = ctx.getImageData(0, 0, size, size)
+  applyTextTone(pixels, textMode, customColor, { textZonePercent })
   if (outline) {
     const stroke = textMode === 'white' ? '#ffffff' : textMode === 'custom' ? customColor : '#111111'
-    applyOutlineAssist(enhanced, stroke, { textZonePercent })
+    applyOutlineAssist(pixels, stroke, { textZonePercent })
   }
-  flattenTransparentPixels(enhanced)
-  if (transparent) {
-    floodFillAlphaKey(enhanced, { extraSeeds: background ? [background] : [] })
-    flattenTransparentPixels(enhanced)
-  }
+  flattenTransparentPixels(pixels)
   ctx.clearRect(0, 0, size, size)
-  ctx.putImageData(enhanced, 0, 0)
+  ctx.putImageData(pixels, 0, 0)
   return canvas
 }
 

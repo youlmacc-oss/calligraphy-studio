@@ -24,6 +24,7 @@ import {
   equalSplitGuides,
   fitToKakaoCanvas,
   floodFillAlphaKey,
+  applyFloodFillTransparency,
   FLOOD_FILL_TOLERANCE,
   insertGuide,
   KAKAO_FIT_RATIO,
@@ -543,8 +544,8 @@ export async function checkEmoticonSlicer() {
   if (eyePx < 180) {
     return { status: 'error', detail: '플러드필이 캐릭터 내부 흰색을 지웠습니다.' }
   }
-  if (FLOOD_FILL_TOLERANCE !== 18) {
-    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 18).` }
+  if (FLOOD_FILL_TOLERANCE !== 22) {
+    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 22).` }
   }
   const halo = document.createElement('canvas')
   halo.width = 48
@@ -572,6 +573,23 @@ export async function checkEmoticonSlicer() {
   }
   if (highlightPx < 200) {
     return { status: 'error', detail: '플러드필이 원형 테두리 안 하이라이트를 뚫었습니다.' }
+  }
+  const plate = document.createElement('canvas')
+  plate.width = 48
+  plate.height = 48
+  const plateCtx = plate.getContext('2d', { alpha: true })
+  plateCtx.clearRect(0, 0, 48, 48)
+  plateCtx.fillStyle = '#f4f4f6'
+  plateCtx.fillRect(8, 8, 32, 32)
+  plateCtx.fillStyle = '#141414'
+  plateCtx.fillRect(14, 30, 20, 6)
+  applyFloodFillTransparency(plateCtx, 48, 48)
+  const plateData = plateCtx.getImageData(0, 0, 48, 48)
+  if (plateData.data[(10 * 48 + 10) * 4 + 3] > 12 || plateData.data[(2 * 48 + 2) * 4 + 3] > 12) {
+    return { status: 'error', detail: '글자 주변 사각 흰 패치가 플러드필 후에도 남았습니다.' }
+  }
+  if (plateData.data[(32 * 48 + 20) * 4 + 3] < 180) {
+    return { status: 'error', detail: '글자 획이 흰 패치 제거 과정에서 지워졌습니다.' }
   }
   const probe = document.createElement('canvas')
   probe.width = 8
@@ -630,6 +648,21 @@ export async function checkEmoticonSlicer() {
   applyTextTone(tight, 'custom', '#00ccff', { textZonePercent: 10 })
   if (tight.data[textAt] !== 20 || tight.data[textAt + 1] !== 20 || tight.data[textAt + 2] !== 20) {
     return { status: 'error', detail: '텍스트 감지 높이 10%가 한계선 밖 글자까지 치환했습니다.' }
+  }
+  const glyph = document.createElement('canvas')
+  glyph.width = 40
+  glyph.height = 40
+  const glyphCtx = glyph.getContext('2d', { alpha: true })
+  glyphCtx.clearRect(0, 0, 40, 40)
+  glyphCtx.fillStyle = '#141414'
+  glyphCtx.fillRect(16, 34, 8, 4)
+  const glyphData = glyphCtx.getImageData(0, 0, 40, 40)
+  applyTextTone(glyphData, 'custom', '#00ccff')
+  if (glyphData.data[(36 * 40 + 18) * 4] !== 0 || glyphData.data[(36 * 40 + 18) * 4 + 1] !== 204) {
+    return { status: 'warn', detail: 'IDLE · 투명 위 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
+  }
+  if (glyphData.data[(33 * 40 + 16) * 4 + 3] > 20 || glyphData.data[(36 * 40 + 12) * 4 + 3] > 20) {
+    return { status: 'error', detail: '텍스트 색 치환이 글자 주변에 사각 패치를 칠했습니다.' }
   }
   const ring = document.createElement('canvas')
   ring.width = 40
