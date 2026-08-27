@@ -189,20 +189,10 @@
   background: #0b1220;
 }
 
-.mgs-preview-img {
+.mgs-preview-canvas {
   max-width: 86%;
   max-height: 86%;
-  object-fit: contain;
   transform-origin: center center;
-}
-
-.mgs-preview-img.is-playing {
-  animation: mgs-preview-pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes mgs-preview-pulse {
-  0%, 100% { filter: none; }
-  50% { filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.35)); }
 }
 
 .mgs-zoom {

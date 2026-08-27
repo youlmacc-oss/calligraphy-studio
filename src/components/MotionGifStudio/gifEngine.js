@@ -1,7 +1,8 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc'
+import { clampLoopSeconds, paintMotionFrame } from './motionPresets.js'
 
-const MIN_BYTES = 5 * 1024
 const ALPHA_CUT = 16
+const GIF_HEADER = 'GIF89a'
 
 function readFramePixels(frame, width, height) {
   if (frame?.data && frame.width && frame.height) {
@@ -36,6 +37,26 @@ function delayMsFromOptions(options) {
   return Math.max(20, Math.round(1000 / fps))
 }
 
+function headerText(bytes, length) {
+  let out = ''
+  const n = Math.min(length, bytes.length)
+  for (let i = 0; i < n; i += 1) out += String.fromCharCode(bytes[i])
+  return out
+}
+
+function assertValidGif(uint8) {
+  if (!uint8?.byteLength) throw new Error('GIF 인코더가 0바이트 파일을 반환했습니다.')
+  if (headerText(uint8, 6) !== GIF_HEADER) {
+    throw new Error('유효한 GIF89a Blob이 아닙니다.')
+  }
+}
+
+export function countGifFrames(fps, loopSeconds) {
+  const rate = fps === 24 ? 24 : 12
+  const seconds = clampLoopSeconds(loopSeconds)
+  return Math.max(2, Math.round(rate * seconds))
+}
+
 export async function renderFramesToGif(frames, options = {}) {
   const list = Array.isArray(frames) ? frames.filter(Boolean) : []
   if (!list.length) throw new Error('인코딩할 프레임이 없습니다.')
@@ -47,6 +68,7 @@ export async function renderFramesToGif(frames, options = {}) {
   const gif = GIFEncoder()
 
   for (let i = 0; i < list.length; i += 1) {
+    if (options.signal?.aborted) throw new Error('내보내기를 취소했습니다.')
     const pixels = readFramePixels(list[i], width, height)
     if (pixels.width !== width || pixels.height !== height) {
       throw new Error('모든 GIF 프레임 크기가 같아야 합니다.')
@@ -73,15 +95,72 @@ export async function renderFramesToGif(frames, options = {}) {
   gif.finish()
   const bytes = gif.bytes()
   const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-  if (!uint8.byteLength) throw new Error('GIF 인코더가 0바이트 파일을 반환했습니다.')
-  if (uint8.byteLength < MIN_BYTES) {
-    throw new Error(`GIF 파일이 너무 작습니다 (${uint8.byteLength}B). 5KB 이상이어야 합니다.`)
-  }
+  assertValidGif(uint8)
   const blob = new Blob([uint8], { type: 'image/gif' })
+  if (!blob.size) throw new Error('GIF Blob 크기가 0입니다.')
   const url = typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
     ? URL.createObjectURL(blob)
     : ''
   return { blob, url, uint8, byteLength: uint8.byteLength, width, height, frames: list.length }
+}
+
+function releaseCanvas(canvas) {
+  if (!canvas) return
+  canvas.width = 0
+  canvas.height = 0
+}
+
+function yieldFrame() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+export async function encodeMotionGif({
+  source,
+  width,
+  height,
+  fps = 12,
+  loopSeconds = 2,
+  preset = 'jellyBounce',
+  intensity = 70,
+  onProgress,
+  signal,
+} = {}) {
+  if (!source) throw new Error('인코딩할 소스가 없습니다.')
+  const w = Math.max(1, Math.round(width || source.width || 360))
+  const h = Math.max(1, Math.round(height || source.height || 360))
+  const frameCount = countGifFrames(fps, loopSeconds)
+  const frames = []
+  onProgress?.(0, 0, frameCount)
+  try {
+    for (let i = 0; i < frameCount; i += 1) {
+      if (signal?.aborted) throw new Error('내보내기를 취소했습니다.')
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      paintMotionFrame(canvas.getContext('2d', { willReadFrequently: true }), source, {
+        width: w,
+        height: h,
+        time01: i / frameCount,
+        preset,
+        intensity,
+      })
+      frames.push(canvas)
+      onProgress?.(Math.round(((i + 1) / frameCount) * 70), i + 1, frameCount)
+      if (i % 2 === 0) await yieldFrame()
+    }
+    const result = await renderFramesToGif(frames, {
+      width: w,
+      height: h,
+      fps,
+      transparent: true,
+      signal,
+      onProgress: (pct) => onProgress?.(70 + Math.round(pct * 0.3), frameCount, frameCount),
+    })
+    onProgress?.(100, frameCount, frameCount)
+    return result
+  } finally {
+    frames.forEach(releaseCanvas)
+  }
 }
 
 export function revokeGifUrl(url) {
