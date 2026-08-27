@@ -17,7 +17,10 @@ import {
   TEXT_ZONE_DEFAULT,
   TEXT_ZONE_MAX,
   TEXT_ZONE_MIN,
+  TEXT_ZONE_ANCHOR_DEFAULT,
   OUTLINE_DEFAULT,
+  PUNCH_HOLES_DEFAULT,
+  VIEW_BG_DEFAULT,
   clampEmoSideWidth,
   clampPreviewZoomPercent,
   clampSliceScale,
@@ -34,15 +37,22 @@ import {
   removeGuide,
   sliceSheet,
   stepPreviewZoomPercent,
+  cycleViewBgMode,
 } from '../lib/emoticonSplit.js'
 import { buildDiagnosticReport, copyDiagnosticLog, publishInspectorHud } from '../utils/debugger.js'
 
 const TEXT_MODES = [
-  { id: 'original', label: '원본 유지', hint: '하단 텍스트와 캐릭터 색을 모두 그대로 둡니다' },
-  { id: 'black', label: '고대비 블랙 강화', hint: '텍스트 감지 높이 안의 글자만 검게 살리고 캐릭터 본체는 건드리지 않습니다' },
-  { id: 'white', label: '선명한 화이트', hint: '텍스트 감지 높이 안의 글자만 흰색으로 바꾸고 캐릭터 본체는 보존합니다' },
-  { id: 'custom', label: '커스텀 색상', hint: '텍스트 감지 높이 안의 글자 클러스터만 고른 색으로 치환합니다' },
+  { id: 'original', label: '원본 유지', hint: '텍스트 감지 영역과 캐릭터 색을 모두 그대로 둡니다' },
+  { id: 'black', label: '고대비 블랙 강화', hint: '텍스트 감지 영역 안의 글자만 검게 살리고 캐릭터 본체는 건드리지 않습니다' },
+  { id: 'white', label: '선명한 화이트', hint: '텍스트 감지 영역 안의 글자만 흰색으로 바꾸고 캐릭터 본체는 보존합니다' },
+  { id: 'custom', label: '커스텀 색상', hint: '텍스트 감지 영역 안의 글자 클러스터만 고른 색으로 치환합니다' },
 ]
+
+const VIEW_BG_LABELS = {
+  checker: '🏁 체커보드',
+  dark: '⬛ 다크',
+  light: '⬜ 라이트',
+}
 
 function clampZoom(value) {
   return clampPreviewZoomPercent(Math.round(Number(value) * 100)) / 100
@@ -83,6 +93,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [panning, setPanning] = useState(false)
   const [customScale, setCustomScale] = useState(SLICE_SCALE_DEFAULT)
   const [textZone, setTextZone] = useState(TEXT_ZONE_DEFAULT)
+  const [textZoneAnchor, setTextZoneAnchor] = useState(TEXT_ZONE_ANCHOR_DEFAULT)
+  const [punchHoles, setPunchHoles] = useState(PUNCH_HOLES_DEFAULT)
+  const [viewBg, setViewBg] = useState(VIEW_BG_DEFAULT)
   const [sideWidth, setSideWidth] = useState(EMO_SIDE_DEFAULT)
   const [sideResizing, setSideResizing] = useState(false)
   const [logCopied, setLogCopied] = useState(false)
@@ -100,6 +113,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const panRef = useRef(pan)
   const customScaleRef = useRef(customScale)
   const textZoneRef = useRef(textZone)
+  const textZoneAnchorRef = useRef(textZoneAnchor)
+  const punchHolesRef = useRef(punchHoles)
+  const viewBgRef = useRef(viewBg)
   const sideWidthRef = useRef(sideWidth)
   vGuidesRef.current = verticalGuides
   hGuidesRef.current = horizontalGuides
@@ -115,6 +131,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   panRef.current = pan
   customScaleRef.current = customScale
   textZoneRef.current = textZone
+  textZoneAnchorRef.current = textZoneAnchor
+  punchHolesRef.current = punchHoles
+  viewBgRef.current = viewBg
   sideWidthRef.current = sideWidth
 
   useEffect(() => {
@@ -141,6 +160,12 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     panRef.current = { x: 0, y: 0 }
     setOutline(OUTLINE_DEFAULT)
     outlineRef.current = OUTLINE_DEFAULT
+    setPunchHoles(PUNCH_HOLES_DEFAULT)
+    punchHolesRef.current = PUNCH_HOLES_DEFAULT
+    setTextZoneAnchor(TEXT_ZONE_ANCHOR_DEFAULT)
+    textZoneAnchorRef.current = TEXT_ZONE_ANCHOR_DEFAULT
+    setViewBg(VIEW_BG_DEFAULT)
+    viewBgRef.current = VIEW_BG_DEFAULT
     return undefined
   }, [open])
 
@@ -182,6 +207,12 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     resetView()
     setOutline(OUTLINE_DEFAULT)
     outlineRef.current = OUTLINE_DEFAULT
+    setPunchHoles(PUNCH_HOLES_DEFAULT)
+    punchHolesRef.current = PUNCH_HOLES_DEFAULT
+    setTextZoneAnchor(TEXT_ZONE_ANCHOR_DEFAULT)
+    textZoneAnchorRef.current = TEXT_ZONE_ANCHOR_DEFAULT
+    setViewBg(VIEW_BG_DEFAULT)
+    viewBgRef.current = VIEW_BG_DEFAULT
     publishInspectorHud({ status: 'idle', suspectCount: 0, sliceCount: 0 })
     setNote('AI가 만든 스티커 시트(흰 배경 그리드)를 올리면 360×360 PNG로 나눕니다.')
   }
@@ -208,6 +239,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         outline: patch.nextOutline ?? outlineRef.current,
         customScale: patch.nextCustomScale ?? customScaleRef.current,
         textZonePercent: patch.nextTextZone ?? textZoneRef.current,
+        textZoneAnchor: patch.nextTextZoneAnchor ?? textZoneAnchorRef.current,
+        punchHoles: patch.nextPunchHoles ?? punchHolesRef.current,
       })
       if (gen !== sliceGen.current) return
       setSlices(next)
@@ -324,6 +357,17 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       setTextZone(next)
       textZoneRef.current = next
       patch.nextTextZone = next
+    }
+    if (patch.textZoneAnchor != null) {
+      const next = patch.textZoneAnchor === 'top' ? 'top' : TEXT_ZONE_ANCHOR_DEFAULT
+      setTextZoneAnchor(next)
+      textZoneAnchorRef.current = next
+      patch.nextTextZoneAnchor = next
+    }
+    if (patch.punchHoles != null) {
+      setPunchHoles(Boolean(patch.punchHoles))
+      punchHolesRef.current = Boolean(patch.punchHoles)
+      patch.nextPunchHoles = Boolean(patch.punchHoles)
     }
     if (sheetRef.current) runSlice(patch)
   }
@@ -564,6 +608,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         outline: outlineRef.current,
         customScale: customScaleRef.current,
         textZonePercent: textZoneRef.current,
+        textZoneAnchor: textZoneAnchorRef.current,
+        punchHoles: punchHolesRef.current,
         transparent: transparentRef.current,
         previewZoomPercent: Math.round(zoomRef.current * 100),
       })
@@ -591,9 +637,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
             <p className="emo-enhance-kicker">텍스트 가독성 보정</p>
             <label
               className="emo-zone-ctrl"
-              {...magnify('텍스트 감지 높이', '이미지 최하단부터의 높이입니다. 이 영역 안의 글자만 색을 바꿉니다. 캐릭터 팔·몸통이 내려오면 값을 낮추세요.')}
+              {...magnify('텍스트 감지 높이', '하단이면 이미지 아래쪽부터, 상단이면 위쪽부터의 높이입니다. 이 영역 안의 글자만 색을 바꿉니다. 캐릭터 몸통이 걸리면 값을 낮추세요.')}
             >
-              <span>↕ 텍스트 감지 높이: {textZone}%</span>
+              <span>↕ 텍스트 감지 높이: {textZone}% · {textZoneAnchor === 'top' ? '상단' : '하단'}</span>
               <input
                 type="range"
                 min={TEXT_ZONE_MIN}
@@ -605,6 +651,24 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 onPointerUp={() => applyTextZone(textZoneRef.current, true)}
               />
             </label>
+            <div className="emo-anchor-toggle" role="group" aria-label="텍스트 감지 위치">
+              <button
+                type="button"
+                className={clsx('emo-enhance-btn', textZoneAnchor === 'bottom' && 'is-on')}
+                onClick={() => reSlice({ textZoneAnchor: 'bottom' })}
+                {...magnify('하단', '이미지 아래쪽 Y-Limit 안의 글자만 색을 바꿉니다')}
+              >
+                하단
+              </button>
+              <button
+                type="button"
+                className={clsx('emo-enhance-btn', textZoneAnchor === 'top' && 'is-on')}
+                onClick={() => reSlice({ textZoneAnchor: 'top' })}
+                {...magnify('상단', '이미지 위쪽부터 설정 높이까지 글자만 색을 바꿉니다')}
+              >
+                상단
+              </button>
+            </div>
             <div className="emo-enhance-modes">
               {TEXT_MODES.map((item) => (
                 <button
@@ -618,7 +682,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 </button>
               ))}
               {textMode === 'custom' ? (
-                <label className="emo-color-pick" {...magnify('커스텀 텍스트 색', '하단 글자 클러스터만 이 색으로 바꿉니다')}>
+                <label className="emo-color-pick" {...magnify('커스텀 텍스트 색', '감지 영역 글자 클러스터만 이 색으로 바꿉니다')}>
                   <input
                     type="color"
                     value={customColor}
@@ -627,13 +691,22 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 </label>
               ) : null}
             </div>
-            <label className="emo-check emo-check-inline" {...magnify('외곽선 보강', '하단 글자 알파 엣지에만 1px 스트로크를 칩니다')}>
+            <label className="emo-check emo-check-inline" {...magnify('외곽선 보강', '텍스트 감지 영역 글자 알파 엣지에만 1px 스트로크를 칩니다')}>
               <input
                 type="checkbox"
                 checked={outline}
                 onChange={(event) => reSlice({ outline: event.target.checked, nextOutline: event.target.checked })}
               />
               Outline
+            </label>
+            <label className="emo-check emo-check-inline" {...magnify('내부 고립 구멍 투명화', '꺼 두면 외곽 Flood-Fill만 적용합니다. 켜면 닫힌 배경 구멍까지 Alpha=0으로 확장합니다')}>
+              <input
+                type="checkbox"
+                checked={punchHoles}
+                disabled={!transparent}
+                onChange={(event) => reSlice({ punchHoles: event.target.checked })}
+              />
+              내부 고립 구멍 투명화
             </label>
           </div>
           <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" {...magnify('닫기', '분할기 창을 닫습니다')}>
@@ -791,6 +864,15 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               />
               배경 투명화 (Alpha PNG)
             </label>
+            <label className="emo-check" {...magnify('내부 고립 구멍 투명화', '꺼 두면 외곽만 지워 이마·눈 하이라이트를 보호합니다. 켜면 팔/다리 사이·원형 테두리 안 닫힌 배경 구멍까지 Alpha=0으로 확장합니다')}>
+              <input
+                type="checkbox"
+                checked={punchHoles}
+                disabled={!transparent}
+                onChange={(event) => reSlice({ punchHoles: event.target.checked })}
+              />
+              내부 고립 구멍 투명화
+            </label>
 
             <div className="emo-actions">
               <button type="button" className="export-btn export-btn-png" disabled={busy || !slices.length} onClick={downloadZip} {...magnify('전체 ZIP 다운로드', '360×360 PNG를 한 개의 ZIP으로 받습니다')}>
@@ -800,7 +882,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
             </div>
 
             {slices.length ? (
-              <ul className="emo-thumbs">
+              <ul className={clsx('emo-thumbs', `is-bg-${viewBg}`)}>
                 {slices.map((item) => (
                   <li key={item.id}>
                     <img src={item.preview} alt={item.name} />
@@ -843,10 +925,22 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={fitZoom} {...magnify('화면맞춤', `미리보기를 기본 ${PREVIEW_ZOOM_DEFAULT}%로 맞춰 시트 전체가 보이게 합니다`)}>
                 <Maximize2 className="h-3.5 w-3.5" /> ⛶
               </button>
+              <button
+                type="button"
+                className="emo-zoom-btn emo-bg-mode"
+                onClick={() => {
+                  const next = cycleViewBgMode(viewBgRef.current)
+                  setViewBg(next)
+                  viewBgRef.current = next
+                }}
+                {...magnify('배경 모드', '체커보드 → 다크 → 라이트 순으로 바꿔 투명 누끼와 외곽선 대비를 확인합니다')}
+              >
+                {VIEW_BG_LABELS[viewBg] || VIEW_BG_LABELS.checker}
+              </button>
             </div>
             <div
               ref={viewportRef}
-              className={clsx('emo-slicer-viewport', panning && 'is-panning', !sheetUrl && 'is-empty')}
+              className={clsx('emo-slicer-viewport', `is-bg-${viewBg}`, panning && 'is-panning', !sheetUrl && 'is-empty')}
               onPointerDown={startPan}
             >
               {sheetUrl ? (

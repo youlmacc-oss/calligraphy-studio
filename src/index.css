@@ -2283,6 +2283,17 @@ body {
   font-size: 12px;
 }
 
+.emo-anchor-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.emo-zoom-btn.emo-bg-mode {
+  min-width: 7.4rem;
+  font-size: 11px;
+}
+
 .emo-line-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2487,6 +2498,18 @@ body {
 
 .emo-slicer-viewport.is-empty {
   cursor: default;
+}
+
+.emo-slicer-viewport.is-bg-dark {
+  background: #0f1117;
+}
+
+.emo-slicer-viewport.is-bg-light {
+  background: #ffffff;
+}
+
+.emo-slicer-viewport.is-bg-light .emo-slicer-empty {
+  color: #475569;
 }
 
 .emo-slicer-empty {
@@ -2766,6 +2789,14 @@ body {
   border-radius: 0.7rem;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: repeating-conic-gradient(#2a2a36 0% 25%, #16161e 0% 50%) 50% / 12px 12px;
+}
+
+.emo-thumbs.is-bg-dark li {
+  background: #0f1117;
+}
+
+.emo-thumbs.is-bg-light li {
+  background: #ffffff;
 }
 
 .emo-thumbs img {

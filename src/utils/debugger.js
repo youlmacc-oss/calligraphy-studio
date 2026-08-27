@@ -34,15 +34,23 @@ function textZoneStartY(height, textZonePercent = 20) {
   return Math.max(0, Math.min(height, Math.floor(height * (1 - pct / 100)) + 1))
 }
 
-function detectBoundingBoxArtifact(imageData, textZonePercent = 20) {
+function textZoneYRange(height, textZonePercent = 20, textZoneAnchor = 'bottom') {
+  const pct = Math.min(50, Math.max(5, Math.round(Number(textZonePercent) || 20)))
+  if (textZoneAnchor === 'top') {
+    return { y0: 0, y1: Math.max(0, Math.min(height, Math.round(height * pct / 100))) }
+  }
+  return { y0: textZoneStartY(height, textZonePercent), y1: height }
+}
+
+function detectBoundingBoxArtifact(imageData, textZonePercent = 20, textZoneAnchor = 'bottom') {
   const { data, width, height } = imageData
-  const y0 = textZoneStartY(height, textZonePercent)
+  const { y0, y1 } = textZoneYRange(height, textZonePercent, textZoneAnchor)
   let count = 0
   let minX = width
   let minY = height
   let maxX = -1
   let maxY = -1
-  for (let y = y0; y < height; y += 1) {
+  for (let y = y0; y < y1; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       const a = data[i + 3]
@@ -146,6 +154,8 @@ export function inspectRenderedSlice({
   outline = false,
   customScale = 100,
   textZonePercent = 20,
+  textZoneAnchor = 'bottom',
+  punchHoles = false,
   transparent = true,
 } = {}) {
   const width = canvas?.width || 0
@@ -161,7 +171,7 @@ export function inspectRenderedSlice({
   }
   const imageData = ctx.getImageData(0, 0, width, height)
   const cornerAlpha = readCornerAlpha(imageData)
-  const plate = detectBoundingBoxArtifact(imageData, textZonePercent)
+  const plate = detectBoundingBoxArtifact(imageData, textZonePercent, textZoneAnchor)
   const overlap = detectAdjacentRowOverlap(source, box)
   const highlight = detectHighlightProtection(imageData)
   const suspects = []
@@ -187,6 +197,8 @@ export function inspectRenderedSlice({
     outline,
     customScale,
     textZonePercent,
+    textZoneAnchor,
+    punchHoles,
     transparent,
     cornerAlpha,
     hasBoundingBoxArtifact: plate.hasBoundingBoxArtifact,
@@ -211,6 +223,8 @@ export function buildDiagnosticReport(slices = [], context = {}) {
       outline: context.outline ?? null,
       customScale: context.customScale ?? null,
       textZonePercent: context.textZonePercent ?? null,
+      textZoneAnchor: context.textZoneAnchor ?? null,
+      punchHoles: context.punchHoles ?? null,
       transparent: context.transparent ?? null,
       previewZoomPercent: context.previewZoomPercent ?? null,
       sliceCount: rows.length,

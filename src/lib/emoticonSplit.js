@@ -181,16 +181,29 @@ export function findContentBoxes(imageData, { minArea = 80, threshold = 42 } = {
 }
 
 export const DOUBLE_HEIGHT_RATIO = 1.7
+export const DOUBLE_WIDTH_RATIO = 1.7
+export const PUNCH_HOLES_DEFAULT = false
+export const TEXT_ZONE_ANCHOR_DEFAULT = 'bottom'
+export const VIEW_BG_MODES = ['checker', 'dark', 'light']
+export const VIEW_BG_DEFAULT = 'checker'
+
+function medianBoxMetric(boxes, key) {
+  const values = (Array.isArray(boxes) ? boxes : [])
+    .map((box) => Number(box?.[key]) || 0)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b)
+  if (!values.length) return 0
+  const mid = Math.floor(values.length / 2)
+  if (values.length % 2) return values[mid]
+  return (values[mid - 1] + values[mid]) / 2
+}
 
 export function medianBoxHeight(boxes) {
-  const heights = (Array.isArray(boxes) ? boxes : [])
-    .map((box) => Number(box?.h) || 0)
-    .filter((height) => height > 0)
-    .sort((a, b) => a - b)
-  if (!heights.length) return 0
-  const mid = Math.floor(heights.length / 2)
-  if (heights.length % 2) return heights[mid]
-  return (heights[mid - 1] + heights[mid]) / 2
+  return medianBoxMetric(boxes, 'h')
+}
+
+export function medianBoxWidth(boxes) {
+  return medianBoxMetric(boxes, 'w')
 }
 
 export function splitDoubleHeightBoxes(boxes, ratio = DOUBLE_HEIGHT_RATIO) {
@@ -223,6 +236,47 @@ export function splitDoubleHeightBoxes(boxes, ratio = DOUBLE_HEIGHT_RATIO) {
     })
   })
   return next.sort((a, b) => a.y - b.y || a.x - b.x)
+}
+
+export function splitDoubleWidthBoxes(boxes, ratio = DOUBLE_WIDTH_RATIO) {
+  const items = Array.isArray(boxes) ? boxes : []
+  const medianWidth = medianBoxWidth(items)
+  if (!medianWidth) return items.map((box) => ({ ...box }))
+  const limit = medianWidth * (Number(ratio) || DOUBLE_WIDTH_RATIO)
+  const next = []
+  items.forEach((box) => {
+    const w = Number(box.w) || 0
+    if (!(w > limit)) {
+      next.push({ ...box })
+      return
+    }
+    const leftW = Math.floor(w / 2)
+    const rightW = Math.ceil(w / 2)
+    next.push({
+      ...box,
+      x: box.x,
+      y: box.y,
+      w: leftW,
+      h: box.h,
+    })
+    next.push({
+      ...box,
+      x: box.x + leftW,
+      y: box.y,
+      w: rightW,
+      h: box.h,
+    })
+  })
+  return next.sort((a, b) => a.y - b.y || a.x - b.x)
+}
+
+export function splitMergedSmartBoxes(boxes, ratio = DOUBLE_HEIGHT_RATIO) {
+  return splitDoubleWidthBoxes(splitDoubleHeightBoxes(boxes, ratio), ratio)
+}
+
+export function cycleViewBgMode(current = VIEW_BG_DEFAULT) {
+  const index = VIEW_BG_MODES.indexOf(current)
+  return VIEW_BG_MODES[(index < 0 ? 0 : index + 1) % VIEW_BG_MODES.length]
 }
 
 function opaqueBounds(imageData) {
@@ -640,6 +694,75 @@ export function floodFillAlphaKey(imageData, {
   return imageData
 }
 
+function isIslandPaperPixel(r, g, b, a, seeds, tolerance) {
+  if (a < 12) return false
+  if (isCharacterStrokePixel(r, g, b, a)) return false
+  const luma = pixelLuma(r, g, b)
+  if (luma < 186) return false
+  if (!seeds.length) return luma >= 232 && pixelChroma(r, g, b) < 20
+  for (let i = 0; i < seeds.length; i += 1) {
+    if (colorEuclid(r, g, b, seeds[i]) <= tolerance) return true
+  }
+  return false
+}
+
+export function punchIsolatedBackgroundHoles(imageData, {
+  tolerance = FLOOD_FILL_TOLERANCE,
+  extraSeeds = [],
+} = {}) {
+  const width = imageData?.width || 0
+  const height = imageData?.height || 0
+  const data = imageData?.data
+  if (!data || !width || !height) return imageData
+  const seeds = collectFloodSeeds(data, width, height, extraSeeds)
+  const fillable = (x, y) => {
+    const i = (y * width + x) * 4
+    return isIslandPaperPixel(data[i], data[i + 1], data[i + 2], data[i + 3], seeds, tolerance)
+  }
+  const seen = new Uint8Array(width * height)
+  const queue = []
+  for (let start = 0; start < seen.length; start += 1) {
+    if (seen[start]) continue
+    const sx = start % width
+    const sy = (start / width) | 0
+    if (!fillable(sx, sy)) {
+      seen[start] = 1
+      continue
+    }
+    queue.length = 0
+    seen[start] = 1
+    queue.push(start)
+    let head = 0
+    while (head < queue.length) {
+      const cur = queue[head]
+      head += 1
+      const i = cur * 4
+      data[i] = 0
+      data[i + 1] = 0
+      data[i + 2] = 0
+      data[i + 3] = 0
+      const cx = cur % width
+      const cy = (cur / width) | 0
+      const nexts = [cur - 1, cur + 1, cur - width, cur + width]
+      for (let k = 0; k < nexts.length; k += 1) {
+        const next = nexts[k]
+        if (next < 0 || next >= seen.length || seen[next]) continue
+        const nx = next % width
+        const ny = (next / width) | 0
+        if (Math.abs(nx - cx) > 1) continue
+        if (!fillable(nx, ny)) {
+          seen[next] = 1
+          continue
+        }
+        seen[next] = 1
+        queue.push(next)
+      }
+    }
+  }
+  flattenTransparentPixels(imageData)
+  return imageData
+}
+
 export function applyFloodFillTransparency(ctx, width = KAKAO_STICKER_SIZE, height = width, options = {}) {
   if (!ctx?.getImageData || !ctx.putImageData) return ctx
   const w = Math.max(1, Math.round(Number(width) || KAKAO_STICKER_SIZE))
@@ -656,6 +779,12 @@ export function applyFloodFillTransparency(ctx, width = KAKAO_STICKER_SIZE, heig
     tolerance: options.tolerance ?? FLOOD_FILL_TOLERANCE,
     extraSeeds,
   })
+  if (options.punchHoles) {
+    punchIsolatedBackgroundHoles(imageData, {
+      tolerance: options.tolerance ?? FLOOD_FILL_TOLERANCE,
+      extraSeeds,
+    })
+  }
   flattenTransparentPixels(imageData)
   ctx.putImageData(imageData, 0, 0)
   return ctx
@@ -722,6 +851,32 @@ export function textZoneStartY(height, textZonePercent = TEXT_ZONE_DEFAULT) {
   return Math.max(0, Math.min(h, Math.floor(limit) + 1))
 }
 
+export function textZoneBounds(height, textZonePercent = TEXT_ZONE_DEFAULT, textZoneAnchor = TEXT_ZONE_ANCHOR_DEFAULT) {
+  const h = Math.max(0, Number(height) || 0)
+  const pct = clampTextZonePercent(textZonePercent)
+  if (textZoneAnchor === 'top') {
+    const y1 = Math.max(0, Math.min(h, Math.round(h * pct / 100)))
+    return { y0: 0, y1 }
+  }
+  return { y0: textZoneStartY(h, pct), y1: h }
+}
+
+function eachTextZoneY(height, options, visit) {
+  const percent = options?.textZonePercent ?? TEXT_ZONE_DEFAULT
+  const anchor = options?.textZoneAnchor === 'top' ? 'top' : TEXT_ZONE_ANCHOR_DEFAULT
+  const { y0, y1 } = textZoneBounds(height, percent, anchor)
+  if (anchor === 'top') {
+    for (let y = y0; y < y1; y += 1) visit(y)
+    return { y0, y1 }
+  }
+  const zoneLimit = height * (1 - clampTextZonePercent(percent) / 100)
+  for (let y = y0; y < y1; y += 1) {
+    if (!(y > zoneLimit)) continue
+    visit(y)
+  }
+  return { y0, y1 }
+}
+
 function isColorfulBodyPixel(r, g, b, a) {
   if (a < 28) return false
   const luma = pixelLuma(r, g, b)
@@ -764,25 +919,27 @@ export function buildTextGlyphMask(imageData, options = {}) {
   const height = imageData?.height || 0
   const data = imageData?.data
   const mask = new Uint8Array(Math.max(0, width * height))
-  if (!data || !width || !height) return { mask, y0: 0, width, height }
+  if (!data || !width || !height) return { mask, y0: 0, y1: 0, width, height }
   const opts = typeof options === 'number' ? { textZonePercent: TEXT_ZONE_DEFAULT } : options
-  const y0 = resolveTextZoneStartY(height, opts)
-  for (let y = y0; y < height; y += 1) {
+  const bounds = eachTextZoneY(height, opts, (y) => {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       if (isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) mask[y * width + x] = 1
     }
-  }
-  return { mask, y0, width, height }
+  })
+  return { mask, y0: bounds.y0, y1: bounds.y1, width, height }
 }
 
-export function clearTextPlatePixels(imageData, textZonePercent = TEXT_ZONE_DEFAULT) {
+export function clearTextPlatePixels(imageData, textZonePercent = TEXT_ZONE_DEFAULT, textZoneAnchor = TEXT_ZONE_ANCHOR_DEFAULT) {
   if (!imageData?.data) return imageData
   const { data, width, height } = imageData
-  const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
-  const y0 = textZoneStartY(height, textZonePercent)
-  for (let y = y0; y < height; y += 1) {
-    if (!(y > zoneLimit)) continue
+  let percent = textZonePercent
+  let anchor = textZoneAnchor
+  if (percent && typeof percent === 'object') {
+    anchor = percent.textZoneAnchor ?? TEXT_ZONE_ANCHOR_DEFAULT
+    percent = percent.textZonePercent ?? TEXT_ZONE_DEFAULT
+  }
+  eachTextZoneY(height, { textZonePercent: percent, textZoneAnchor: anchor }, (y) => {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       if (!isPaperPlatePixel(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
@@ -791,7 +948,7 @@ export function clearTextPlatePixels(imageData, textZonePercent = TEXT_ZONE_DEFA
       data[i + 2] = 0
       data[i + 3] = 0
     }
-  }
+  })
   return imageData
 }
 
@@ -800,10 +957,8 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
   const { data, width, height } = imageData
   const [tr, tg, tb] = parseHexColor(customHex)
   const textZonePercent = options.textZonePercent ?? TEXT_ZONE_DEFAULT
-  const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
-  const y0 = textZoneStartY(height, textZonePercent)
-  for (let y = y0; y < height; y += 1) {
-    if (!(y > zoneLimit)) continue
+  const textZoneAnchor = options.textZoneAnchor === 'top' ? 'top' : TEXT_ZONE_ANCHOR_DEFAULT
+  eachTextZoneY(height, { textZonePercent, textZoneAnchor }, (y) => {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       const pr = data[i]
@@ -839,7 +994,7 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
         data[i + 3] = Math.max(0, Math.min(255, Math.round(pa * mix)))
       }
     }
-  }
+  })
   return imageData
 }
 
@@ -849,14 +1004,18 @@ export function applyOutlineAssist(imageData, hex = '#111111', options = {}) {
   const src = options.inkSource || new Uint8ClampedArray(data)
   const [sr, sg, sb] = parseHexColor(hex, [12, 12, 14])
   const textZonePercent = options.textZonePercent ?? TEXT_ZONE_DEFAULT
-  const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
+  const textZoneAnchor = options.textZoneAnchor === 'top' ? 'top' : TEXT_ZONE_ANCHOR_DEFAULT
   const ink = options.mask
-    ? { mask: options.mask, y0: options.y0 ?? textZoneStartY(height, textZonePercent) }
-    : buildTextGlyphMask({ data: src, width, height }, { textZonePercent })
-  const { mask, y0 } = ink
+    ? {
+      mask: options.mask,
+      y0: options.y0 ?? textZoneBounds(height, textZonePercent, textZoneAnchor).y0,
+      y1: options.y1 ?? textZoneBounds(height, textZonePercent, textZoneAnchor).y1,
+    }
+    : buildTextGlyphMask({ data: src, width, height }, { textZonePercent, textZoneAnchor })
+  const { mask, y0, y1 } = ink
   const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-  for (let y = y0; y < height; y += 1) {
-    if (!(y > zoneLimit)) continue
+  eachTextZoneY(height, { textZonePercent, textZoneAnchor }, (y) => {
+    if (y < (y0 ?? 0) || (y1 != null && y >= y1)) return
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       if (src[i + 3] >= 18) continue
@@ -872,7 +1031,7 @@ export function applyOutlineAssist(imageData, hex = '#111111', options = {}) {
       data[i + 2] = sb
       data[i + 3] = 220
     }
-  }
+  })
   return imageData
 }
 
@@ -923,6 +1082,8 @@ export function fitToKakaoCanvas(source, box, {
   lockFrame = false,
   customScale = SLICE_SCALE_DEFAULT,
   textZonePercent = TEXT_ZONE_DEFAULT,
+  textZoneAnchor = TEXT_ZONE_ANCHOR_DEFAULT,
+  punchHoles = PUNCH_HOLES_DEFAULT,
 } = {}) {
   const sx = Math.max(0, Math.floor(box.x + 1e-9))
   const sy = Math.max(0, Math.floor(box.y + 1e-9))
@@ -969,20 +1130,25 @@ export function fitToKakaoCanvas(source, box, {
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(scaled, fit.renderX, fit.renderY)
   if (transparent) {
-    applyFloodFillTransparency(ctx, size, size, { extraSeeds: bg ? [bg] : [] })
+    applyFloodFillTransparency(ctx, size, size, {
+      extraSeeds: bg ? [bg] : [],
+      punchHoles,
+    })
   }
   const pixels = ctx.getImageData(0, 0, size, size)
-  if (transparent) clearTextPlatePixels(pixels, textZonePercent)
+  if (transparent) clearTextPlatePixels(pixels, textZonePercent, textZoneAnchor)
   enhanceSliceImageData(pixels)
-  if (transparent) clearTextPlatePixels(pixels, textZonePercent)
-  const inkMask = outline ? buildTextGlyphMask(pixels, { textZonePercent }) : null
-  applyTextTone(pixels, textMode, customColor, { textZonePercent })
+  if (transparent) clearTextPlatePixels(pixels, textZonePercent, textZoneAnchor)
+  const inkMask = outline ? buildTextGlyphMask(pixels, { textZonePercent, textZoneAnchor }) : null
+  applyTextTone(pixels, textMode, customColor, { textZonePercent, textZoneAnchor })
   if (outline) {
     const stroke = textMode === 'white' ? '#ffffff' : textMode === 'custom' ? customColor : '#111111'
     applyOutlineAssist(pixels, stroke, {
       textZonePercent,
+      textZoneAnchor,
       mask: inkMask.mask,
       y0: inkMask.y0,
+      y1: inkMask.y1,
     })
   }
   flattenTransparentPixels(pixels)
@@ -1008,13 +1174,15 @@ export function sliceSheet(source, {
   outline = false,
   customScale = SLICE_SCALE_DEFAULT,
   textZonePercent = TEXT_ZONE_DEFAULT,
+  textZoneAnchor = TEXT_ZONE_ANCHOR_DEFAULT,
+  punchHoles = PUNCH_HOLES_DEFAULT,
 } = {}) {
   const analyzed = analyzeSheet(source)
   const bg = sampleBackground(analyzed.data.data, analyzed.data.width, analyzed.data.height)
   const crop = normalizeBounds(bounds)
   const raw = mode === 'grid'
     ? splitGridBoxes(source.width, source.height, cols, rows, verticalGuides, horizontalGuides, crop)
-    : splitDoubleHeightBoxes(findContentBoxes(analyzed.data).map((box) => ({
+    : splitMergedSmartBoxes(findContentBoxes(analyzed.data).map((box) => ({
       x: box.x / analyzed.scale,
       y: box.y / analyzed.scale,
       w: box.w / analyzed.scale,
@@ -1033,6 +1201,8 @@ export function sliceSheet(source, {
       pad: mode === 'grid' ? KAKAO_SAFE_PAD : MODE_A_SAFE_PAD,
       customScale,
       textZonePercent,
+      textZoneAnchor,
+      punchHoles: Boolean(transparent && punchHoles),
     })
     const name = `kakao-360-${String(index + 1).padStart(2, '0')}.png`
     const diagnostics = inspectRenderedSlice({
@@ -1046,6 +1216,8 @@ export function sliceSheet(source, {
       outline,
       customScale,
       textZonePercent,
+      textZoneAnchor,
+      punchHoles: Boolean(transparent && punchHoles),
       transparent,
     })
     return {

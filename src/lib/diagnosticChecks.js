@@ -40,10 +40,17 @@ import {
   sliceSheet,
   sourceSpan,
   splitDoubleHeightBoxes,
+  splitDoubleWidthBoxes,
   splitGuideBoxes,
   splitGridBoxes,
   stepPreviewZoomPercent,
   TEXT_ZONE_DEFAULT,
+  TEXT_ZONE_ANCHOR_DEFAULT,
+  PUNCH_HOLES_DEFAULT,
+  VIEW_BG_DEFAULT,
+  cycleViewBgMode,
+  punchIsolatedBackgroundHoles,
+  textZoneBounds,
   textZoneStartY,
 } from './emoticonSplit.js'
 import { inspectRenderedSlice } from '../utils/debugger.js'
@@ -466,6 +473,17 @@ export async function checkEmoticonSlicer() {
   if (doubled[0].h !== 40 || doubled[1].h !== 40) {
     return { status: 'error', detail: '정상 높이 모드 A 박스가 후처리에서 변경되었습니다.' }
   }
+  const wide = splitDoubleWidthBoxes([
+    { x: 0, y: 0, w: 40, h: 40 },
+    { x: 0, y: 50, w: 40, h: 40 },
+    { x: 0, y: 100, w: 88, h: 40 },
+  ])
+  if (wide.length !== 4 || wide[2].w !== 44 || wide[3].x !== 44) {
+    return { status: 'error', detail: '모드 A 가로 결합 덩어리 후처리 분할이 실패했습니다.' }
+  }
+  if (wide[0].w !== 40 || wide[1].w !== 40) {
+    return { status: 'error', detail: '정상 너비 모드 A 박스가 후처리에서 변경되었습니다.' }
+  }
   const grid = splitGridBoxes(240, 120, 2, 1)
   const custom = splitGridBoxes(100, 50, 2, 2, [0.25], [0.6])
   const even = equalSplitGuides(3)
@@ -565,6 +583,15 @@ export async function checkEmoticonSlicer() {
   if (OUTLINE_DEFAULT !== true) {
     return { status: 'error', detail: 'Outline 외곽선 보강 기본값이 ON이 아닙니다.' }
   }
+  if (PUNCH_HOLES_DEFAULT !== false) {
+    return { status: 'error', detail: '내부 고립 구멍 투명화 기본값이 OFF가 아닙니다.' }
+  }
+  if (TEXT_ZONE_ANCHOR_DEFAULT !== 'bottom' || VIEW_BG_DEFAULT !== 'checker') {
+    return { status: 'error', detail: '텍스트 하단 앵커 또는 체커보드 배경 기본값이 깨졌습니다.' }
+  }
+  if (cycleViewBgMode('checker') !== 'dark' || cycleViewBgMode('light') !== 'checker') {
+    return { status: 'error', detail: '뷰포트 배경 모드 순환(체커보드→다크→라이트)이 실패했습니다.' }
+  }
   const halo = document.createElement('canvas')
   halo.width = 48
   halo.height = 48
@@ -591,6 +618,33 @@ export async function checkEmoticonSlicer() {
   }
   if (highlightPx < 200) {
     return { status: 'error', detail: '플러드필이 원형 테두리 안 하이라이트를 뚫었습니다.' }
+  }
+  const island = document.createElement('canvas')
+  island.width = 48
+  island.height = 48
+  const islandCtx = island.getContext('2d')
+  islandCtx.fillStyle = '#f4f4f6'
+  islandCtx.fillRect(0, 0, 48, 48)
+  islandCtx.strokeStyle = '#1a1410'
+  islandCtx.lineWidth = 5
+  islandCtx.beginPath()
+  islandCtx.arc(24, 24, 16, 0, Math.PI * 2)
+  islandCtx.stroke()
+  islandCtx.fillStyle = '#f2e4c8'
+  islandCtx.beginPath()
+  islandCtx.arc(24, 24, 5, 0, Math.PI * 2)
+  islandCtx.fill()
+  const closed = floodFillAlphaKey(islandCtx.getImageData(0, 0, 48, 48))
+  const innerPaper = closed.data[((24 * 48) + 32) * 4 + 3]
+  if (innerPaper < 180) {
+    return { status: 'error', detail: '구멍 투명화 OFF에서 닫힌 내부 배경이 지워졌습니다.' }
+  }
+  punchIsolatedBackgroundHoles(closed)
+  if (closed.data[((24 * 48) + 32) * 4 + 3] > 20) {
+    return { status: 'error', detail: '내부 고립 구멍이 Alpha=0으로 확장되지 않았습니다.' }
+  }
+  if (closed.data[((24 * 48) + 24) * 4 + 3] < 180) {
+    return { status: 'error', detail: '구멍 투명화가 캐릭터 하이라이트를 지웠습니다.' }
   }
   const plate = document.createElement('canvas')
   plate.width = 48
@@ -646,6 +700,9 @@ export async function checkEmoticonSlicer() {
   if (textZoneStartY(360, 20) !== 289 || textZoneStartY(40, TEXT_ZONE_DEFAULT) !== 33) {
     return { status: 'error', detail: '텍스트 감지 한계선 Y가 하단 높이 공식과 다릅니다.' }
   }
+  if (textZoneBounds(360, 20, 'top').y1 !== 72 || textZoneBounds(40, 20, 'top').y1 !== 8) {
+    return { status: 'error', detail: '상단 텍스트 감지 구간이 Y=0~퍼센트 높이와 다릅니다.' }
+  }
   if (clampTextZonePercent(3) !== 5 || clampTextZonePercent(90) !== 50) {
     return { status: 'error', detail: '텍스트 감지 높이 클램프가 5~50%를 지키지 않습니다.' }
   }
@@ -666,6 +723,18 @@ export async function checkEmoticonSlicer() {
   applyTextTone(tight, 'custom', '#00ccff', { textZonePercent: 10 })
   if (tight.data[textAt] !== 20 || tight.data[textAt + 1] !== 20 || tight.data[textAt + 2] !== 20) {
     return { status: 'error', detail: '텍스트 감지 높이 10%가 한계선 밖 글자까지 치환했습니다.' }
+  }
+  const topBand = bandCtx.getImageData(0, 0, 40, 40)
+  topBand.data[(4 * 40 + 20) * 4] = 20
+  topBand.data[(4 * 40 + 20) * 4 + 1] = 20
+  topBand.data[(4 * 40 + 20) * 4 + 2] = 20
+  topBand.data[(4 * 40 + 20) * 4 + 3] = 255
+  applyTextTone(topBand, 'custom', '#00ccff', { textZonePercent: 20, textZoneAnchor: 'top' })
+  if (topBand.data[(4 * 40 + 20) * 4] !== 0 || topBand.data[(4 * 40 + 20) * 4 + 1] !== 204) {
+    return { status: 'error', detail: '상단 텍스트 스위치가 위쪽 검정 획을 치환하지 않았습니다.' }
+  }
+  if (topBand.data[textAt] !== 20 || topBand.data[textAt + 1] !== 20 || topBand.data[textAt + 2] !== 20) {
+    return { status: 'error', detail: '상단 텍스트 스위치가 하단 검정 획까지 치환했습니다.' }
   }
   const glyph = document.createElement('canvas')
   glyph.width = 40
@@ -768,7 +837,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 파이프라인CropFloodT${FLOOD_FILL_TOLERANCE} · 진단인스펙터 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · Outline기본ON · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 가로세로결합분할 · 구멍OFF기본 · 텍스트상하단 · 배경순환 · 파이프라인CropFloodT${FLOOD_FILL_TOLERANCE} · 진단인스펙터 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · Outline기본ON · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 
