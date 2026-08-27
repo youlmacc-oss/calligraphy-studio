@@ -8,6 +8,10 @@ export const SLICE_SCALE_DEFAULT = 100
 export const EMO_SIDE_MIN = 280
 export const EMO_SIDE_MAX = 600
 export const EMO_SIDE_DEFAULT = 380
+export const PREVIEW_ZOOM_MIN = 10
+export const PREVIEW_ZOOM_MAX = 200
+export const PREVIEW_ZOOM_STEP = 5
+export const PREVIEW_ZOOM_DEFAULT = 100
 
 export function clampSliceScale(value) {
   const n = Math.round(Number(value))
@@ -19,6 +23,16 @@ export function clampEmoSideWidth(width) {
   const n = Math.round(Number(width))
   if (!Number.isFinite(n)) return EMO_SIDE_DEFAULT
   return Math.max(EMO_SIDE_MIN, Math.min(EMO_SIDE_MAX, n))
+}
+
+export function clampPreviewZoomPercent(value) {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n)) return PREVIEW_ZOOM_DEFAULT
+  return Math.min(PREVIEW_ZOOM_MAX, Math.max(PREVIEW_ZOOM_MIN, n))
+}
+
+export function stepPreviewZoomPercent(current, delta = PREVIEW_ZOOM_STEP) {
+  return clampPreviewZoomPercent((Number(current) || PREVIEW_ZOOM_DEFAULT) + (Number(delta) || 0))
 }
 
 function loadImage(file) {

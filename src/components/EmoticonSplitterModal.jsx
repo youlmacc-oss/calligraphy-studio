@@ -14,14 +14,19 @@ import {
   SLICE_SCALE_MAX,
   SLICE_SCALE_MIN,
   clampEmoSideWidth,
+  clampPreviewZoomPercent,
   clampSliceScale,
   equalSplitGuides,
   fileToSheetCanvas,
   insertGuide,
   moveGuide,
   normalizeBounds,
+  PREVIEW_ZOOM_MAX,
+  PREVIEW_ZOOM_MIN,
+  PREVIEW_ZOOM_STEP,
   removeGuide,
   sliceSheet,
+  stepPreviewZoomPercent,
 } from '../lib/emoticonSplit.js'
 
 const TEXT_MODES = [
@@ -31,12 +36,8 @@ const TEXT_MODES = [
   { id: 'custom', label: '커스텀 색상', hint: '하단 텍스트 클러스터만 고른 색으로 치환합니다' },
 ]
 
-const ZOOM_MIN = 0.25
-const ZOOM_MAX = 8
-const ZOOM_STEP = 0.25
-
 function clampZoom(value) {
-  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100))
+  return clampPreviewZoomPercent(Math.round(Number(value) * 100)) / 100
 }
 
 export default function EmoticonSplitterModal({ open, onClose }) {
@@ -105,8 +106,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     const onWheel = (event) => {
       if (!sheetRef.current) return
       event.preventDefault()
-      const factor = event.deltaY > 0 ? 0.9 : 1.1
-      const next = clampZoom(zoomRef.current * factor)
+      const nextPct = stepPreviewZoomPercent(zoomRef.current * 100, event.deltaY > 0 ? -PREVIEW_ZOOM_STEP : PREVIEW_ZOOM_STEP)
+      const next = nextPct / 100
       setZoom(next)
       zoomRef.current = next
     }
@@ -140,8 +141,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     panRef.current = { x: 0, y: 0 }
   }, [])
 
-  const bumpZoom = (delta) => {
-    const next = clampZoom(zoomRef.current + delta)
+  const bumpZoom = (deltaPercent) => {
+    const next = stepPreviewZoomPercent(zoomRef.current * 100, deltaPercent) / 100
     setZoom(next)
     zoomRef.current = next
   }
@@ -513,8 +514,17 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         </header>
 
         <div className="emo-split-toolbar">
-          <label className="emo-scale-ctrl" {...magnify('이모티콘 크기 비율', '360×360 안에서 캐릭터 렌더 크기만 50~150%로 조절합니다. 감지는 그대로입니다.')}>
+          <div className="emo-scale-ctrl">
             <span>🔍 이모티콘 크기 비율: {customScale}%</span>
+            <button
+              type="button"
+              className="emo-scale-step"
+              disabled={customScale <= SLICE_SCALE_MIN}
+              onClick={() => applyScale(customScale - 1, true)}
+              {...magnify('-1% 축소', '렌더 배율을 1% 줄여 여백을 늘립니다')}
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
             <input
               type="range"
               min={SLICE_SCALE_MIN}
@@ -524,8 +534,18 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               disabled={busy && !slices.length}
               onChange={(event) => applyScale(event.target.value)}
               onPointerUp={() => applyScale(customScaleRef.current, true)}
+              {...magnify('이모티콘 크기 비율', '360×360 안에서 캐릭터 렌더 크기만 50~150%로 조절합니다. 감지는 그대로입니다.')}
             />
-          </label>
+            <button
+              type="button"
+              className="emo-scale-step"
+              disabled={customScale >= SLICE_SCALE_MAX}
+              onClick={() => applyScale(customScale + 1, true)}
+              {...magnify('+1% 확대', '렌더 배율을 1% 키웁니다')}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <button
             type="button"
             className="emo-scale-reset"
@@ -674,13 +694,13 @@ export default function EmoticonSplitterModal({ open, onClose }) {
 
           <section className="emo-slicer-workspace">
             <div className="emo-zoom-bar">
-              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={() => bumpZoom(-ZOOM_STEP)} {...magnify('축소', '미리보기를 한 단계 줄입니다')}>
+              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl || Math.round(zoom * 100) <= PREVIEW_ZOOM_MIN} onClick={() => bumpZoom(-PREVIEW_ZOOM_STEP)} {...magnify('축소', '미리보기를 5% 줄입니다 (10~200%)')}>
                 <Minus className="h-3.5 w-3.5" />
               </button>
               <button type="button" className="emo-zoom-btn emo-zoom-label" disabled={!sheetUrl} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); zoomRef.current = 1; panRef.current = { x: 0, y: 0 } }} {...magnify('100%', '원본 픽셀 크기(100%)로 되돌립니다')}>
                 {zoomLabel}
               </button>
-              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={() => bumpZoom(ZOOM_STEP)} {...magnify('확대', '0.5mm 절단선을 더 정밀하게 맞추도록 확대합니다')}>
+              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl || Math.round(zoom * 100) >= PREVIEW_ZOOM_MAX} onClick={() => bumpZoom(PREVIEW_ZOOM_STEP)} {...magnify('확대', '미리보기를 5% 키웁니다 (10~200%)')}>
                 <Plus className="h-3.5 w-3.5" />
               </button>
               <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={fitZoom} {...magnify('화면맞춤', '시트 전체가 미리보기 창에 들어오도록 맞춥니다')}>

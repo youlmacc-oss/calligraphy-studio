@@ -13,6 +13,7 @@ import {
   applyOutlineAssist,
   applyTextTone,
   clampEmoSideWidth,
+  clampPreviewZoomPercent,
   clampSliceScale,
   containFitRect,
   EMO_SIDE_DEFAULT,
@@ -26,11 +27,15 @@ import {
   KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
   normalizeBounds,
+  PREVIEW_ZOOM_MAX,
+  PREVIEW_ZOOM_MIN,
+  PREVIEW_ZOOM_STEP,
   SLICE_SCALE_DEFAULT,
   sliceSheet,
   sourceSpan,
   splitGuideBoxes,
   splitGridBoxes,
+  stepPreviewZoomPercent,
 } from './emoticonSplit.js'
 import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
@@ -476,6 +481,15 @@ export async function checkEmoticonSlicer() {
   }
   if (clampSliceScale(49) !== 50 || clampSliceScale(151) !== 150 || clampSliceScale(100) !== SLICE_SCALE_DEFAULT) {
     return { status: 'error', detail: '크기 비율 슬라이더 클램프(50~150)가 실패했습니다.' }
+  }
+  if (clampSliceScale(100 - 1) !== 99 || clampSliceScale(150 + 1) !== 150) {
+    return { status: 'error', detail: '크기 비율 ±1% 버튼 스텝이 클램프와 동기화되지 않습니다.' }
+  }
+  if (stepPreviewZoomPercent(100, PREVIEW_ZOOM_STEP) !== 105 || stepPreviewZoomPercent(12, -PREVIEW_ZOOM_STEP) !== PREVIEW_ZOOM_MIN) {
+    return { status: 'error', detail: '미리보기 줌 5% 스텝이 실패했습니다.' }
+  }
+  if (clampPreviewZoomPercent(8) !== PREVIEW_ZOOM_MIN || clampPreviewZoomPercent(240) !== PREVIEW_ZOOM_MAX) {
+    return { status: 'error', detail: '미리보기 줌 한도(10~200%)가 실패했습니다.' }
   }
   if (clampEmoSideWidth(200) !== EMO_SIDE_MIN || clampEmoSideWidth(900) !== EMO_SIDE_MAX || clampEmoSideWidth(380) !== EMO_SIDE_DEFAULT) {
     return { status: 'error', detail: '작업창 리사이저 너비 클램프(280~600)가 실패했습니다.' }
