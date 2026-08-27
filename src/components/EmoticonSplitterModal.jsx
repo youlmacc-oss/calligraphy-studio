@@ -405,20 +405,10 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     <div className="studio-modal-root" role="dialog" aria-modal="true" aria-labelledby="emo-split-title">
       <div className="studio-modal-backdrop" onClick={onClose} />
       <div className="studio-modal-card emo-split-card">
-        <div className="studio-modal-head">
-          <div>
-            <p className="studio-modal-kicker">Kakao 360×360 PNG · Super-sample · Text-band only</p>
-            <h2 id="emo-split-title">🧩 이모티콘 시트 분할기</h2>
-          </div>
-          <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" {...magnify('닫기', '분할기 창을 닫습니다')}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <p className="emo-split-note">{busy ? '처리 중…' : note}</p>
-
-        <div className="emo-split-tools">
+        <header className="emo-split-head">
+          <h2 id="emo-split-title">🧩 이모티콘 시트 분할기</h2>
           <div className="emo-enhance-bar">
-            <p className="emo-enhance-kicker">텍스트 가독성 보정 · 하단 35%만</p>
+            <p className="emo-enhance-kicker">텍스트 가독성 · 하단 35%</p>
             <div className="emo-enhance-modes">
               {TEXT_MODES.map((item) => (
                 <button
@@ -447,215 +437,221 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 checked={outline}
                 onChange={(event) => reSlice({ outline: event.target.checked, nextOutline: event.target.checked })}
               />
-              1px 외곽선 보강 (Outline Assist)
+              Outline
             </label>
           </div>
+          <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" {...magnify('닫기', '분할기 창을 닫습니다')}>
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
-          <div
-            className={clsx('emo-drop', dragOver && 'is-over')}
-            onClick={(event) => {
-              if (event.target.closest('button, input')) return
-              inputRef.current?.click()
-            }}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setDragOver(true)
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(event) => {
-              event.preventDefault()
-              setDragOver(false)
-              handleFile(event.dataTransfer.files?.[0])
-            }}
-            {...magnify('시트 업로드', 'AI가 만든 이모티콘 시트 PNG/JPEG를 올립니다')}
-          >
-            <Upload className="h-5 w-5" />
-            <div>
-              <strong>시트를 드래그하거나 클릭해서 올리기</strong>
-              <p>흰 배경 · 5×6 / 6×5 그리드 시트가 가장 정확합니다{fileName ? ` · ${fileName}` : ''}</p>
-            </div>
-            <button
-              type="button"
-              className="mini-btn"
-              onClick={() => inputRef.current?.click()}
-              {...magnify('시트 이미지 선택', 'AI가 만든 이모티콘 시트 PNG/JPEG를 고릅니다')}
+        <div className="emo-split-body">
+          <aside className="emo-split-side">
+            <p className="emo-split-note">{busy ? '처리 중…' : note}</p>
+            <div
+              className={clsx('emo-drop', dragOver && 'is-over')}
+              onClick={(event) => {
+                if (event.target.closest('button, input')) return
+                inputRef.current?.click()
+              }}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setDragOver(true)
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(event) => {
+                event.preventDefault()
+                setDragOver(false)
+                handleFile(event.dataTransfer.files?.[0])
+              }}
+              {...magnify('시트 업로드', 'AI가 만든 이모티콘 시트 PNG/JPEG를 올립니다')}
             >
-              파일 선택
-            </button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(event) => handleFile(event.target.files?.[0])}
-            />
-          </div>
-
-          <div className="emo-modes">
-            <button
-              type="button"
-              className={clsx('emo-mode', mode === 'smart' && 'is-on')}
-              disabled={busy}
-              onClick={() => reSlice({ mode: 'smart', nextMode: 'smart' })}
-              {...magnify('스마트 자동 감지', '배경을 빼고 각 이모티콘 외곽 상자를 찾아 자릅니다')}
-            >
-              모드 A · 스마트 자동 감지
-            </button>
-            <button
-              type="button"
-              className={clsx('emo-mode', mode === 'grid' && 'is-on')}
-              disabled={busy}
-              onClick={() => reSlice({ mode: 'grid', nextMode: 'grid' })}
-              {...magnify('그리드 분할', '1px 절단선과 외곽 재단선을 드래그해 칸을 맞춥니다')}
-            >
-              모드 B · 그리드 분할
-            </button>
-          </div>
-
-          {mode === 'grid' ? (
-            <div className="emo-grid-ctrls">
-              <label>
-                가로 {verticalGuides.length + 1}열
-                <input type="range" min="2" max="12" value={Math.min(12, Math.max(2, verticalGuides.length + 1))} disabled={busy} onChange={(event) => reSlice({ cols: Number(event.target.value) })} />
-              </label>
-              <label>
-                세로 {horizontalGuides.length + 1}행
-                <input type="range" min="2" max="12" value={Math.min(12, Math.max(2, horizontalGuides.length + 1))} disabled={busy} onChange={(event) => reSlice({ rows: Number(event.target.value) })} />
-              </label>
-              <span className="emo-grid-total">{cellCount}칸</span>
-            </div>
-          ) : null}
-
-          {mode === 'grid' ? (
-            <div className="emo-line-actions">
-              <button type="button" className="mini-btn" disabled={busy || verticalGuides.length >= 11} onClick={() => addLine('v')} {...magnify('세로선 추가', '가장 넓은 칸 가운데에 세로 절단선을 넣습니다')}>+ 세로선 추가</button>
-              <button type="button" className="mini-btn" disabled={busy || horizontalGuides.length >= 11} onClick={() => addLine('h')} {...magnify('가로선 추가', '가장 넓은 칸 가운데에 가로 절단선을 넣습니다')}>+ 가로선 추가</button>
-              <p className="emo-guide-hint">금색 외곽선으로 여백을 자르고, 시안/마젠타 1px 선을 드래그하세요. ✖ 또는 우클릭으로 선을 지웁니다. 확대 후 빈 곳을 드래그하면 화면이 이동합니다.</p>
-            </div>
-          ) : (
-            <p className="emo-guide-hint">금색 외곽 재단선을 드래그하면 시트 여백을 잘라 모드 A 감지 범위가 좁아집니다. 확대 후 빈 곳을 드래그하면 화면이 이동합니다.</p>
-          )}
-
-          <label className="emo-check" {...magnify('배경 투명화', '흰 배경을 알파로 지워 카카오용 투명 PNG를 만듭니다')}>
-            <input
-              type="checkbox"
-              checked={transparent}
-              onChange={(event) => reSlice({ transparent: event.target.checked, nextTransparent: event.target.checked })}
-            />
-            배경 투명화 (Alpha PNG)
-          </label>
-        </div>
-
-        <div className="emo-slicer-workspace">
-          <div className="emo-zoom-bar">
-            <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={() => bumpZoom(-ZOOM_STEP)} {...magnify('축소', '미리보기를 한 단계 줄입니다')}>
-              <Minus className="h-3.5 w-3.5" />
-            </button>
-            <button type="button" className="emo-zoom-btn emo-zoom-label" disabled={!sheetUrl} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); zoomRef.current = 1; panRef.current = { x: 0, y: 0 } }} {...magnify('100%', '원본 픽셀 크기(100%)로 되돌립니다')}>
-              {zoomLabel}
-            </button>
-            <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={() => bumpZoom(ZOOM_STEP)} {...magnify('확대', '0.5mm 절단선을 더 정밀하게 맞추도록 확대합니다')}>
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-            <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={fitZoom} {...magnify('화면맞춤', '시트 전체가 미리보기 창에 들어오도록 맞춥니다')}>
-              <Maximize2 className="h-3.5 w-3.5" /> 화면맞춤
-            </button>
-          </div>
-          <div
-            ref={viewportRef}
-            className={clsx('emo-slicer-viewport', panning && 'is-panning', !sheetUrl && 'is-empty')}
-            onPointerDown={startPan}
-          >
-            {sheetUrl ? (
-              <div
-                className="emo-slicer-pan"
-                style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}
-              >
-                <div
-                  ref={stageRef}
-                  className={clsx('emo-slicer-stage', 'is-grid')}
-                  data-emo-slicer="mode-b"
-                >
-                  <img
-                    src={sheetUrl}
-                    alt="업로드한 이모티콘 시트"
-                    className="emo-sheet-preview"
-                    draggable={false}
-                    onLoad={fitZoom}
-                  />
-                  {['left', 'right', 'top', 'bottom'].map((edge) => (
-                    <div
-                      key={edge}
-                      className={clsx(
-                        'emo-guide is-bound',
-                        `is-${edge === 'left' || edge === 'right' ? 'v' : 'h'}`,
-                        `is-${edge}`,
-                        activeGuide?.kind === 'bound' && activeGuide.key === edge && 'is-on',
-                      )}
-                      style={edge === 'left' || edge === 'right'
-                        ? { left: `${bounds[edge] * 100}%` }
-                        : { top: `${bounds[edge] * 100}%` }}
-                      role="slider"
-                      aria-label={`외곽 재단선 ${edge}`}
-                      onPointerDown={(event) => startGuideDrag('bound', edge, event)}
-                    />
-                  ))}
-                  {mode === 'grid' ? (
-                    <>
-                      {verticalGuides.map((ratio, index) => (
-                        <div
-                          key={`v-${index}`}
-                          className={clsx('emo-guide is-v', activeGuide?.kind === 'v' && activeGuide.key === index && 'is-on')}
-                          style={{ left: `${ratio * 100}%` }}
-                          role="slider"
-                          aria-label={`세로 절단선 ${index + 1}`}
-                          onPointerDown={(event) => startGuideDrag('v', index, event)}
-                          onContextMenu={(event) => deleteLine('v', index, event)}
-                        >
-                          <button type="button" className="emo-guide-del" aria-label="세로선 삭제" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={(event) => deleteLine('v', index, event)}>✖</button>
-                        </div>
-                      ))}
-                      {horizontalGuides.map((ratio, index) => (
-                        <div
-                          key={`h-${index}`}
-                          className={clsx('emo-guide is-h', activeGuide?.kind === 'h' && activeGuide.key === index && 'is-on')}
-                          style={{ top: `${ratio * 100}%` }}
-                          role="slider"
-                          aria-label={`가로 절단선 ${index + 1}`}
-                          onPointerDown={(event) => startGuideDrag('h', index, event)}
-                          onContextMenu={(event) => deleteLine('h', index, event)}
-                        >
-                          <button type="button" className="emo-guide-del is-h-del" aria-label="가로선 삭제" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={(event) => deleteLine('h', index, event)}>✖</button>
-                        </div>
-                      ))}
-                    </>
-                  ) : null}
-                </div>
+              <Upload className="h-4 w-4" />
+              <div>
+                <strong>시트 올리기</strong>
+                <p>{fileName || '흰 배경 5×6 / 6×5 그리드'}</p>
               </div>
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={() => inputRef.current?.click()}
+                {...magnify('시트 이미지 선택', 'AI가 만든 이모티콘 시트 PNG/JPEG를 고릅니다')}
+              >
+                파일
+              </button>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => handleFile(event.target.files?.[0])}
+              />
+            </div>
+
+            <div className="emo-modes">
+              <button
+                type="button"
+                className={clsx('emo-mode', mode === 'smart' && 'is-on')}
+                disabled={busy}
+                onClick={() => reSlice({ mode: 'smart', nextMode: 'smart' })}
+                {...magnify('스마트 자동 감지', '배경을 빼고 각 이모티콘 외곽 상자를 찾아 자릅니다')}
+              >
+                모드 A
+              </button>
+              <button
+                type="button"
+                className={clsx('emo-mode', mode === 'grid' && 'is-on')}
+                disabled={busy}
+                onClick={() => reSlice({ mode: 'grid', nextMode: 'grid' })}
+                {...magnify('그리드 분할', '1px 절단선과 외곽 재단선을 드래그해 칸을 맞춥니다')}
+              >
+                모드 B
+              </button>
+            </div>
+
+            {mode === 'grid' ? (
+              <>
+                <div className="emo-grid-ctrls">
+                  <label>
+                    가로 {verticalGuides.length + 1}열
+                    <input type="range" min="2" max="12" value={Math.min(12, Math.max(2, verticalGuides.length + 1))} disabled={busy} onChange={(event) => reSlice({ cols: Number(event.target.value) })} />
+                  </label>
+                  <label>
+                    세로 {horizontalGuides.length + 1}행
+                    <input type="range" min="2" max="12" value={Math.min(12, Math.max(2, horizontalGuides.length + 1))} disabled={busy} onChange={(event) => reSlice({ rows: Number(event.target.value) })} />
+                  </label>
+                  <span className="emo-grid-total">{cellCount}칸</span>
+                </div>
+                <div className="emo-line-actions">
+                  <button type="button" className="mini-btn" disabled={busy || verticalGuides.length >= 11} onClick={() => addLine('v')} {...magnify('세로선 추가', '가장 넓은 칸 가운데에 세로 절단선을 넣습니다')}>+ 세로선</button>
+                  <button type="button" className="mini-btn" disabled={busy || horizontalGuides.length >= 11} onClick={() => addLine('h')} {...magnify('가로선 추가', '가장 넓은 칸 가운데에 가로 절단선을 넣습니다')}>+ 가로선</button>
+                </div>
+              </>
             ) : (
-              <p className="emo-slicer-empty">시트를 올리면 와이드 캔버스에서 확대·이동하며 절단선을 맞출 수 있습니다.</p>
+              <p className="emo-guide-hint">금색 외곽 재단선으로 여백을 자른 뒤 객체를 감지합니다.</p>
             )}
-          </div>
-        </div>
 
-        <div className="emo-split-footer">
-          <div className="emo-actions">
-            <button type="button" className="export-btn export-btn-png" disabled={busy || !slices.length} onClick={downloadZip} {...magnify('전체 ZIP 다운로드', '360×360 PNG를 한 개의 ZIP으로 받습니다')}>
-              <Download className="h-4 w-4" /> 📦 전체 ZIP 다운로드 (카카오 규격 360x360)
-            </button>
-            <button type="button" className="mini-btn" disabled={busy} onClick={reset} {...magnify('시트 비우기', '올린 시트와 분할 결과를 지웁니다')}>시트 비우기</button>
-          </div>
+            <label className="emo-check" {...magnify('배경 투명화', '흰 배경을 알파로 지워 카카오용 투명 PNG를 만듭니다')}>
+              <input
+                type="checkbox"
+                checked={transparent}
+                onChange={(event) => reSlice({ transparent: event.target.checked, nextTransparent: event.target.checked })}
+              />
+              배경 투명화 (Alpha PNG)
+            </label>
 
-          {slices.length ? (
-            <ul className="emo-thumbs">
-              {slices.map((item) => (
-                <li key={item.id}>
-                  <img src={item.preview} alt={item.name} />
-                  <button type="button" onClick={() => downloadOne(item)} {...magnify(`${item.index + 1}번 PNG`, '이 칸만 360×360 PNG로 저장합니다')}>{item.index + 1}</button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+            <div className="emo-actions">
+              <button type="button" className="export-btn export-btn-png" disabled={busy || !slices.length} onClick={downloadZip} {...magnify('전체 ZIP 다운로드', '360×360 PNG를 한 개의 ZIP으로 받습니다')}>
+                <Download className="h-4 w-4" /> 📦 전체 ZIP 다운로드
+              </button>
+              <button type="button" className="mini-btn" disabled={busy} onClick={reset} {...magnify('시트 비우기', '올린 시트와 분할 결과를 지웁니다')}>비우기</button>
+            </div>
+
+            {slices.length ? (
+              <ul className="emo-thumbs">
+                {slices.map((item) => (
+                  <li key={item.id}>
+                    <img src={item.preview} alt={item.name} />
+                    <button type="button" onClick={() => downloadOne(item)} {...magnify(`${item.index + 1}번 PNG`, '이 칸만 360×360 PNG로 저장합니다')}>{item.index + 1}</button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="emo-thumbs-empty">분할 결과가 여기에 30칸 그리드로 쌓입니다.</p>
+            )}
+          </aside>
+
+          <section className="emo-slicer-workspace">
+            <div className="emo-zoom-bar">
+              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={() => bumpZoom(-ZOOM_STEP)} {...magnify('축소', '미리보기를 한 단계 줄입니다')}>
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="emo-zoom-btn emo-zoom-label" disabled={!sheetUrl} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); zoomRef.current = 1; panRef.current = { x: 0, y: 0 } }} {...magnify('100%', '원본 픽셀 크기(100%)로 되돌립니다')}>
+                {zoomLabel}
+              </button>
+              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={() => bumpZoom(ZOOM_STEP)} {...magnify('확대', '0.5mm 절단선을 더 정밀하게 맞추도록 확대합니다')}>
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={fitZoom} {...magnify('화면맞춤', '시트 전체가 미리보기 창에 들어오도록 맞춥니다')}>
+                <Maximize2 className="h-3.5 w-3.5" /> ⛶
+              </button>
+            </div>
+            <div
+              ref={viewportRef}
+              className={clsx('emo-slicer-viewport', panning && 'is-panning', !sheetUrl && 'is-empty')}
+              onPointerDown={startPan}
+            >
+              {sheetUrl ? (
+                <div
+                  className="emo-slicer-pan"
+                  style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                >
+                  <div
+                    ref={stageRef}
+                    className={clsx('emo-slicer-stage', 'is-grid')}
+                    data-emo-slicer="mode-b"
+                  >
+                    <img
+                      src={sheetUrl}
+                      alt="업로드한 이모티콘 시트"
+                      className="emo-sheet-preview"
+                      draggable={false}
+                      onLoad={fitZoom}
+                    />
+                    {['left', 'right', 'top', 'bottom'].map((edge) => (
+                      <div
+                        key={edge}
+                        className={clsx(
+                          'emo-guide is-bound',
+                          `is-${edge === 'left' || edge === 'right' ? 'v' : 'h'}`,
+                          `is-${edge}`,
+                          activeGuide?.kind === 'bound' && activeGuide.key === edge && 'is-on',
+                        )}
+                        style={edge === 'left' || edge === 'right'
+                          ? { left: `${bounds[edge] * 100}%` }
+                          : { top: `${bounds[edge] * 100}%` }}
+                        role="slider"
+                        aria-label={`외곽 재단선 ${edge}`}
+                        onPointerDown={(event) => startGuideDrag('bound', edge, event)}
+                      />
+                    ))}
+                    {mode === 'grid' ? (
+                      <>
+                        {verticalGuides.map((ratio, index) => (
+                          <div
+                            key={`v-${index}`}
+                            className={clsx('emo-guide is-v', activeGuide?.kind === 'v' && activeGuide.key === index && 'is-on')}
+                            style={{ left: `${ratio * 100}%` }}
+                            role="slider"
+                            aria-label={`세로 절단선 ${index + 1}`}
+                            onPointerDown={(event) => startGuideDrag('v', index, event)}
+                            onContextMenu={(event) => deleteLine('v', index, event)}
+                          >
+                            <button type="button" className="emo-guide-del" aria-label="세로선 삭제" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={(event) => deleteLine('v', index, event)}>✖</button>
+                          </div>
+                        ))}
+                        {horizontalGuides.map((ratio, index) => (
+                          <div
+                            key={`h-${index}`}
+                            className={clsx('emo-guide is-h', activeGuide?.kind === 'h' && activeGuide.key === index && 'is-on')}
+                            style={{ top: `${ratio * 100}%` }}
+                            role="slider"
+                            aria-label={`가로 절단선 ${index + 1}`}
+                            onPointerDown={(event) => startGuideDrag('h', index, event)}
+                            onContextMenu={(event) => deleteLine('h', index, event)}
+                          >
+                            <button type="button" className="emo-guide-del is-h-del" aria-label="가로선 삭제" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={(event) => deleteLine('h', index, event)}>✖</button>
+                          </div>
+                        ))}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <p className="emo-slicer-empty">시트를 올리면 오른쪽 캔버스에서 절단선을 맞출 수 있습니다.</p>
+              )}
+            </div>
+          </section>
         </div>
       </div>
     </div>

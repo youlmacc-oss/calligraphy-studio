@@ -5,7 +5,7 @@ export const ONBOARD_STEPS = [
     id: 'emo',
     target: '[data-tour="emo-split"]',
     title: '🧩 이모티콘 30종 분할기',
-    body: '와이드 분할기에서 시트를 확대·이동하며 절단선을 맞추고, 360×360 PNG와 ZIP으로 나눕니다. 텍스트 색 보정은 하단 글자만 바꿉니다.',
+    body: '가로가 긴 2열 분할기에서 왼쪽은 업로드·ZIP·썸네일, 오른쪽은 절단 캔버스입니다. 버튼은 커지지 않고 호버 시 설명 툴팁만 뜹니다.',
   },
   {
     id: 'gif',

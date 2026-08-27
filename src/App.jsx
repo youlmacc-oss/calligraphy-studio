@@ -1375,7 +1375,7 @@ export default function App() {
               className={clsx('tool-btn', emoSplitOpen && 'is-on')}
               onClick={() => setEmoSplitOpen(true)}
               data-tour="emo-split"
-              {...magnify('이모티콘 시트 분할기', '와이드 창에서 줌/팬으로 시트를 나누고, 하단 텍스트만 색 보정한 360×360 ZIP을 받습니다')}
+              {...magnify('이모티콘 시트 분할기', '2열 와이드 스튜디오에서 시트를 나누고, 하단 텍스트만 색 보정한 360×360 ZIP을 받습니다')}
             >
               🧩 이모티콘 시트 분할기
             </button>

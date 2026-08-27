@@ -105,6 +105,9 @@ export default function MenuMagnifierHUD() {
   useEffect(() => {
     const el = hudRef.current
     if (!el || !tip) return undefined
+    el.classList.remove('is-in')
+    void el.offsetWidth
+    el.classList.add('is-in')
     const { x, y } = posRef.current
     const w = el.offsetWidth || 300
     const h = el.offsetHeight || 84
@@ -120,7 +123,7 @@ export default function MenuMagnifierHUD() {
   if (typeof document === 'undefined' || !tip) return null
 
   return createPortal(
-    <div ref={hudRef} className="menu-magnifier-hud" role="tooltip">
+    <div ref={hudRef} className="menu-magnifier-hud is-in" role="tooltip">
       <p className="menu-magnifier-title">{tip.title}</p>
       {tip.desc ? <p className="menu-magnifier-desc">{tip.desc}</p> : null}
     </div>,
