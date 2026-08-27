@@ -2065,6 +2065,13 @@ body {
   color: #67e8f9;
 }
 
+.emo-guide-hint {
+  margin: 0.45rem 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #94a3b8;
+}
+
 .emo-check {
   display: flex;
   align-items: center;
@@ -2074,14 +2081,91 @@ body {
   color: #e2e8f0;
 }
 
+.emo-slicer-wrap {
+  width: 100%;
+  margin-top: 0.8rem;
+  text-align: center;
+}
+
+.emo-slicer-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: top;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: repeating-conic-gradient(#1e1e28 0% 25%, #12121a 0% 50%) 50% / 16px 16px;
+  user-select: none;
+  touch-action: none;
+}
+
+.emo-slicer-stage.is-grid {
+  cursor: default;
+}
+
 .emo-sheet-preview {
   display: block;
-  width: 100%;
-  max-height: 180px;
-  margin-top: 0.8rem;
-  object-fit: contain;
-  border-radius: 0.85rem;
-  background: repeating-conic-gradient(#1e1e28 0% 25%, #12121a 0% 50%) 50% / 16px 16px;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(48vh, 420px);
+  pointer-events: none;
+}
+
+.emo-guide {
+  position: absolute;
+  z-index: 4;
+  pointer-events: auto;
+}
+
+.emo-guide.is-v {
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  margin-left: -7px;
+  cursor: col-resize;
+}
+
+.emo-guide.is-h {
+  left: 0;
+  right: 0;
+  height: 14px;
+  margin-top: -7px;
+  cursor: row-resize;
+}
+
+.emo-guide.is-v::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 0;
+  border-left: 2px dashed #67e8f9;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.85);
+}
+
+.emo-guide.is-h::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 0;
+  border-top: 2px dashed #67e8f9;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.85);
+}
+
+.emo-guide:hover,
+.emo-guide.is-on {
+  background: rgba(250, 204, 21, 0.12);
+}
+
+.emo-guide:hover::before,
+.emo-guide.is-on::before {
+  border-color: #facc15;
+  box-shadow: 0 0 16px rgba(250, 204, 21, 0.9);
 }
 
 .emo-actions {

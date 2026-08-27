@@ -8,7 +8,7 @@ import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
-import { fitToKakaoCanvas, KAKAO_STICKER_SIZE, sliceSheet, splitGridBoxes } from './emoticonSplit.js'
+import { fitToKakaoCanvas, KAKAO_STICKER_SIZE, equalSplitGuides, sliceSheet, splitGridBoxes } from './emoticonSplit.js'
 import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
@@ -415,6 +415,17 @@ export async function checkEmoticonSlicer() {
   ctx.fillRect(140, 18, 72, 72)
   const smart = sliceSheet(sheet, { mode: 'smart', transparent: true })
   const grid = splitGridBoxes(240, 120, 2, 1)
+  const custom = splitGridBoxes(100, 50, 2, 2, [0.25], [0.6])
+  const even = equalSplitGuides(3)
+  if (grid.length !== 2) {
+    return { status: 'error', detail: '균등 그리드 칸 수가 열×행과 다릅니다.' }
+  }
+  if (!custom[0] || Math.abs(custom[0].w - 25) > 1 || Math.abs(custom[2]?.y - 30) > 2) {
+    return { status: 'error', detail: '모드 B 커스텀 절단선 좌표가 Bounding Box에 반영되지 않습니다.' }
+  }
+  if (even.length !== 2 || Math.abs(even[0] - 1 / 3) > 1e-6) {
+    return { status: 'error', detail: '균등 가이드 생성이 실패했습니다.' }
+  }
   const kakao = fitToKakaoCanvas(sheet, grid[0])
   if (kakao.width !== KAKAO_STICKER_SIZE || kakao.height !== KAKAO_STICKER_SIZE) {
     return { status: 'error', detail: `360×360 리사이저가 ${kakao.width}×${kakao.height}를 반환했습니다.` }
@@ -429,7 +440,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 커스텀 절단 ${custom.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

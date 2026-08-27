@@ -5,7 +5,7 @@ export const ONBOARD_STEPS = [
     id: 'emo',
     target: '[data-tour="emo-split"]',
     title: '🧩 이모티콘 30종 분할기',
-    body: 'AI가 만든 스티커 시트를 올리면 360×360 PNG와 ZIP으로 한 번에 나눕니다. 카카오 이모티콘 스튜디오 규격에 맞춘 첫 단추입니다.',
+    body: 'AI가 만든 스티커 시트를 올리면 360×360 PNG와 ZIP으로 한 번에 나눕니다. 모드 B에서는 미리보기 위 절단선을 드래그해 칸을 맞출 수 있습니다.',
   },
   {
     id: 'gif',

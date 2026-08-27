@@ -187,7 +187,7 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'emoticon-slicer',
     name: '🧩 이모티콘 슬라이서 & ZIP 엔진 상태',
-    description: 'Canvas 픽셀 슬라이싱 버퍼, JSZip 로드 상태, 360×360 카카오 규격 리사이저를 실시간 점검',
+    description: 'Canvas 픽셀 슬라이싱, 모드 B 드래그 절단선, JSZip, 360×360 카카오 규격 리사이저를 실시간 점검',
     diagnosticFunction: checkEmoticonSlicer,
     guideContent: {
       chapterId: 'ai',
@@ -199,16 +199,16 @@ export const APP_FEATURES_REGISTRY = [
       play: [
         {
           title: 'AI에서 균일한 30종 시트를 뽑는다',
-          body: 'Grok / Midjourney / DALL·E에 흰 배경 그리드 시트를 요청합니다. 추천 영문: white background, sticker sheet, kawaii emoticons, even spacing, 5x6 grid array of 30 unique stickers, no text, no watermark, square cells. 행과 열이 흔들리면 이 앱의 그리드 균등 분할(6×5 또는 5×6)이 더 정확합니다.',
+          body: 'Grok / Midjourney / DALL·E에 흰 배경 그리드 시트를 요청합니다. 추천 영문: white background, sticker sheet, kawaii emoticons, even spacing, 5x6 grid array of 30 unique stickers, no text, no watermark, square cells. 행과 열이 흔들리면 모드 B에서 절단선을 드래그해 칸을 맞추는 편이 정확합니다.',
           params: ['white background', 'sticker sheet', '5x6 grid array', '30 unique stickers'],
-          tip: '셀 사이 여백이 충분해야 스마트 자동 감지가 잘 됩니다. 붙어 있는 시트는 모드 B(그리드)를 쓰세요.',
+          tip: '셀 사이 여백이 충분해야 스마트 자동 감지가 잘 됩니다. 붙어 있거나 칸이 들쭉날쭉한 시트는 모드 B에서 절단선을 드래그해 맞추세요.',
           fail: '복잡한 사진 배경 시트는 객체가 한 덩어리로 잡힙니다. 반드시 흰 배경 또는 투명 배경 시트를 쓰세요.',
         },
         {
           title: '분할 후 카카오 스튜디오에 올린다',
-          body: '상단 [🧩 이모티콘 시트 분할기]에서 시트를 올리고, 스마트 감지 또는 6열×5행 그리드를 고른 뒤 [📦 전체 ZIP 다운로드 (카카오 규격 360x360)]를 누릅니다. 각 PNG는 360×360 정중앙, 안전 여백, 투명 배경입니다. 카카오 이모티콘 스튜디오 제안 규격에 맞춰 그대로 등록하면 됩니다.',
-          params: ['360×360 PNG', '투명 배경 옵션', 'ZIP 일괄 저장'],
-          tip: '썸네일을 눌러 한 장만 받을 수도 있습니다. 파일명은 kakao-360-01.png 형식입니다.',
+          body: '상단 [🧩 이모티콘 시트 분할기]에서 시트를 올립니다. 모드 A는 객체를 자동으로 찾고, 모드 B는 열/행 슬라이더로 균등 선을 깐 뒤 미리보기에서 가로·세로 네온 절단선을 드래그해 칸을 맞춥니다. 손을 떼면 360×360 썸네일과 ZIP 버퍼가 바로 갱신됩니다. [📦 전체 ZIP 다운로드 (카카오 규격 360x360)]로 받습니다.',
+          params: ['모드 B 절단선 드래그', '360×360 PNG', '투명 배경 옵션', 'ZIP 일괄 저장'],
+          tip: '슬라이더를 다시 움직이면 그 축은 균등 분할로 돌아갑니다. 이미 맞춘 다른 축의 선은 유지됩니다. 썸네일을 눌러 한 장만 받을 수도 있습니다.',
           fail: '카카오에 JPG나 직사각형 원본을 올리면 거절될 수 있습니다. 반드시 이 분할기가 만든 360 정사각 PNG를 쓰세요.',
         },
       ],
@@ -291,7 +291,7 @@ export const APP_FEATURES_REGISTRY = [
         { title: '컬러 픽커', body: '카드 하단 [텍스트 / 외곽선 / 그림자] 색 칸을 누릅니다. 외곽선 두께 0이면 테두리가 없고, 2~6이 포스터에 무난합니다. 그림자 블러는 8~18이 읽기 좋습니다.' },
         { title: '슬라이더', body: '크기·자간·줄간격·회전·투명도·가로/세로 위치는 드래그만으로 반영됩니다. 손을 떼면 히스토리에 남으므로 Ctrl+Z로 되돌릴 수 있습니다. 줄간격 권장 구간은 챕터 2를 보세요.' },
         { title: '프리셋 원클릭', body: '🎨 올인원 / ✍️ 캘리그라피 / 🪵 목각 탭에서 카드를 누르면 그 레이어 스타일만 바뀝니다. 키치 스티커는 올인원에서 해당 프리셋을 고른 뒤 하단에 나타납니다.' },
-        { title: '내보내기·단축키', body: '우측에서 투명 PNG, JPEG, 모션 GIF, ICO를 고릅니다. PNG는 1x/2x/4x 배율을 고른 뒤 받습니다. GIF는 네온 펄스·소프트 플로팅·시네마틱 페이드 중 하나를 고른 뒤 [🎬 GIF 다운로드]로 받습니다. AI 이모티콘 시트는 상단 [🧩 이모티콘 시트 분할기]에서 360×360 ZIP으로 나눕니다. 방향키 1px, Shift+방향키 10px, Ctrl+Z 실행 취소, Ctrl+Y 다시 실행, Delete는 추가 레이어만 지웁니다(메인/서브 잠금).' },
+        { title: '내보내기·단축키', body: '우측에서 투명 PNG, JPEG, 모션 GIF, ICO를 고릅니다. PNG는 1x/2x/4x 배율을 고른 뒤 받습니다. GIF는 네온 펄스·소프트 플로팅·시네마틱 페이드 중 하나를 고른 뒤 [🎬 GIF 다운로드]로 받습니다. AI 이모티콘 시트는 상단 [🧩 이모티콘 시트 분할기]에서 나누며, 모드 B는 미리보기 절단선을 드래그해 칸을 맞춘 뒤 360×360 ZIP으로 받습니다. 방향키 1px, Shift+방향키 10px, Ctrl+Z 실행 취소, Ctrl+Y 다시 실행, Delete는 추가 레이어만 지웁니다(메인/서브 잠금).' },
       ],
     },
   }),

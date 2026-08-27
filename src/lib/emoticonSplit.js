@@ -196,23 +196,59 @@ function analyzeSheet(source) {
   }
 }
 
-export function splitGridBoxes(width, height, cols, rows) {
-  const safeCols = Math.max(1, Math.min(12, Math.round(cols) || 1))
-  const safeRows = Math.max(1, Math.min(12, Math.round(rows) || 1))
-  const cellW = width / safeCols
-  const cellH = height / safeRows
+export function equalSplitGuides(count) {
+  const n = Math.max(1, Math.min(12, Math.round(count) || 1))
+  if (n <= 1) return []
+  return Array.from({ length: n - 1 }, (_, index) => (index + 1) / n)
+}
+
+export function clampGuide(value, prev, next, minGap = 0.028) {
+  const lo = prev + minGap
+  const hi = next - minGap
+  if (hi <= lo) return (prev + next) / 2
+  return Math.max(lo, Math.min(hi, Number(value) || 0))
+}
+
+export function moveGuide(list, index, nextRatio, minGap = 0.028) {
+  if (!Array.isArray(list) || index < 0 || index >= list.length) return list
+  const prev = index === 0 ? 0 : list[index - 1]
+  const next = index === list.length - 1 ? 1 : list[index + 1]
+  const copy = list.slice()
+  copy[index] = clampGuide(nextRatio, prev, next, minGap)
+  return copy
+}
+
+export function splitGuideBoxes(width, height, verticalGuides = [], horizontalGuides = []) {
+  const xs = [0, ...[...verticalGuides].map((item) => Number(item)).filter((item) => Number.isFinite(item)).sort((a, b) => a - b), 1]
+  const ys = [0, ...[...horizontalGuides].map((item) => Number(item)).filter((item) => Number.isFinite(item)).sort((a, b) => a - b), 1]
   const boxes = []
-  for (let row = 0; row < safeRows; row += 1) {
-    for (let col = 0; col < safeCols; col += 1) {
+  for (let row = 0; row < ys.length - 1; row += 1) {
+    for (let col = 0; col < xs.length - 1; col += 1) {
+      const x0 = xs[col] * width
+      const x1 = xs[col + 1] * width
+      const y0 = ys[row] * height
+      const y1 = ys[row + 1] * height
       boxes.push({
-        x: Math.round(col * cellW),
-        y: Math.round(row * cellH),
-        w: Math.round(cellW),
-        h: Math.round(cellH),
+        x: Math.round(x0),
+        y: Math.round(y0),
+        w: Math.max(1, Math.round(x1 - x0)),
+        h: Math.max(1, Math.round(y1 - y0)),
       })
     }
   }
   return boxes
+}
+
+export function splitGridBoxes(width, height, cols, rows, verticalGuides, horizontalGuides) {
+  const safeCols = Math.max(1, Math.min(12, Math.round(cols) || 1))
+  const safeRows = Math.max(1, Math.min(12, Math.round(rows) || 1))
+  const v = Array.isArray(verticalGuides) && verticalGuides.length === safeCols - 1
+    ? verticalGuides
+    : equalSplitGuides(safeCols)
+  const h = Array.isArray(horizontalGuides) && horizontalGuides.length === safeRows - 1
+    ? horizontalGuides
+    : equalSplitGuides(safeRows)
+  return splitGuideBoxes(width, height, v, h)
 }
 
 export function fitToKakaoCanvas(source, box, {
@@ -275,11 +311,13 @@ export function sliceSheet(source, {
   cols = 6,
   rows = 5,
   transparent = true,
+  verticalGuides,
+  horizontalGuides,
 } = {}) {
   const analyzed = analyzeSheet(source)
   const bg = sampleBackground(analyzed.data.data, analyzed.data.width, analyzed.data.height)
   const boxes = mode === 'grid'
-    ? splitGridBoxes(source.width, source.height, cols, rows)
+    ? splitGridBoxes(source.width, source.height, cols, rows, verticalGuides, horizontalGuides)
     : findContentBoxes(analyzed.data).map((box) => ({
       x: box.x / analyzed.scale,
       y: box.y / analyzed.scale,
