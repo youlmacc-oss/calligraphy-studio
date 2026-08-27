@@ -733,6 +733,25 @@ function isDarkTextInk(r, g, b, a) {
   return r < 80 && g < 80 && b < 80
 }
 
+function isPaperPlatePixel(r, g, b, a) {
+  if (a < 12) return false
+  if (isDarkTextInk(r, g, b, a)) return false
+  if (isColorfulBodyPixel(r, g, b, a)) return false
+  const luma = pixelLuma(r, g, b)
+  const chroma = pixelChroma(r, g, b)
+  if (luma >= 198 && chroma < 40) return true
+  return luma >= 186 && chroma < 28
+}
+
+function isDarkInkHalo(r, g, b, a) {
+  if (a < 40) return false
+  if (isDarkTextInk(r, g, b, a)) return false
+  if (isColorfulBodyPixel(r, g, b, a)) return false
+  const luma = pixelLuma(r, g, b)
+  const chroma = pixelChroma(r, g, b)
+  return luma < 152 && chroma < 28 && r < 152 && g < 152 && b < 152
+}
+
 function resolveTextZoneStartY(height, { bandStart, textZonePercent } = {}) {
   if (textZonePercent != null || bandStart == null) {
     return textZoneStartY(height, textZonePercent ?? TEXT_ZONE_DEFAULT)
@@ -766,17 +785,7 @@ export function clearTextPlatePixels(imageData, textZonePercent = TEXT_ZONE_DEFA
     if (!(y > zoneLimit)) continue
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
-      const a = data[i + 3]
-      const r = data[i]
-      const g = data[i + 1]
-      const b = data[i + 2]
-      if (a < 12) continue
-      if (isDarkTextInk(r, g, b, a)) continue
-      if (isColorfulBodyPixel(r, g, b, a)) continue
-      if (isCharacterStrokePixel(r, g, b, a)) continue
-      const luma = pixelLuma(r, g, b)
-      const chroma = pixelChroma(r, g, b)
-      if (luma < 226 || chroma >= 28) continue
+      if (!isPaperPlatePixel(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
       data[i] = 0
       data[i + 1] = 0
       data[i + 2] = 0
@@ -797,20 +806,27 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
     if (!(y > zoneLimit)) continue
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
-      if (!isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
-      const luma = pixelLuma(data[i], data[i + 1], data[i + 2]) / 255
-      let r = data[i]
-      let g = data[i + 1]
-      let b = data[i + 2]
+      const pr = data[i]
+      const pg = data[i + 1]
+      const pb = data[i + 2]
+      const pa = data[i + 3]
+      const core = isDarkTextInk(pr, pg, pb, pa)
+      const halo = !core && isDarkInkHalo(pr, pg, pb, pa)
+      if (!core && !halo) continue
+      const luma = pixelLuma(pr, pg, pb)
+      let r = pr
+      let g = pg
+      let b = pb
+      const mix = core ? 1 : Math.min(1, Math.max(0.35, 1 - luma / 255))
       if (mode === 'black') {
-        const t = 0.88 * (1 - luma)
-        r = r * (1 - t)
-        g = g * (1 - t)
-        b = b * (1 - t)
+        const t = 0.88 * (1 - luma / 255) * mix
+        r = pr * (1 - t)
+        g = pg * (1 - t)
+        b = pb * (1 - t)
       } else if (mode === 'white') {
-        r = 250
-        g = 250
-        b = 250
+        r = 255
+        g = 255
+        b = 255
       } else if (mode === 'custom') {
         r = tr
         g = tg
@@ -819,6 +835,9 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
       data[i] = Math.max(0, Math.min(255, Math.round(r)))
       data[i + 1] = Math.max(0, Math.min(255, Math.round(g)))
       data[i + 2] = Math.max(0, Math.min(255, Math.round(b)))
+      if (halo && mode !== 'black') {
+        data[i + 3] = Math.max(0, Math.min(255, Math.round(pa * mix)))
+      }
     }
   }
   return imageData
@@ -866,6 +885,7 @@ export function enhanceSliceImageData(imageData, { amount = 0.42, contrast = 1.0
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       if (src[i + 3] < 10) continue
+      if (isPaperPlatePixel(src[i], src[i + 1], src[i + 2], src[i + 3])) continue
       for (let channel = 0; channel < 3; channel += 1) {
         let sum = 0
         let count = 0
@@ -952,6 +972,7 @@ export function fitToKakaoCanvas(source, box, {
     applyFloodFillTransparency(ctx, size, size, { extraSeeds: bg ? [bg] : [] })
   }
   const pixels = ctx.getImageData(0, 0, size, size)
+  if (transparent) clearTextPlatePixels(pixels, textZonePercent)
   enhanceSliceImageData(pixels)
   if (transparent) clearTextPlatePixels(pixels, textZonePercent)
   const inkMask = outline ? buildTextGlyphMask(pixels, { textZonePercent }) : null

@@ -700,6 +700,30 @@ export async function checkEmoticonSlicer() {
   if (boxedData.data[(36 * 40 + 20) * 4] !== 0 || boxedData.data[(36 * 40 + 20) * 4 + 1] !== 204) {
     return { status: 'warn', detail: 'IDLE · 흰 패치 제거 후 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
   }
+  const cream = document.createElement('canvas')
+  cream.width = 40
+  cream.height = 40
+  const creamCtx = cream.getContext('2d', { alpha: true })
+  creamCtx.clearRect(0, 0, 40, 40)
+  creamCtx.fillStyle = '#d2d2d6'
+  creamCtx.fillRect(9, 33, 22, 7)
+  creamCtx.fillStyle = '#909090'
+  creamCtx.fillRect(13, 34, 1, 4)
+  creamCtx.fillStyle = '#141414'
+  creamCtx.fillRect(14, 34, 12, 4)
+  const creamData = creamCtx.getImageData(0, 0, 40, 40)
+  clearTextPlatePixels(creamData)
+  applyTextTone(creamData, 'custom', '#00ccff')
+  if (creamData.data[(34 * 40 + 10) * 4 + 3] > 20 || creamData.data[(35 * 40 + 11) * 4 + 3] > 20) {
+    return { status: 'error', detail: '미색 사각 패치가 픽셀 펀치 후에도 남았습니다.' }
+  }
+  if (creamData.data[(36 * 40 + 20) * 4] !== 0 || creamData.data[(36 * 40 + 20) * 4 + 1] !== 204) {
+    return { status: 'warn', detail: 'IDLE · 미색 패치 제거 후 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
+  }
+  const haloAt = (36 * 40 + 13) * 4
+  if (creamData.data[haloAt] !== 0 || creamData.data[haloAt + 1] !== 204 || creamData.data[haloAt + 2] !== 255) {
+    return { status: 'error', detail: '글자 가장자리 회색이 선택 색으로 맞추어지지 않았습니다.' }
+  }
   const ring = document.createElement('canvas')
   ring.width = 40
   ring.height = 40
