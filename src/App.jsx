@@ -194,7 +194,7 @@ export default function App() {
   const [guideOpen, setGuideOpen] = useState(false)
   const [emoSplitOpen, setEmoSplitOpen] = useState(false)
   const [isGifStudioOpen, setIsGifStudioOpen] = useState(false)
-  const gifStudioSourceRef = useRef(null)
+  const [gifStudioInitialSource, setGifStudioInitialSource] = useState(null)
   const [favoriteFonts, setFavoriteFonts] = useState(() => loadFavoriteFonts())
   const [customFonts, setCustomFonts] = useState([])
   const [snapGuide, setSnapGuide] = useState({ x: false, y: false })
@@ -947,6 +947,17 @@ export default function App() {
     }
   })
 
+  const openGifStudio = useCallback(() => {
+    let dataUrl = null
+    try {
+      dataUrl = canvasRef.current?.toDataURL('image/png') ?? null
+    } catch {
+      dataUrl = null
+    }
+    setGifStudioInitialSource(dataUrl)
+    setIsGifStudioOpen(true)
+  }, [])
+
   const downloadIcons = () => runExport('파비콘 패키지', async () => {
     const result = await ensureExport()
     const blob = await iconPackageFromCanvas(result.graphic)
@@ -1370,18 +1381,11 @@ export default function App() {
             <button
               type="button"
               className={clsx('tool-btn', isGifStudioOpen && 'is-on')}
-              onClick={() => {
-                try {
-                  gifStudioSourceRef.current = canvasRef.current?.toDataURL('image/png') ?? null
-                } catch {
-                  gifStudioSourceRef.current = null
-                }
-                setIsGifStudioOpen(true)
-              }}
+              onClick={openGifStudio}
               data-tour="gif-export"
-              {...magnify('GIF 다운로드', '독립 모션 GIF 스튜디오를 열어 프리셋과 투명 GIF를 만듭니다')}
+              {...magnify('모션 GIF 스튜디오', '독립 3단 모션 GIF 스튜디오를 열고 현재 캔버스를 소스로 전달합니다')}
             >
-              🎬 GIF 다운로드
+              🎬 모션 GIF 스튜디오
             </button>
             <button
               type="button"
@@ -1686,8 +1690,8 @@ export default function App() {
             <button type="button" disabled={exportBusy} className="export-btn export-btn-jpeg mt-2 w-full" onClick={downloadJpeg} {...magnify('고품질 JPEG', '흰 배경으로 합성해 용량을 줄여 저장합니다')}>
               <Download className="h-4 w-4" /> 📷 고품질 JPEG 다운로드
             </button>
-            <button type="button" disabled={exportBusy} className="export-btn export-btn-gif mt-2 w-full" onClick={downloadGif} {...magnify('움직이는 GIF', '네온 펄스·소프트 플로팅·시네마틱 페이드 루프를 만들어 저장합니다')}>
-              <Download className="h-4 w-4" /> 🎬 GIF 다운로드
+            <button type="button" className="export-btn export-btn-gif mt-2 w-full" onClick={openGifStudio} {...magnify('모션 GIF 스튜디오', '독립 3단 모션 GIF 스튜디오를 열고 현재 캔버스를 소스로 전달합니다')}>
+              <Download className="h-4 w-4" /> 🎬 모션 GIF 스튜디오
             </button>
             <div className="gif-motion-row">
               {GIF_MOTIONS.map((motion) => (
@@ -1815,7 +1819,7 @@ export default function App() {
       <MotionGifStudioModal
         isOpen={isGifStudioOpen}
         onClose={() => setIsGifStudioOpen(false)}
-        initialSource={gifStudioSourceRef.current}
+        initialSource={gifStudioInitialSource}
       />
       <OnboardingTour
         open={tourOpen}
