@@ -169,8 +169,8 @@ export const APP_FEATURES_REGISTRY = [
       play: [
         {
           title: '모션 프리셋을 고른 뒤 GIF를 받는다',
-          body: '중앙 툴바와 우측 [🎬 모션 GIF 스튜디오]에서 5대 모션을 60fps로 미리보고 GIF로 받습니다. 좌측 [이모티콘 컷 픽업]은 분할기에서 나눈 컷을 격자로 불러오고, [전체 28컷 일괄 변환]은 같은 모션을 ZIP으로 묶습니다. 규격은 카카오 360(24fps)·라인 320×270·슬랙/디스코드 128·HD 500·원본 유지입니다.',
-          params: ['네온 펄스', '소프트 플로팅', '시네마틱 페이드'],
+          body: '중앙 툴바와 우측 [🎬 모션 GIF 스튜디오]에서 5대 모션(Jelly Bounce · Neon Pulse · Cute Wiggle · Cinematic Glitch · Soft Floating)을 60fps로 미리보고 투명 GIF로 받습니다. 좌측 [이모티콘 컷 픽업]은 분할기 28컷 DataURL을 격자로 불러오고, 칸을 누르면 즉시 뷰포트 소스가 됩니다. [전체 28컷 일괄 변환]은 같은 모션을 ZIP으로 묶습니다. 규격은 카카오 360(여백 센터링)·라인 320×270·슬랙/디스코드 128·HD 500·원본 유지입니다.',
+          params: ['Jelly Bounce', 'Neon Pulse', 'Cute Wiggle', 'Cinematic Glitch', 'Soft Floating'],
           tip: '쇼츠 썸네일은 네온 펄스, 채널 배너는 소프트 플로팅, 릴스 인트로는 시네마틱 페이드가 잘 맞습니다.',
           fail: '진행 바가 멈추면 글자가 너무 크거나 해상도가 높을 수 있습니다. 화면 맞춤으로 줄인 뒤 다시 시도하세요.',
         },

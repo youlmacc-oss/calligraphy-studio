@@ -4,7 +4,7 @@ import JSZip from 'jszip'
 import clsx from 'clsx'
 import { X } from 'lucide-react'
 import { magnify } from '../MenuMagnifierHUD.jsx'
-import { encodeMotionGif, formatEta, revokeGifUrl } from './gifEngine.js'
+import { encodeMotionGif, formatEta, revokeGifUrl, countGifFrames } from './gifEngine.js'
 import {
   MOTION_PRESETS,
   clampIntensity,
@@ -72,7 +72,8 @@ function fitSource(image, width, height) {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
+  ctx.clearRect(0, 0, width, height)
   const { width: sw, height: sh } = sourceSize(image)
   const scale = Math.min(width / sw, height / sh)
   const dw = sw * scale
@@ -91,6 +92,10 @@ function cutUrl(cut) {
   return cut?.preview || cut?.url || cut?.dataUrl || ''
 }
 
+function cutKey(cut, index = 0) {
+  return cut?.id || `cut-${index}`
+}
+
 export default function MotionGifStudioModal({ isOpen, onClose, initialSource = null }) {
   const viewRef = useRef(null)
   const virtualRef = useRef(null)
@@ -104,6 +109,8 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const encodeStartedRef = useRef(0)
   const fileRef = useRef(null)
   const cutsFileRef = useRef(null)
+  const sourceTabRef = useRef('canvas')
+  const cutsRef = useRef([])
 
   const parsed = useMemo(() => parseInitialSource(initialSource), [initialSource])
   const [sourceTab, setSourceTab] = useState('canvas')
@@ -131,6 +138,8 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
   const loop = clampLoopSeconds(loopSeconds)
   paramsRef.current = { preset, intensity, loopSeconds: loop, fps, sizeId, playing }
+  sourceTabRef.current = sourceTab
+  cutsRef.current = cuts
 
   const stopLoop = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -155,7 +164,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       view.width = size.width
       view.height = size.height
     }
-    paintMotionFrame(virtual.getContext('2d', { willReadFrequently: true }), source, {
+    paintMotionFrame(virtual.getContext('2d', { alpha: true, willReadFrequently: true }), source, {
       width: size.width,
       height: size.height,
       time01,
@@ -253,10 +262,10 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     const next = files.map((file, index) => {
       const url = URL.createObjectURL(file)
       objectUrlsRef.current.push(url)
-      return { id: `local-cut-${index}`, url }
+      return { id: `local-cut-${index}`, url, preview: url }
     })
     setCuts(next)
-    setSelectedCut(next[0].url)
+    setSelectedCut(cutKey(next[0], 0))
     setSourceTab('cuts')
   }, [])
 
@@ -280,7 +289,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     const snapshotCuts = getEmoticonCuts()
     const nextCuts = parsed.cuts.length ? parsed.cuts : snapshotCuts
     setCuts(nextCuts)
-    if (nextCuts[0]) setSelectedCut(cutUrl(nextCuts[0]))
+    if (nextCuts[0]) setSelectedCut(cutKey(nextCuts[0], 0))
     const onKey = (event) => {
       if (event.key === 'Escape') onClose?.()
     }
@@ -297,6 +306,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       if (current.some((item) => String(item.id || '').startsWith('local-cut-'))) return current
       return next
     })
+    if (sourceTabRef.current === 'cuts' && next[0]) {
+      setSelectedCut((id) => id || cutKey(next[0], 0))
+    }
   }), [])
 
   useEffect(() => {
@@ -318,15 +330,23 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
   useEffect(() => {
     if (!isOpen) return
-    if (sourceTab === 'canvas') ingestUrl(parsed.dataUrl)
-    else if (sourceTab === 'cuts') ingestUrl(selectedCut)
-    else ingestUrl(localUrl)
-  }, [sourceTab, selectedCut, localUrl, parsed.dataUrl, isOpen, ingestUrl])
+    if (sourceTab === 'canvas') {
+      ingestUrl(parsed.dataUrl)
+      return
+    }
+    if (sourceTab === 'drop') {
+      ingestUrl(localUrl)
+      return
+    }
+    const list = cutsRef.current.length ? cutsRef.current : parsed.cuts
+    const active = list.find((item, index) => cutKey(item, index) === selectedCut) || list[0]
+    ingestUrl(cutUrl(active))
+  }, [sourceTab, selectedCut, localUrl, parsed.dataUrl, parsed.cuts, isOpen, ingestUrl])
 
   useEffect(() => {
     if (sourceTab !== 'cuts' || selectedCut) return
-    const first = cutUrl(cuts[0] || parsed.cuts[0])
-    if (first) setSelectedCut(first)
+    const first = cuts[0] || parsed.cuts[0]
+    if (first) setSelectedCut(cutKey(first, 0))
   }, [sourceTab, selectedCut, cuts, parsed.cuts])
 
   const requestClose = useCallback(() => {
@@ -381,7 +401,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop])
 
   const handleBatchExport = useCallback(async () => {
-    const list = (cuts.length ? cuts : parsed.cuts).filter((cut) => cutUrl(cut))
+    const list = (cuts.length ? cuts : parsed.cuts).filter((cut) => cutUrl(cut)).slice(0, 28)
     if (!list.length || encoding) return
     abortRef.current = false
     encodeStartedRef.current = performance.now()
@@ -438,6 +458,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   if (!isOpen) return null
 
   const visibleCuts = cuts.length ? cuts : parsed.cuts
+  const resolvedSize = resolvePlatformSize(sizeId, imageRef.current)
+  const estimateFrames = countGifFrames(resolvedSize.fps || fps, loop)
+  const estimateKb = Math.max(1, Math.round(resolvedSize.width * resolvedSize.height * estimateFrames * 0.45 / 1024))
 
   return (
     <div className="studio-modal-root mgs-root" role="dialog" aria-modal="true" aria-labelledby="mgs-title">
@@ -469,7 +492,11 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               <button type="button" className={clsx('mgs-tab', sourceTab === 'canvas' && 'is-on')} disabled={encoding} onClick={() => setSourceTab('canvas')}>
                 본체 그래픽 수신
               </button>
-              <button type="button" className={clsx('mgs-tab', sourceTab === 'cuts' && 'is-on')} disabled={encoding} onClick={() => setSourceTab('cuts')}>
+              <button type="button" className={clsx('mgs-tab', sourceTab === 'cuts' && 'is-on')} disabled={encoding} onClick={() => {
+                const latest = getEmoticonCuts()
+                if (latest.length) setCuts(latest)
+                setSourceTab('cuts')
+              }}>
                 이모티콘 컷 픽업
               </button>
               <button type="button" className={clsx('mgs-tab', sourceTab === 'drop' && 'is-on')} disabled={encoding} onClick={() => setSourceTab('drop')}>
@@ -495,11 +522,12 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                         <button
                           key={cut.id || index}
                           type="button"
-                          className={clsx('mgs-icon-btn', selectedCut === url && 'is-on')}
+                          className={clsx('mgs-icon-btn', selectedCut === cutKey(cut, index) && 'is-on')}
                           disabled={encoding || !url}
                           onClick={() => {
-                            setSelectedCut(url)
-                            ingestUrl(url)
+                            setSelectedCut(cutKey(cut, index))
+                            playRef.current.playing = true
+                            setPlaying(true)
                           }}
                         >
                           <img src={url} alt={`컷 ${index + 1}`} />
@@ -508,7 +536,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                     })}
                   </div>
                 ) : (
-                  <p className="mgs-hint">분할기에서 시트를 나누면 여기에 컷이 나타납니다. PNG/JPG를 여러 장 올려도 됩니다.</p>
+                  <p className="mgs-hint">분할기에서 시트를 나누면 28컷이 여기에 나타납니다. PNG/JPG를 여러 장 올려도 됩니다.</p>
                 )}
                 <button
                   type="button"
@@ -649,20 +677,32 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
         <footer className="mgs-foot">
           <div className={clsx('mgs-status', statusKind === 'error' && 'is-error')}>
-            {status}{frameHint ? ` · ${frameHint}` : ''}{eta ? ` · ${eta}` : ''}
-            <div className="mgs-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+            {status}{frameHint ? ` · ${frameHint}` : ''}{eta ? ` · ${eta}` : ''}{!encoding && hasSource ? ` · 약 ${estimateKb} KB · ${resolvedSize.width}×${resolvedSize.height}` : ''}
+            <div className="mgs-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label="GIF 인코딩 진행률">
               <span style={{ width: `${progress}%` }} />
             </div>
           </div>
-          <button
-            type="button"
-            className="tool-btn is-on mgs-download"
-            disabled={!hasSource || encoding}
-            onClick={handleDownload}
-            {...magnify('초고화질 GIF', '투명 배경 무한루프 GIF를 인코딩해 저장합니다')}
-          >
-            {encoding ? `인코딩 중 ${progress}%` : '🚀 초고화질 무한루프 GIF 다운로드'}
-          </button>
+          <div className="mgs-foot-actions">
+            {encoding ? (
+              <button
+                type="button"
+                className="mgs-icon-btn"
+                onClick={() => { abortRef.current = true }}
+                {...magnify('인코딩 취소', '진행 중인 GIF 작업을 중단합니다')}
+              >
+                취소
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="tool-btn is-on mgs-download"
+              disabled={!hasSource || encoding}
+              onClick={handleDownload}
+              {...magnify('초고화질 GIF', '투명 배경 무한루프 GIF를 인코딩해 저장합니다')}
+            >
+              {encoding ? `인코딩 중 ${progress}%` : '🚀 초고화질 무한루프 GIF 다운로드'}
+            </button>
+          </div>
         </footer>
       </div>
     </div>

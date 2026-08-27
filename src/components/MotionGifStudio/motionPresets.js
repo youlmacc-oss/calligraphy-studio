@@ -1,9 +1,9 @@
 export const MOTION_PRESETS = [
-  { id: 'jellyBounce', label: '① 젤리 바운스', hint: '탄성 상하 압축/도약' },
-  { id: 'neonPulse', label: '② 네온 브리딩', hint: '글로우 반경·투명도 순환' },
-  { id: 'cuteWiggle', label: '③ 큐트 위글', hint: '±8° 틸트 + 바운스' },
-  { id: 'cinematicGlitch', label: '④ 시네마틱 글리치', hint: 'RGB 스플릿·디지털 스냅' },
-  { id: 'softFloating', label: '⑤ 소프트 플로팅', hint: '사인파 상하 루프' },
+  { id: 'jellyBounce', label: '① Jelly Bounce', hint: '쫀득한 젤리 탄성' },
+  { id: 'neonPulse', label: '② Neon Pulse', hint: '네온 맥동 발광' },
+  { id: 'cuteWiggle', label: '③ Cute Wiggle', hint: '리듬 갸우뚱 틸트' },
+  { id: 'cinematicGlitch', label: '④ Cinematic Glitch', hint: 'RGB 채널 분리 노이즈' },
+  { id: 'softFloating', label: '⑤ Soft Floating', hint: '무중력 부유 루프' },
 ]
 
 const TAU = Math.PI * 2

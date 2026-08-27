@@ -1,7 +1,8 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc'
 
-export const ALPHA_CUT = 16
+export const ALPHA_CUT = 24
 export const GIF_HEADER = 'GIF89a'
+const NETSCAPE = [78, 69, 84, 83, 67, 65, 80, 69, 50, 46, 48]
 
 export function delayMsFromOptions(options = {}) {
   if (Number.isFinite(Number(options.delay)) && Number(options.delay) > 0) {
@@ -18,20 +19,65 @@ function headerText(bytes, length) {
   return out
 }
 
+export function hasNetscapeLoop(uint8) {
+  if (!uint8?.length) return false
+  const limit = uint8.length - NETSCAPE.length
+  for (let i = 0; i <= limit; i += 1) {
+    let match = true
+    for (let j = 0; j < NETSCAPE.length; j += 1) {
+      if (uint8[i + j] !== NETSCAPE[j]) {
+        match = false
+        break
+      }
+    }
+    if (match) return true
+  }
+  return false
+}
+
 export function assertValidGif(uint8) {
   if (!uint8?.byteLength) throw new Error('GIF 인코더가 0바이트 파일을 반환했습니다.')
   if (headerText(uint8, 6) !== GIF_HEADER) {
     throw new Error('유효한 GIF89a Blob이 아닙니다.')
   }
+  if (!hasNetscapeLoop(uint8)) {
+    throw new Error('무한 루프(NETSCAPE2.0, repeat: 0) 헤더가 없습니다.')
+  }
 }
 
-function withTransparentIndex(rgba, palette) {
-  const table = palette.map((color) => color.slice(0, 3))
+export function isGifTransparentPixel(r, g, b, a, cut = ALPHA_CUT) {
+  if (a < cut) return true
+  if (a < 96) {
+    const luma = r * 0.299 + g * 0.587 + b * 0.114
+    if (luma > 248 || luma < 8) return true
+  }
+  return false
+}
+
+export function maskRgbaTransparency(rgba, cut = ALPHA_CUT) {
+  const copy = new Uint8ClampedArray(rgba)
+  for (let i = 0; i < copy.length; i += 4) {
+    if (isGifTransparentPixel(copy[i], copy[i + 1], copy[i + 2], copy[i + 3], cut)) {
+      copy[i] = 0
+      copy[i + 1] = 0
+      copy[i + 2] = 0
+      copy[i + 3] = 0
+    } else {
+      copy[i + 3] = 255
+    }
+  }
+  return copy
+}
+
+function encodeTransparentFrame(rgba) {
+  const masked = maskRgbaTransparency(rgba)
+  const palette = quantize(masked, 255, { format: 'rgb565' })
+  const table = (palette || []).map((color) => color.slice(0, 3))
   if (!table.length) table.push([0, 0, 0])
   const transparentIndex = Math.min(255, table.length)
-  const index = applyPalette(rgba, table, 'rgb565')
+  const index = applyPalette(masked, table, 'rgb565')
   for (let p = 0, i = 0; i < index.length; i += 1, p += 4) {
-    if (rgba[p + 3] < ALPHA_CUT) index[i] = transparentIndex
+    if (masked[p + 3] === 0) index[i] = transparentIndex
   }
   if (table.length < 256) table.push([0, 0, 0])
   return { index, palette: table, transparentIndex }
@@ -52,15 +98,16 @@ export function encodeRgbaFrames(frames, options = {}) {
     if (pixels.width !== width || pixels.height !== height) {
       throw new Error('모든 GIF 프레임 크기가 같아야 합니다.')
     }
-    const maxColors = transparent ? 255 : 256
-    const palette = quantize(pixels.data, maxColors, { format: 'rgb565' })
     const mapped = transparent
-      ? withTransparentIndex(pixels.data, palette)
-      : {
-        index: applyPalette(pixels.data, palette, 'rgb565'),
-        palette,
-        transparentIndex: 0,
-      }
+      ? encodeTransparentFrame(pixels.data)
+      : (() => {
+        const palette = quantize(pixels.data, 256, { format: 'rgb565' })
+        return {
+          index: applyPalette(pixels.data, palette, 'rgb565'),
+          palette,
+          transparentIndex: 0,
+        }
+      })()
     gif.writeFrame(mapped.index, width, height, {
       palette: mapped.palette,
       delay,

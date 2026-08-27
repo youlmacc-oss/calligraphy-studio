@@ -1,8 +1,8 @@
 export const PLATFORM_PRESETS = [
-  { id: 'kakao', label: '카카오 이모티콘 360×360', width: 360, height: 360, fps: 24 },
-  { id: 'line', label: '라인 스티커 320×270', width: 320, height: 270, fps: 12 },
-  { id: 'emoji', label: '디스코드 / 슬랙 128×128', width: 128, height: 128, fps: 12 },
-  { id: 'hd', label: 'HD 마케팅 배너 500×500', width: 500, height: 500, fps: 12 },
+  { id: 'kakao', label: '카카오 이모티콘 360 × 360 (여백 자동 센터링)', width: 360, height: 360, fps: 24 },
+  { id: 'line', label: '라인 스티커 320 × 270', width: 320, height: 270, fps: 12 },
+  { id: 'emoji', label: '디스코드/슬랙 이모지 128 × 128', width: 128, height: 128, fps: 12 },
+  { id: 'hd', label: 'HD 마케팅 배너 500 × 500', width: 500, height: 500, fps: 12 },
   { id: 'original', label: '원본 크기 유지 (Source Match)' },
 ]
 

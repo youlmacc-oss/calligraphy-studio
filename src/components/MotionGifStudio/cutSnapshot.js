@@ -31,6 +31,7 @@ export function publishEmoticonCuts(slices = []) {
       id: item.id || `cut-${index + 1}`,
       name: item.name || `cut-${String(index + 1).padStart(2, '0')}.png`,
       url,
+      preview: url,
     }
   }).filter(Boolean)
   listeners.forEach((listener) => listener(getEmoticonCuts()))
