@@ -1973,6 +1973,7 @@ body {
 }
 
 .studio-modal-card.emo-split-card {
+  position: relative;
   width: 92vw;
   max-width: 1440px;
   height: 86vh;
@@ -2176,6 +2177,24 @@ body {
 
 .emo-debug-btn:disabled {
   opacity: 0.45;
+}
+
+.emo-debug-toast {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 40;
+  transform: translateX(-50%);
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  background: rgba(15, 23, 42, 0.94);
+  color: #fef9c3;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .emo-split-resizer {
@@ -3157,6 +3176,12 @@ body {
 
 .live-status-hud__value.is-perf-error {
   color: #fda4af;
+}
+
+.live-status-hud__warn {
+  border-color: rgba(250, 204, 21, 0.55);
+  color: #fde68a;
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.28);
 }
 
 .nav-utility {

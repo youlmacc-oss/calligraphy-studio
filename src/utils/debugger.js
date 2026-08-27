@@ -24,6 +24,7 @@ function readCornerAlpha(imageData) {
     tr,
     bl,
     br,
+    status: tl <= 12 && tr <= 12 && bl <= 12 && br <= 12 ? 'PASS' : 'FAIL',
     ok: tl <= 12 && tr <= 12 && bl <= 12 && br <= 12,
   }
 }
@@ -95,12 +96,17 @@ function bandInkRatio(source, x, y, w, h) {
 }
 
 function detectAdjacentRowOverlap(source, box) {
-  if (!source || !box) return { adjacentRowOverlap: 0, above: 0, below: 0 }
+  if (!source || !box) return { adjacentRowOverlap: false, adjacentRowOverlapScore: 0, above: 0, below: 0 }
   const band = 4
   const above = bandInkRatio(source, box.x, box.y - band, box.w, band)
   const below = bandInkRatio(source, box.x, box.y + box.h, box.w, band)
-  const adjacentRowOverlap = Math.round(Math.max(above, below) * 1000) / 1000
-  return { adjacentRowOverlap, above: Math.round(above * 1000) / 1000, below: Math.round(below * 1000) / 1000 }
+  const score = Math.round(Math.max(above, below) * 1000) / 1000
+  return {
+    adjacentRowOverlap: score >= 0.12,
+    adjacentRowOverlapScore: score,
+    above: Math.round(above * 1000) / 1000,
+    below: Math.round(below * 1000) / 1000,
+  }
 }
 
 function detectHighlightProtection(imageData) {
@@ -159,9 +165,9 @@ export function inspectRenderedSlice({
   const overlap = detectAdjacentRowOverlap(source, box)
   const highlight = detectHighlightProtection(imageData)
   const suspects = []
-  if (transparent && !cornerAlpha.ok) suspects.push('corner-alpha')
+  if (transparent && cornerAlpha.status !== 'PASS') suspects.push('corner-alpha')
   if (plate.hasBoundingBoxArtifact) suspects.push('text-bounding-box')
-  if (overlap.adjacentRowOverlap >= 0.12) suspects.push('adjacent-row-overlap')
+  if (overlap.adjacentRowOverlap) suspects.push('adjacent-row-overlap')
   if (!highlight.characterHighlightProtected) suspects.push('highlight-clipped')
   return {
     id: `emo-${index + 1}`,
@@ -187,6 +193,7 @@ export function inspectRenderedSlice({
     boundingBoxScore: plate.boundingBoxScore,
     platePixels: plate.platePixels,
     adjacentRowOverlap: overlap.adjacentRowOverlap,
+    adjacentRowOverlapScore: overlap.adjacentRowOverlapScore,
     characterHighlightProtected: highlight.characterHighlightProtected,
     suspects,
   }
@@ -223,10 +230,10 @@ export function diagnosticTableRows(report) {
   return (report?.slices || []).map((row) => ({
     id: row.id,
     box: row.box ? `${row.box.x},${row.box.y} ${row.box.w}×${row.box.h}` : '',
-    cornerOk: row.cornerAlpha?.ok,
-    boundingBox: row.hasBoundingBoxArtifact,
-    overlap: row.adjacentRowOverlap,
-    highlight: row.characterHighlightProtected,
+    cornerAlpha: row.cornerAlpha?.status || (row.cornerAlpha?.ok ? 'PASS' : 'FAIL'),
+    hasBoundingBoxArtifact: row.hasBoundingBoxArtifact,
+    adjacentRowOverlap: row.adjacentRowOverlap === true,
+    characterHighlightProtected: row.characterHighlightProtected === true,
     suspects: (row.suspects || []).join('|') || 'ok',
   }))
 }
@@ -257,4 +264,20 @@ export async function copyDiagnosticLog(report) {
   document.execCommand('copy')
   document.body.removeChild(area)
   return text
+}
+
+const HUD_IDLE = { status: 'idle', suspectCount: 0, sliceCount: 0 }
+let inspectorHud = { ...HUD_IDLE }
+const hudListeners = new Set()
+
+export function publishInspectorHud(next = HUD_IDLE) {
+  inspectorHud = { ...HUD_IDLE, ...next }
+  hudListeners.forEach((fn) => fn(inspectorHud))
+  return inspectorHud
+}
+
+export function subscribeInspectorHud(fn) {
+  hudListeners.add(fn)
+  fn(inspectorHud)
+  return () => hudListeners.delete(fn)
 }

@@ -56,6 +56,7 @@ import {
 } from './lib/studioModel.js'
 import { loadFavoriteFonts, saveFavoriteFonts, toggleFavoriteId } from './lib/fontFavorites.js'
 import { DIAG_STEPS } from './lib/featureRegistry.js'
+import { subscribeInspectorHud } from './utils/debugger.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
 import { registerCustomFontFile } from './lib/customFonts.js'
@@ -199,6 +200,7 @@ export default function App() {
   const [tourOpen, setTourOpen] = useState(false)
   const [tourStep, setTourStep] = useState(0)
   const [renderHud, setRenderHud] = useState(() => readRenderPerf())
+  const [sliceInspectorHud, setSliceInspectorHud] = useState({ status: 'idle', suspectCount: 0, sliceCount: 0 })
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadLeftPanelWidth())
   const [isResizing, setIsResizing] = useState(false)
   const projectInputRef = useRef(null)
@@ -221,6 +223,8 @@ export default function App() {
   studioRef.current = studio
   leftPanelWidthRef.current = leftPanelWidth
   diagOpenRef.current = diagOpen
+
+  useEffect(() => subscribeInspectorHud(setSliceInspectorHud), [])
 
   const fontsById = useMemo(
     () => ({
@@ -1607,6 +1611,15 @@ export default function App() {
                   {renderHud.label}
                 </span>
               </span>
+              {sliceInspectorHud.status === 'warn' && sliceInspectorHud.suspectCount > 0 ? (
+                <span
+                  className="live-status-hud__chip live-status-hud__warn"
+                  title="이모티콘 슬라이스 진단에서 결함이 감지되었습니다. 분할기의 [🐞 진단 로그]를 복사하세요."
+                >
+                  <span className="live-status-hud__label">슬라이스</span>
+                  <span className="live-status-hud__value">⚠ {sliceInspectorHud.suspectCount}</span>
+                </span>
+              ) : null}
             </div>
           ) : null}
         </main>

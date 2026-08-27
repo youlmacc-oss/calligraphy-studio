@@ -716,6 +716,12 @@ export async function checkEmoticonSlicer() {
   if (!inspected?.cornerAlpha || typeof inspected.hasBoundingBoxArtifact !== 'boolean') {
     return { status: 'error', detail: '슬라이스 진단 인스펙터가 4대 지표를 기록하지 못했습니다.' }
   }
+  if (inspected.cornerAlpha.status !== 'PASS' && inspected.cornerAlpha.status !== 'FAIL') {
+    return { status: 'error', detail: 'cornerAlpha PASS/FAIL 상태가 없습니다.' }
+  }
+  if (typeof inspected.adjacentRowOverlap !== 'boolean' || typeof inspected.characterHighlightProtected !== 'boolean') {
+    return { status: 'error', detail: 'adjacentRowOverlap/highlight 보존 지표가 boolean이 아닙니다.' }
+  }
   const zip = new JSZip()
   const pngBlob = await canvasToPngBlob(kakao)
   if (!pngBlob || pngBlob.type !== 'image/png') {

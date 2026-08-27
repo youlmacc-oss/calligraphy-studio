@@ -35,7 +35,7 @@ import {
   sliceSheet,
   stepPreviewZoomPercent,
 } from '../lib/emoticonSplit.js'
-import { buildDiagnosticReport, copyDiagnosticLog } from '../utils/debugger.js'
+import { buildDiagnosticReport, copyDiagnosticLog, publishInspectorHud } from '../utils/debugger.js'
 
 const TEXT_MODES = [
   { id: 'original', label: '원본 유지', hint: '하단 텍스트와 캐릭터 색을 모두 그대로 둡니다' },
@@ -182,6 +182,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     resetView()
     setOutline(OUTLINE_DEFAULT)
     outlineRef.current = OUTLINE_DEFAULT
+    publishInspectorHud({ status: 'idle', suspectCount: 0, sliceCount: 0 })
     setNote('AI가 만든 스티커 시트(흰 배경 그리드)를 올리면 360×360 PNG로 나눕니다.')
   }
 
@@ -211,6 +212,11 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       if (gen !== sliceGen.current) return
       setSlices(next)
       const suspects = next.filter((item) => item.diagnostics?.suspects?.length).length
+      publishInspectorHud({
+        status: next.length ? (suspects ? 'warn' : 'ok') : 'idle',
+        suspectCount: suspects,
+        sliceCount: next.length,
+      })
       setNote(next.length
         ? `${next.length}개로 나눴습니다. 카카오 규격 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · Crop→Flood T18→획치환${suspects ? ` · 진단 의심 ${suspects}칸` : ''}.`
         : '객체를 찾지 못했습니다. 외곽 재단선과 모드 B 절단선을 맞춰 보세요.')
@@ -218,6 +224,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       if (gen !== sliceGen.current) return
       setNote(error.message || '분할에 실패했습니다.')
       setSlices([])
+      publishInspectorHud({ status: 'idle', suspectCount: 0, sliceCount: 0 })
     } finally {
       if (gen === sliceGen.current) setBusy(false)
     }
@@ -562,8 +569,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       })
       await copyDiagnosticLog(report)
       setLogCopied(true)
-      window.setTimeout(() => setLogCopied(false), 1600)
-      setNote(`진단 로그 ${report.slices.length}칸을 클립보드에 복사했습니다. F12 콘솔 테이블도 확인하세요.`)
+      window.setTimeout(() => setLogCopied(false), 2200)
+      setNote('진단 로그가 클립보드에 복사되었습니다!')
     } catch (error) {
       setNote(error.message || '진단 로그를 복사하지 못했습니다.')
     }
@@ -575,6 +582,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     <div className="studio-modal-root" role="dialog" aria-modal="true" aria-labelledby="emo-split-title">
       <div className="studio-modal-backdrop" onClick={onClose} />
       <div className="studio-modal-card emo-split-card">
+        {logCopied ? (
+          <div className="emo-debug-toast" role="status">진단 로그가 클립보드에 복사되었습니다!</div>
+        ) : null}
         <header className="emo-split-head">
           <h2 id="emo-split-title">🧩 이모티콘 시트 분할기</h2>
           <div className="emo-enhance-bar">
