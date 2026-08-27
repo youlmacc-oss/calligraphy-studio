@@ -14,9 +14,13 @@ import {
   SLICE_SCALE_DEFAULT,
   SLICE_SCALE_MAX,
   SLICE_SCALE_MIN,
+  TEXT_ZONE_DEFAULT,
+  TEXT_ZONE_MAX,
+  TEXT_ZONE_MIN,
   clampEmoSideWidth,
   clampPreviewZoomPercent,
   clampSliceScale,
+  clampTextZonePercent,
   equalSplitGuides,
   fileToSheetCanvas,
   insertGuide,
@@ -33,9 +37,9 @@ import {
 
 const TEXT_MODES = [
   { id: 'original', label: '원본 유지', hint: '하단 텍스트와 캐릭터 색을 모두 그대로 둡니다' },
-  { id: 'black', label: '고대비 블랙 강화', hint: '하단 35% 글자만 검게 살리고 캐릭터 본체는 건드리지 않습니다' },
-  { id: 'white', label: '선명한 화이트', hint: '하단 35% 글자만 흰색으로 바꾸고 캐릭터 본체는 보존합니다' },
-  { id: 'custom', label: '커스텀 색상', hint: '하단 텍스트 클러스터만 고른 색으로 치환합니다' },
+  { id: 'black', label: '고대비 블랙 강화', hint: '텍스트 감지 높이 안의 글자만 검게 살리고 캐릭터 본체는 건드리지 않습니다' },
+  { id: 'white', label: '선명한 화이트', hint: '텍스트 감지 높이 안의 글자만 흰색으로 바꾸고 캐릭터 본체는 보존합니다' },
+  { id: 'custom', label: '커스텀 색상', hint: '텍스트 감지 높이 안의 글자 클러스터만 고른 색으로 치환합니다' },
 ]
 
 function clampZoom(value) {
@@ -54,6 +58,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const dragRef = useRef(null)
   const sliceGen = useRef(0)
   const scaleTimer = useRef(null)
+  const zoneTimer = useRef(null)
   const [mode, setMode] = useState('smart')
   const [cols, setCols] = useState(6)
   const [rows, setRows] = useState(5)
@@ -75,6 +80,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
   const [customScale, setCustomScale] = useState(SLICE_SCALE_DEFAULT)
+  const [textZone, setTextZone] = useState(TEXT_ZONE_DEFAULT)
   const [sideWidth, setSideWidth] = useState(EMO_SIDE_DEFAULT)
   const [sideResizing, setSideResizing] = useState(false)
   const vGuidesRef = useRef(verticalGuides)
@@ -90,6 +96,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const zoomRef = useRef(zoom)
   const panRef = useRef(pan)
   const customScaleRef = useRef(customScale)
+  const textZoneRef = useRef(textZone)
   const sideWidthRef = useRef(sideWidth)
   vGuidesRef.current = verticalGuides
   hGuidesRef.current = horizontalGuides
@@ -104,6 +111,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   zoomRef.current = zoom
   panRef.current = pan
   customScaleRef.current = customScale
+  textZoneRef.current = textZone
   sideWidthRef.current = sideWidth
 
   useEffect(() => {
@@ -191,6 +199,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         customColor: patch.nextCustomColor ?? customColorRef.current,
         outline: patch.nextOutline ?? outlineRef.current,
         customScale: patch.nextCustomScale ?? customScaleRef.current,
+        textZonePercent: patch.nextTextZone ?? textZoneRef.current,
       })
       if (gen !== sliceGen.current) return
       setSlices(next)
@@ -295,6 +304,12 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       customScaleRef.current = next
       patch.nextCustomScale = next
     }
+    if (patch.textZone != null) {
+      const next = clampTextZonePercent(patch.textZone)
+      setTextZone(next)
+      textZoneRef.current = next
+      patch.nextTextZone = next
+    }
     if (sheetRef.current) runSlice(patch)
   }
 
@@ -310,6 +325,21 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     }
     scaleTimer.current = window.setTimeout(() => {
       runSlice({ nextCustomScale: next })
+    }, 40)
+  }
+
+  const applyTextZone = (value, immediate = false) => {
+    const next = clampTextZonePercent(value)
+    setTextZone(next)
+    textZoneRef.current = next
+    window.clearTimeout(zoneTimer.current)
+    if (!sheetRef.current) return
+    if (immediate) {
+      runSlice({ nextTextZone: next })
+      return
+    }
+    zoneTimer.current = window.setTimeout(() => {
+      runSlice({ nextTextZone: next })
     }, 40)
   }
 
@@ -515,7 +545,23 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         <header className="emo-split-head">
           <h2 id="emo-split-title">🧩 이모티콘 시트 분할기</h2>
           <div className="emo-enhance-bar">
-            <p className="emo-enhance-kicker">텍스트 가독성 · 하단 35%</p>
+            <p className="emo-enhance-kicker">텍스트 가독성 보정</p>
+            <label
+              className="emo-zone-ctrl"
+              {...magnify('텍스트 감지 높이', '이미지 최하단부터의 높이입니다. 이 영역 안의 글자만 색을 바꿉니다. 캐릭터 팔·몸통이 내려오면 값을 낮추세요.')}
+            >
+              <span>↕ 텍스트 감지 높이: {textZone}%</span>
+              <input
+                type="range"
+                min={TEXT_ZONE_MIN}
+                max={TEXT_ZONE_MAX}
+                step="1"
+                value={textZone}
+                disabled={busy && !slices.length}
+                onChange={(event) => applyTextZone(event.target.value)}
+                onPointerUp={() => applyTextZone(textZoneRef.current, true)}
+              />
+            </label>
             <div className="emo-enhance-modes">
               {TEXT_MODES.map((item) => (
                 <button

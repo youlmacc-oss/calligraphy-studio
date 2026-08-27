@@ -15,6 +15,7 @@ import {
   clampEmoSideWidth,
   clampPreviewZoomPercent,
   clampSliceScale,
+  clampTextZonePercent,
   containFitRect,
   EMO_SIDE_DEFAULT,
   EMO_SIDE_MAX,
@@ -37,6 +38,8 @@ import {
   splitGuideBoxes,
   splitGridBoxes,
   stepPreviewZoomPercent,
+  TEXT_ZONE_DEFAULT,
+  textZoneStartY,
 } from './emoticonSplit.js'
 import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
@@ -561,18 +564,30 @@ export async function checkEmoticonSlicer() {
   bandCtx.fillStyle = '#ff8866'
   bandCtx.fillRect(0, 0, 40, 40)
   bandCtx.fillStyle = '#9aa0a6'
-  bandCtx.fillRect(2, 28, 6, 8)
+  bandCtx.fillRect(2, 34, 6, 6)
   bandCtx.fillStyle = '#141414'
-  bandCtx.fillRect(8, 28, 24, 8)
+  bandCtx.fillRect(16, 20, 8, 6)
+  bandCtx.fillRect(8, 34, 24, 6)
   const local = bandCtx.getImageData(0, 0, 40, 40)
   const bodyAt = (10 * 40 + 20) * 4
-  const furAt = (32 * 40 + 4) * 4
-  const textAt = (32 * 40 + 20) * 4
+  const aboveAt = (22 * 40 + 20) * 4
+  const furAt = (36 * 40 + 4) * 4
+  const textAt = (36 * 40 + 20) * 4
   const bodyBefore = [local.data[bodyAt], local.data[bodyAt + 1], local.data[bodyAt + 2]]
+  const aboveBefore = [local.data[aboveAt], local.data[aboveAt + 1], local.data[aboveAt + 2]]
   const furBefore = [local.data[furAt], local.data[furAt + 1], local.data[furAt + 2]]
+  if (textZoneStartY(360, 20) !== 289 || textZoneStartY(40, TEXT_ZONE_DEFAULT) !== 33) {
+    return { status: 'error', detail: '텍스트 감지 한계선 Y가 하단 높이 공식과 다릅니다.' }
+  }
+  if (clampTextZonePercent(3) !== 5 || clampTextZonePercent(90) !== 50) {
+    return { status: 'error', detail: '텍스트 감지 높이 클램프가 5~50%를 지키지 않습니다.' }
+  }
   applyTextTone(local, 'custom', '#00ccff')
   if (local.data[bodyAt] !== bodyBefore[0] || local.data[bodyAt + 1] !== bodyBefore[1] || local.data[bodyAt + 2] !== bodyBefore[2]) {
     return { status: 'error', detail: '텍스트 보정이 상단 캐릭터 본체 픽셀을 변경했습니다.' }
+  }
+  if (local.data[aboveAt] !== aboveBefore[0] || local.data[aboveAt + 1] !== aboveBefore[1] || local.data[aboveAt + 2] !== aboveBefore[2]) {
+    return { status: 'error', detail: '텍스트 보정이 감지 한계선 위의 검정 픽셀을 변경했습니다.' }
   }
   if (local.data[furAt] !== furBefore[0] || local.data[furAt + 1] !== furBefore[1] || local.data[furAt + 2] !== furBefore[2]) {
     return { status: 'error', detail: '텍스트 보정이 회색 털/플레이트 픽셀을 침범했습니다.' }
@@ -580,16 +595,21 @@ export async function checkEmoticonSlicer() {
   if (local.data[textAt] !== 0 || local.data[textAt + 1] !== 204 || local.data[textAt + 2] !== 255) {
     return { status: 'warn', detail: 'IDLE · 하단 검정 글자 획이 커스텀 색으로 치환되지 않았습니다.' }
   }
+  const tight = bandCtx.getImageData(0, 0, 40, 40)
+  applyTextTone(tight, 'custom', '#00ccff', { textZonePercent: 10 })
+  if (tight.data[textAt] !== 20 || tight.data[textAt + 1] !== 20 || tight.data[textAt + 2] !== 20) {
+    return { status: 'error', detail: '텍스트 감지 높이 10%가 한계선 밖 글자까지 치환했습니다.' }
+  }
   const ring = document.createElement('canvas')
   ring.width = 40
   ring.height = 40
   const ringCtx = ring.getContext('2d')
   ringCtx.clearRect(0, 0, 40, 40)
   ringCtx.fillStyle = '#111111'
-  ringCtx.fillRect(18, 32, 4, 4)
+  ringCtx.fillRect(18, 34, 4, 4)
   const outline = ringCtx.getImageData(0, 0, 40, 40)
   applyOutlineAssist(outline, '#111111')
-  if (outline.data[(31 * 40 + 18) * 4 + 3] < 80) {
+  if (outline.data[(33 * 40 + 18) * 4 + 3] < 80) {
     return { status: 'warn', detail: 'IDLE · 하단 글자 1px 외곽선 보강이 알파 엣지에 스트로크를 넣지 않았습니다.' }
   }
   if (outline.data[(5 * 40 + 18) * 4 + 3] > 20) {
@@ -605,7 +625,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 유클리드플러드필 · toBlob PNG · 텍스트획가드 · 스케일50-150 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 유클리드플러드필 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · 텍스트획가드 · 스케일50-150 · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

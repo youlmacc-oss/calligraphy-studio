@@ -639,6 +639,9 @@ function downsampleStepped(source, destW, destH) {
 }
 
 export const TEXT_BAND_RATIO = 0.65
+export const TEXT_ZONE_MIN = 5
+export const TEXT_ZONE_MAX = 50
+export const TEXT_ZONE_DEFAULT = 20
 
 function pixelLuma(r, g, b) {
   return r * 0.299 + g * 0.587 + b * 0.114
@@ -648,8 +651,20 @@ function pixelChroma(r, g, b) {
   return Math.max(r, g, b) - Math.min(r, g, b)
 }
 
+export function clampTextZonePercent(value) {
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n)) return TEXT_ZONE_DEFAULT
+  return Math.min(TEXT_ZONE_MAX, Math.max(TEXT_ZONE_MIN, n))
+}
+
 export function textBandStartY(height, bandStart = TEXT_BAND_RATIO) {
   return Math.max(0, Math.floor(Number(height) * (Number(bandStart) || TEXT_BAND_RATIO)))
+}
+
+export function textZoneStartY(height, textZonePercent = TEXT_ZONE_DEFAULT) {
+  const h = Math.max(0, Number(height) || 0)
+  const limit = h * (1 - clampTextZonePercent(textZonePercent) / 100)
+  return Math.max(0, Math.min(h, Math.floor(limit) + 1))
 }
 
 function isColorfulBodyPixel(r, g, b, a) {
@@ -685,13 +700,21 @@ function nearColorfulBody(data, width, height, x, y) {
   return false
 }
 
-export function buildTextGlyphMask(imageData, bandStart = TEXT_BAND_RATIO) {
+function resolveTextZoneStartY(height, { bandStart, textZonePercent } = {}) {
+  if (textZonePercent != null || bandStart == null) {
+    return textZoneStartY(height, textZonePercent ?? TEXT_ZONE_DEFAULT)
+  }
+  return textBandStartY(height, bandStart)
+}
+
+export function buildTextGlyphMask(imageData, options = {}) {
   const width = imageData?.width || 0
   const height = imageData?.height || 0
   const data = imageData?.data
   const mask = new Uint8Array(Math.max(0, width * height))
   if (!data || !width || !height) return { mask, y0: 0, width, height }
-  const y0 = textBandStartY(height, bandStart)
+  const opts = typeof options === 'number' ? { textZonePercent: TEXT_ZONE_DEFAULT } : options
+  const y0 = resolveTextZoneStartY(height, opts)
   const raw = new Uint8Array(width * height)
   for (let y = y0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -745,12 +768,15 @@ export function buildTextGlyphMask(imageData, bandStart = TEXT_BAND_RATIO) {
   return { mask, y0, width, height }
 }
 
-export function applyTextTone(imageData, mode = 'original', customHex = '#111111', { bandStart = TEXT_BAND_RATIO } = {}) {
+export function applyTextTone(imageData, mode = 'original', customHex = '#111111', options = {}) {
   if (!imageData?.data || mode === 'original') return imageData
   const { data, width, height } = imageData
   const [tr, tg, tb] = parseHexColor(customHex)
-  const { mask, y0 } = buildTextGlyphMask(imageData, bandStart)
+  const textZonePercent = options.textZonePercent ?? TEXT_ZONE_DEFAULT
+  const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
+  const { mask, y0 } = buildTextGlyphMask(imageData, { textZonePercent })
   for (let y = y0; y < height; y += 1) {
+    if (!(y > zoneLimit)) continue
     for (let x = 0; x < width; x += 1) {
       if (!mask[y * width + x]) continue
       const i = (y * width + x) * 4
@@ -780,14 +806,17 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
   return imageData
 }
 
-export function applyOutlineAssist(imageData, hex = '#111111', { bandStart = TEXT_BAND_RATIO } = {}) {
+export function applyOutlineAssist(imageData, hex = '#111111', options = {}) {
   if (!imageData?.data) return imageData
   const { data, width, height } = imageData
   const src = new Uint8ClampedArray(data)
   const [sr, sg, sb] = parseHexColor(hex, [12, 12, 14])
-  const { mask, y0 } = buildTextGlyphMask({ data: src, width, height }, bandStart)
+  const textZonePercent = options.textZonePercent ?? TEXT_ZONE_DEFAULT
+  const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
+  const { mask, y0 } = buildTextGlyphMask({ data: src, width, height }, { textZonePercent })
   const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
   for (let y = y0; y < height; y += 1) {
+    if (!(y > zoneLimit)) continue
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       if (src[i + 3] >= 18) continue
@@ -852,6 +881,7 @@ export function fitToKakaoCanvas(source, box, {
   outline = false,
   lockFrame = false,
   customScale = SLICE_SCALE_DEFAULT,
+  textZonePercent = TEXT_ZONE_DEFAULT,
 } = {}) {
   const sx = Math.max(0, Math.floor(box.x + 1e-9))
   const sy = Math.max(0, Math.floor(box.y + 1e-9))
@@ -900,10 +930,10 @@ export function fitToKakaoCanvas(source, box, {
   ctx.drawImage(scaled, fit.renderX, fit.renderY)
   const enhanced = ctx.getImageData(0, 0, size, size)
   enhanceSliceImageData(enhanced)
-  applyTextTone(enhanced, textMode, customColor)
+  applyTextTone(enhanced, textMode, customColor, { textZonePercent })
   if (outline) {
     const stroke = textMode === 'white' ? '#ffffff' : textMode === 'custom' ? customColor : '#111111'
-    applyOutlineAssist(enhanced, stroke)
+    applyOutlineAssist(enhanced, stroke, { textZonePercent })
   }
   flattenTransparentPixels(enhanced)
   if (transparent) {
@@ -932,6 +962,7 @@ export function sliceSheet(source, {
   customColor = '#111111',
   outline = false,
   customScale = SLICE_SCALE_DEFAULT,
+  textZonePercent = TEXT_ZONE_DEFAULT,
 } = {}) {
   const analyzed = analyzeSheet(source)
   const bg = sampleBackground(analyzed.data.data, analyzed.data.width, analyzed.data.height)
@@ -956,6 +987,7 @@ export function sliceSheet(source, {
       lockFrame: mode === 'grid',
       pad: mode === 'grid' ? KAKAO_SAFE_PAD : MODE_A_SAFE_PAD,
       customScale,
+      textZonePercent,
     })
     return {
       id: `emo-${index + 1}`,
