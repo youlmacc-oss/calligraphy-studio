@@ -17,6 +17,7 @@ import {
   TEXT_ZONE_DEFAULT,
   TEXT_ZONE_MAX,
   TEXT_ZONE_MIN,
+  OUTLINE_DEFAULT,
   clampEmoSideWidth,
   clampPreviewZoomPercent,
   clampSliceScale,
@@ -69,7 +70,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [transparent, setTransparent] = useState(true)
   const [textMode, setTextMode] = useState('original')
   const [customColor, setCustomColor] = useState('#111111')
-  const [outline, setOutline] = useState(false)
+  const [outline, setOutline] = useState(OUTLINE_DEFAULT)
   const [fileName, setFileName] = useState('')
   const [sheetUrl, setSheetUrl] = useState('')
   const [slices, setSlices] = useState([])
@@ -136,6 +137,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     setPan({ x: 0, y: 0 })
     zoomRef.current = next
     panRef.current = { x: 0, y: 0 }
+    setOutline(OUTLINE_DEFAULT)
+    outlineRef.current = OUTLINE_DEFAULT
     return undefined
   }, [open])
 
@@ -175,6 +178,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     setHorizontalGuides(equalSplitGuides(rowsRef.current))
     setActiveGuide(null)
     resetView()
+    setOutline(OUTLINE_DEFAULT)
+    outlineRef.current = OUTLINE_DEFAULT
     setNote('AI가 만든 스티커 시트(흰 배경 그리드)를 올리면 360×360 PNG로 나눕니다.')
   }
 

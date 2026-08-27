@@ -29,6 +29,7 @@ import {
   insertGuide,
   KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
+  OUTLINE_DEFAULT,
   normalizeBounds,
   PREVIEW_ZOOM_DEFAULT,
   PREVIEW_ZOOM_MAX,
@@ -546,6 +547,9 @@ export async function checkEmoticonSlicer() {
   }
   if (FLOOD_FILL_TOLERANCE !== 22) {
     return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 22).` }
+  }
+  if (OUTLINE_DEFAULT !== true) {
+    return { status: 'error', detail: 'Outline 외곽선 보강 기본값이 ON이 아닙니다.' }
   }
   const halo = document.createElement('canvas')
   halo.width = 48
