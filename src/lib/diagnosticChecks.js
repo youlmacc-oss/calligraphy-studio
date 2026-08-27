@@ -8,7 +8,7 @@ import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import { composeGifFrame, GIF_MOTIONS } from './gifMotion.js'
-import { fitToKakaoCanvas, KAKAO_STICKER_SIZE, equalSplitGuides, sliceSheet, splitGridBoxes } from './emoticonSplit.js'
+import { enhanceSliceImageData, fitToKakaoCanvas, KAKAO_STICKER_SIZE, equalSplitGuides, sliceSheet, splitGridBoxes } from './emoticonSplit.js'
 import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
@@ -434,13 +434,28 @@ export async function checkEmoticonSlicer() {
   if (corner[3] > 40) {
     return { status: 'warn', detail: 'IDLE · 360×360 알파 채널이 불투명합니다.' }
   }
+  const probe = document.createElement('canvas')
+  probe.width = 8
+  probe.height = 8
+  const brush = probe.getContext('2d')
+  brush.fillStyle = '#808080'
+  brush.fillRect(0, 0, 8, 8)
+  brush.fillStyle = '#111111'
+  brush.fillRect(3, 0, 2, 8)
+  const before = brush.getImageData(0, 0, 8, 8)
+  const edge = (4 * 8 + 2) * 4
+  const sample = before.data[edge]
+  enhanceSliceImageData(before, { amount: 0.22, contrast: 1.08 })
+  if (before.data[edge] === sample) {
+    return { status: 'warn', detail: 'IDLE · 360 슬라이스 샤프닝/대비 보정이 가장자리 픽셀을 바꾸지 않았습니다.' }
+  }
   const zip = new JSZip()
   zip.file('kakao-360-01.png', await canvasToPngBlob(kakao))
   const packed = await zip.generateAsync({ type: 'blob' })
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 커스텀 절단 ${custom.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 그리드 ${grid.length}칸 · 커스텀 절단 ${custom.length}칸 · 샤프닝 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

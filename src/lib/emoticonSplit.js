@@ -264,7 +264,9 @@ export function fitToKakaoCanvas(source, box, {
   const crop = document.createElement('canvas')
   crop.width = sw
   crop.height = sh
-  const cropCtx = crop.getContext('2d')
+  const cropCtx = crop.getContext('2d', { willReadFrequently: true, alpha: true })
+  cropCtx.imageSmoothingEnabled = true
+  cropCtx.imageSmoothingQuality = 'high'
   cropCtx.drawImage(source, sx, sy, sw, sh, 0, 0, sw, sh)
   let dx = 0
   let dy = 0
@@ -284,7 +286,7 @@ export function fitToKakaoCanvas(source, box, {
   const canvas = document.createElement('canvas')
   canvas.width = size
   canvas.height = size
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
   if (transparent) {
     ctx.clearRect(0, 0, size, size)
   } else {
@@ -298,7 +300,35 @@ export function fitToKakaoCanvas(source, box, {
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(crop, dx, dy, dwSrc, dhSrc, (size - dw) / 2, (size - dh) / 2, dw, dh)
+  const enhanced = ctx.getImageData(0, 0, size, size)
+  enhanceSliceImageData(enhanced)
+  ctx.putImageData(enhanced, 0, 0)
   return canvas
+}
+
+export function enhanceSliceImageData(imageData, { amount = 0.22, contrast = 1.08 } = {}) {
+  if (!imageData?.data) return imageData
+  const { data, width, height } = imageData
+  const src = new Uint8ClampedArray(data)
+  const mid = 128
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4
+      if (src[i + 3] < 10) continue
+      const left = x > 0 ? i - 4 : i
+      const right = x < width - 1 ? i + 4 : i
+      const up = y > 0 ? i - width * 4 : i
+      const down = y < height - 1 ? i + width * 4 : i
+      for (let channel = 0; channel < 3; channel += 1) {
+        const value = src[i + channel]
+        const lap = value * 4 - src[left + channel] - src[right + channel] - src[up + channel] - src[down + channel]
+        const sharp = value + lap * amount
+        const contrasted = (sharp - mid) * contrast + mid
+        data[i + channel] = Math.max(0, Math.min(255, Math.round(contrasted)))
+      }
+    }
+  }
+  return imageData
 }
 
 export async function fileToSheetCanvas(file) {

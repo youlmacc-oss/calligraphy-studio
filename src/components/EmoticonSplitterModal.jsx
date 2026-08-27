@@ -319,7 +319,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         ) : null}
 
         {mode === 'grid' ? (
-          <p className="emo-guide-hint">미리보기 위 네온 절단선을 드래그하면 그 선만 미세 조정됩니다. 슬라이더는 균등 분할로 다시 맞춥니다.</p>
+          <p className="emo-guide-hint">시안(세로)·마젠타(가로) 실선과 가운데 핀을 드래그하면 그 선만 미세 조정됩니다. 슬라이더는 균등 분할로 다시 맞춥니다. 내보내기는 360×360 샤프닝이 자동 적용됩니다.</p>
         ) : null}
 
         <label className="emo-check">
