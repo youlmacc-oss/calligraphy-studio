@@ -412,6 +412,142 @@ function flattenTransparentPixels(imageData) {
   return imageData
 }
 
+function isFloodFillBackground(r, g, b, a, seed, tolerance, bright) {
+  if (a < 12) return true
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b)
+  const luma = r * 0.299 + g * 0.587 + b * 0.114
+  if (chroma > 38 && luma < 250) return false
+  if (r >= bright && g >= bright && b >= bright) return true
+  if (colorDist(r, g, b, seed) <= tolerance) return true
+  return luma >= 232 && chroma < 28
+}
+
+export function floodFillAlphaKey(imageData, {
+  bright = 235,
+  tolerance = 52,
+  feather = 2,
+} = {}) {
+  const width = imageData?.width || 0
+  const height = imageData?.height || 0
+  const data = imageData?.data
+  if (!data || !width || !height) return imageData
+
+  const cornerIdx = [
+    0,
+    (width - 1) * 4,
+    ((height - 1) * width) * 4,
+    ((height - 1) * width + (width - 1)) * 4,
+  ]
+  let sr = 0
+  let sg = 0
+  let sb = 0
+  let counted = 0
+  cornerIdx.forEach((i) => {
+    if (data[i + 3] < 12) return
+    sr += data[i]
+    sg += data[i + 1]
+    sb += data[i + 2]
+    counted += 1
+  })
+  const seed = counted
+    ? [Math.round(sr / counted), Math.round(sg / counted), Math.round(sb / counted)]
+    : [248, 247, 242]
+
+  const fillable = (x, y) => {
+    const i = (y * width + x) * 4
+    return isFloodFillBackground(data[i], data[i + 1], data[i + 2], data[i + 3], seed, tolerance, bright)
+  }
+
+  const outer = new Uint8Array(width * height)
+  const queue = []
+  const seeds = [
+    [0, 0],
+    [width - 1, 0],
+    [0, height - 1],
+    [width - 1, height - 1],
+  ]
+  seeds.forEach(([x, y]) => {
+    if (!fillable(x, y)) return
+    const p = y * width + x
+    if (outer[p]) return
+    outer[p] = 1
+    queue.push(p)
+  })
+
+  let head = 0
+  while (head < queue.length) {
+    const cur = queue[head]
+    head += 1
+    const cx = cur % width
+    const cy = (cur / width) | 0
+    const nexts = [
+      cur - 1,
+      cur + 1,
+      cur - width,
+      cur + width,
+      cur - width - 1,
+      cur - width + 1,
+      cur + width - 1,
+      cur + width + 1,
+    ]
+    for (let k = 0; k < nexts.length; k += 1) {
+      const next = nexts[k]
+      if (next < 0 || next >= outer.length || outer[next]) continue
+      const nx = next % width
+      const ny = (next / width) | 0
+      if (Math.abs(nx - cx) > 1 || Math.abs(ny - cy) > 1) continue
+      if (!fillable(nx, ny)) continue
+      outer[next] = 1
+      queue.push(next)
+    }
+  }
+
+  for (let p = 0; p < outer.length; p += 1) {
+    if (!outer[p]) continue
+    const i = p * 4
+    data[i] = 0
+    data[i + 1] = 0
+    data[i + 2] = 0
+    data[i + 3] = 0
+  }
+
+  const ring = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
+  const strength = Math.max(0.4, Math.min(1.4, Number(feather) || 2)) / 2
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const p = y * width + x
+      if (outer[p]) continue
+      const i = p * 4
+      if (data[i + 3] < 12) continue
+      let near = 0
+      for (let k = 0; k < ring.length; k += 1) {
+        const nx = x + ring[k][0]
+        const ny = y + ring[k][1]
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height || outer[ny * width + nx]) near += 1
+      }
+      if (!near) continue
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      const luma = r * 0.299 + g * 0.587 + b * 0.114
+      const chroma = Math.max(r, g, b) - Math.min(r, g, b)
+      if (chroma > 42 && luma < 236) continue
+      if (colorDist(r, g, b, seed) > tolerance + 30 && luma < bright - 12) continue
+      const fade = Math.min(1, (near / 8) * strength * 0.95)
+      const alpha = Math.round(data[i + 3] * (1 - fade))
+      if (alpha < 16) {
+        data[i] = 0
+        data[i + 1] = 0
+        data[i + 2] = 0
+        data[i + 3] = 0
+      } else {
+        data[i + 3] = alpha
+      }
+    }
+  }
+  return imageData
+}
+
 function makeAlphaCanvas(width, height) {
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, width)
@@ -699,6 +835,10 @@ export function fitToKakaoCanvas(source, box, {
     applyOutlineAssist(enhanced, stroke)
   }
   flattenTransparentPixels(enhanced)
+  if (transparent) {
+    floodFillAlphaKey(enhanced)
+    flattenTransparentPixels(enhanced)
+  }
   ctx.putImageData(enhanced, 0, 0)
   return canvas
 }

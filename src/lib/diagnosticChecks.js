@@ -21,6 +21,7 @@ import {
   enhanceSliceImageData,
   equalSplitGuides,
   fitToKakaoCanvas,
+  floodFillAlphaKey,
   insertGuide,
   KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
@@ -494,6 +495,29 @@ export async function checkEmoticonSlicer() {
   if (corner[3] < 10 && corner[0] + corner[1] + corner[2] > 24) {
     return { status: 'warn', detail: 'IDLE · 투명 픽셀 RGB가 남아 ZIP에서 검은 배경으로 보일 수 있습니다.' }
   }
+  const key = document.createElement('canvas')
+  key.width = 48
+  key.height = 48
+  const keyCtx = key.getContext('2d')
+  keyCtx.fillStyle = '#f7f2ea'
+  keyCtx.fillRect(0, 0, 48, 48)
+  keyCtx.fillStyle = '#1a1a1a'
+  keyCtx.fillRect(12, 12, 24, 24)
+  keyCtx.fillStyle = '#ffffff'
+  keyCtx.fillRect(18, 18, 12, 12)
+  const keyed = floodFillAlphaKey(keyCtx.getImageData(0, 0, 48, 48))
+  const outerPx = keyed.data[2 * 4 + 3]
+  const ringPx = keyed.data[((16 * 48) + 16) * 4 + 3]
+  const eyePx = keyed.data[((24 * 48) + 24) * 4 + 3]
+  if (outerPx > 12) {
+    return { status: 'error', detail: '외곽 플러드필이 미색 배경을 투명으로 바꾸지 못했습니다.' }
+  }
+  if (ringPx < 180) {
+    return { status: 'error', detail: '플러드필이 캐릭터 외곽 픽셀을 지웠습니다.' }
+  }
+  if (eyePx < 180) {
+    return { status: 'error', detail: '플러드필이 캐릭터 내부 흰색을 지웠습니다.' }
+  }
   const probe = document.createElement('canvas')
   probe.width = 8
   probe.height = 8
@@ -553,7 +577,7 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · CCA원복 · PNG알파 ZIP · 스케일50-150 · 패널280-600 · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 플러드필알파 · PNG ZIP · 스케일50-150 · 패널280-600 · 그리드 ${grid.length}칸 · 1:1매핑 · 안전여백 ${Math.round(KAKAO_FIT_RATIO * 100)}% · 하단텍스트톤 ON · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
   }
 }
 

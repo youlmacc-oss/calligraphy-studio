@@ -187,7 +187,7 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'emoticon-slicer',
     name: '🧩 이모티콘 슬라이서 & ZIP 엔진 상태',
-    description: '모드 A CCA, 투명 PNG ZIP, 50~150% 렌더 스케일, 좌우 패널 리사이저, 모드 B 그리드',
+    description: '모드 A CCA, 외곽 플러드필 투명 PNG, 50~150% 스케일, 좌우 패널 리사이저, 모드 B 그리드',
     diagnosticFunction: checkEmoticonSlicer,
     guideContent: {
       chapterId: 'ai',
@@ -206,9 +206,9 @@ export const APP_FEATURES_REGISTRY = [
         },
         {
           title: '분할 후 카카오 스튜디오에 올린다',
-          body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. 모드 A는 Connected Component / Bounding Box로 객체를 잡고, 모드 B는 절단선을 원본 픽셀에 1:1로 매핑합니다. 상단 [🔍 이모티콘 크기 비율]은 360×360 안에서 캐릭터만 50~150%로 키우거나 줄여 카카오 심사 여백을 맞춥니다. 가운데 4px 구분선을 드래그하면 왼쪽 패널 폭이 280~600px로 바뀝니다. ZIP은 투명 알파 PNG입니다.',
-          params: ['모드 A CCA Bounding Box', '크기 비율 50~150%', '좌우 패널 리사이저 280~600px', 'ZIP 투명 PNG 알파', '모드 B 88% contain-fit'],
-          tip: '캐릭터가 테두리에 붙으면 크기 비율을 80~90%로 낮추세요. 미리보기 창이 좁으면 가운데 네온 구분선을 왼쪽으로 끌어 캔버스를 키웁니다.',
+          body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. 모드 A는 Connected Component / Bounding Box로 객체를 잡고, 모드 B는 절단선을 원본 픽셀에 1:1로 매핑합니다. [배경 투명화]는 360×360 네 모서리에서 플러드필로 바깥 흰/미색 배경만 지우고, 눈·옷 같은 안쪽 흰색은 남깁니다. 썸네일과 ZIP 모두 같은 알파 PNG입니다. 상단 크기 비율은 50~150%입니다.',
+          params: ['외곽 플러드필 알파', '내부 흰색 보존', 'ZIP toDataURL PNG', '크기 비율 50~150%', '좌우 패널 리사이저 280~600px'],
+          tip: '배경 투명화를 켠 뒤 썸네일 체커보드가 비쳐 보여야 합니다. 캐릭터가 테두리에 붙으면 크기 비율을 80~90%로 낮추세요.',
           fail: '카카오에 JPG나 직사각형 원본을 올리면 거절될 수 있습니다. 반드시 이 분할기가 만든 360 정사각 투명 PNG를 쓰세요.',
         },
       ],

@@ -626,7 +626,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               <p className="emo-guide-hint">금색 외곽 재단선으로 여백을 자른 뒤 객체를 감지합니다.</p>
             )}
 
-            <label className="emo-check" {...magnify('배경 투명화', '흰 배경을 알파로 지워 카카오용 투명 PNG를 만듭니다')}>
+            <label className="emo-check" {...magnify('배경 투명화', '360 모서리에서 플러드필로 바깥 흰/미색만 지웁니다. 눈·옷 안쪽 흰색은 남습니다')}>
               <input
                 type="checkbox"
                 checked={transparent}
