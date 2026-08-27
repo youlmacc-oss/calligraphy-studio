@@ -27,6 +27,7 @@ import {
   KAKAO_FIT_RATIO,
   KAKAO_STICKER_SIZE,
   normalizeBounds,
+  PREVIEW_ZOOM_DEFAULT,
   PREVIEW_ZOOM_MAX,
   PREVIEW_ZOOM_MIN,
   PREVIEW_ZOOM_STEP,
@@ -487,6 +488,9 @@ export async function checkEmoticonSlicer() {
   }
   if (stepPreviewZoomPercent(100, PREVIEW_ZOOM_STEP) !== 105 || stepPreviewZoomPercent(12, -PREVIEW_ZOOM_STEP) !== PREVIEW_ZOOM_MIN) {
     return { status: 'error', detail: '미리보기 줌 5% 스텝이 실패했습니다.' }
+  }
+  if (PREVIEW_ZOOM_DEFAULT !== 35) {
+    return { status: 'error', detail: '미리보기 기본 줌이 35%가 아닙니다.' }
   }
   if (clampPreviewZoomPercent(8) !== PREVIEW_ZOOM_MIN || clampPreviewZoomPercent(240) !== PREVIEW_ZOOM_MAX) {
     return { status: 'error', detail: '미리보기 줌 한도(10~200%)가 실패했습니다.' }

@@ -22,6 +22,7 @@ import {
   insertGuide,
   moveGuide,
   normalizeBounds,
+  PREVIEW_ZOOM_DEFAULT,
   PREVIEW_ZOOM_MAX,
   PREVIEW_ZOOM_MIN,
   PREVIEW_ZOOM_STEP,
@@ -39,6 +40,10 @@ const TEXT_MODES = [
 
 function clampZoom(value) {
   return clampPreviewZoomPercent(Math.round(Number(value) * 100)) / 100
+}
+
+function defaultZoomRatio() {
+  return clampZoom(PREVIEW_ZOOM_DEFAULT / 100)
 }
 
 export default function EmoticonSplitterModal({ open, onClose }) {
@@ -66,7 +71,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('AI가 만든 스티커 시트(흰 배경 그리드)를 올리면 360×360 PNG로 나눕니다.')
   const [dragOver, setDragOver] = useState(false)
-  const [zoom, setZoom] = useState(1)
+  const [zoom, setZoom] = useState(defaultZoomRatio)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
   const [customScale, setCustomScale] = useState(SLICE_SCALE_DEFAULT)
@@ -116,26 +121,29 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     return () => el.removeEventListener('wheel', onWheel)
   }, [open, sheetUrl])
 
-  useEffect(() => () => window.clearTimeout(scaleTimer.current), [])
+  useEffect(() => {
+    if (!open) return undefined
+    const next = defaultZoomRatio()
+    setZoom(next)
+    setPan({ x: 0, y: 0 })
+    zoomRef.current = next
+    panRef.current = { x: 0, y: 0 }
+    return undefined
+  }, [open])
 
   const cellCount = (verticalGuides.length + 1) * (horizontalGuides.length + 1)
   const zoomLabel = `${Math.round(zoom * 100)}%`
 
   const resetView = () => {
-    setZoom(1)
+    const next = defaultZoomRatio()
+    setZoom(next)
     setPan({ x: 0, y: 0 })
-    zoomRef.current = 1
+    zoomRef.current = next
     panRef.current = { x: 0, y: 0 }
   }
 
   const fitZoom = useCallback(() => {
-    const vp = viewportRef.current
-    const img = vp?.querySelector('.emo-sheet-preview')
-    if (!vp || !img) return
-    const nw = img.naturalWidth || img.width || 1
-    const nh = img.naturalHeight || img.height || 1
-    const pad = 24
-    const next = clampZoom(Math.min((vp.clientWidth - pad) / nw, (vp.clientHeight - pad) / nh))
+    const next = defaultZoomRatio()
     setZoom(next)
     setPan({ x: 0, y: 0 })
     zoomRef.current = next
@@ -697,13 +705,13 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               <button type="button" className="emo-zoom-btn" disabled={!sheetUrl || Math.round(zoom * 100) <= PREVIEW_ZOOM_MIN} onClick={() => bumpZoom(-PREVIEW_ZOOM_STEP)} {...magnify('축소', '미리보기를 5% 줄입니다 (10~200%)')}>
                 <Minus className="h-3.5 w-3.5" />
               </button>
-              <button type="button" className="emo-zoom-btn emo-zoom-label" disabled={!sheetUrl} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); zoomRef.current = 1; panRef.current = { x: 0, y: 0 } }} {...magnify('100%', '원본 픽셀 크기(100%)로 되돌립니다')}>
+              <button type="button" className="emo-zoom-btn emo-zoom-label" disabled={!sheetUrl} onClick={resetView} {...magnify(`${PREVIEW_ZOOM_DEFAULT}%`, `미리보기를 기본 ${PREVIEW_ZOOM_DEFAULT}%로 되돌립니다`)}>
                 {zoomLabel}
               </button>
               <button type="button" className="emo-zoom-btn" disabled={!sheetUrl || Math.round(zoom * 100) >= PREVIEW_ZOOM_MAX} onClick={() => bumpZoom(PREVIEW_ZOOM_STEP)} {...magnify('확대', '미리보기를 5% 키웁니다 (10~200%)')}>
                 <Plus className="h-3.5 w-3.5" />
               </button>
-              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={fitZoom} {...magnify('화면맞춤', '시트 전체가 미리보기 창에 들어오도록 맞춥니다')}>
+              <button type="button" className="emo-zoom-btn" disabled={!sheetUrl} onClick={fitZoom} {...magnify('화면맞춤', `미리보기를 기본 ${PREVIEW_ZOOM_DEFAULT}%로 맞춰 시트 전체가 보이게 합니다`)}>
                 <Maximize2 className="h-3.5 w-3.5" /> ⛶
               </button>
             </div>

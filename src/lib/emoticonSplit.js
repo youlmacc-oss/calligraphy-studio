@@ -11,7 +11,7 @@ export const EMO_SIDE_DEFAULT = 380
 export const PREVIEW_ZOOM_MIN = 10
 export const PREVIEW_ZOOM_MAX = 200
 export const PREVIEW_ZOOM_STEP = 5
-export const PREVIEW_ZOOM_DEFAULT = 100
+export const PREVIEW_ZOOM_DEFAULT = 35
 
 export function clampSliceScale(value) {
   const n = Math.round(Number(value))

@@ -187,7 +187,7 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'emoticon-slicer',
     name: '🧩 이모티콘 슬라이서 & ZIP 엔진 상태',
-    description: '모드 A CCA, 유클리드 플러드필 투명 PNG, 글자 획만 리컬러, toBlob ZIP',
+    description: '기본 줌 35%, 유클리드 플러드필 투명 PNG, 글자 획만 리컬러, toBlob ZIP',
     diagnosticFunction: checkEmoticonSlicer,
     guideContent: {
       chapterId: 'ai',
@@ -207,8 +207,8 @@ export const APP_FEATURES_REGISTRY = [
         {
           title: '분할 후 카카오 스튜디오에 올린다',
           body: '상단 [🧩 이모티콘 시트 분할기]는 가로가 긴 2열 스튜디오입니다. [배경 투명화]는 네 모서리 시드로 유클리드 거리 32 플러드필을 돌려 바깥 흰/미색만 rgba(0,0,0,0)으로 지우고, 눈·치아 같은 안쪽 흰색은 남깁니다. [텍스트 가독성]은 하단 검정 글자 획만 바꾸며 털·플레이트·하이라이트는 건드리지 않습니다. ZIP은 canvas.toBlob(image/png) 알파 PNG입니다.',
-          params: ['모서리 플러드필 Tolerance 32', '내부 흰색 보존', '글자 획만 리컬러', 'toBlob RGBA PNG', '줌 5% · 스케일 ±1%'],
-          tip: '카카오에 올렸을 때 흰 사각형이 보이면 배경 투명화를 켠 뒤 다시 ZIP을 받으세요. 초록 얼룩이 보이면 텍스트 모드를 원본 유지로 두세요.',
+          params: ['기본 줌 35%', '줌 5% 스텝 10~200%', '모서리 플러드필 Tolerance 32', '글자 획만 리컬러', 'toBlob RGBA PNG'],
+          tip: '모달을 열면 미리보기가 35%로 잡혀 시트 전체가 한눈에 보입니다. [-]/[+]로 5%씩 맞추세요.',
           fail: '카카오에 JPG나 직사각형 원본을 올리면 거절될 수 있습니다. 반드시 이 분할기가 만든 360 정사각 투명 PNG를 쓰세요.',
         },
       ],
