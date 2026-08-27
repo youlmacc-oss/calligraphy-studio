@@ -39,6 +39,7 @@ import {
   SLICE_SCALE_DEFAULT,
   sliceSheet,
   sourceSpan,
+  splitDoubleHeightBoxes,
   splitGuideBoxes,
   splitGridBoxes,
   stepPreviewZoomPercent,
@@ -453,6 +454,17 @@ export async function checkEmoticonSlicer() {
   const smart = sliceSheet(sheet, { mode: 'smart', transparent: true })
   if (smart.length !== 2) {
     return { status: 'error', detail: `모드 A 스마트 감지가 ${smart.length}객체를 반환했습니다(기대 2).` }
+  }
+  const doubled = splitDoubleHeightBoxes([
+    { x: 0, y: 0, w: 40, h: 40 },
+    { x: 50, y: 0, w: 40, h: 40 },
+    { x: 100, y: 0, w: 40, h: 88 },
+  ])
+  if (doubled.length !== 4 || doubled[2].h !== 44 || doubled[3].y !== 44) {
+    return { status: 'error', detail: '모드 A 세로 결합 덩어리 후처리 분할이 실패했습니다.' }
+  }
+  if (doubled[0].h !== 40 || doubled[1].h !== 40) {
+    return { status: 'error', detail: '정상 높이 모드 A 박스가 후처리에서 변경되었습니다.' }
   }
   const grid = splitGridBoxes(240, 120, 2, 1)
   const custom = splitGridBoxes(100, 50, 2, 2, [0.25], [0.6])

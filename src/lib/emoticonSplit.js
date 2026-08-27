@@ -180,6 +180,51 @@ export function findContentBoxes(imageData, { minArea = 80, threshold = 42 } = {
   return mergeNearbyBoxes(boxes, gap).sort((a, b) => a.y - b.y || a.x - b.x)
 }
 
+export const DOUBLE_HEIGHT_RATIO = 1.7
+
+export function medianBoxHeight(boxes) {
+  const heights = (Array.isArray(boxes) ? boxes : [])
+    .map((box) => Number(box?.h) || 0)
+    .filter((height) => height > 0)
+    .sort((a, b) => a - b)
+  if (!heights.length) return 0
+  const mid = Math.floor(heights.length / 2)
+  if (heights.length % 2) return heights[mid]
+  return (heights[mid - 1] + heights[mid]) / 2
+}
+
+export function splitDoubleHeightBoxes(boxes, ratio = DOUBLE_HEIGHT_RATIO) {
+  const items = Array.isArray(boxes) ? boxes : []
+  const medianHeight = medianBoxHeight(items)
+  if (!medianHeight) return items.map((box) => ({ ...box }))
+  const limit = medianHeight * (Number(ratio) || DOUBLE_HEIGHT_RATIO)
+  const next = []
+  items.forEach((box) => {
+    const h = Number(box.h) || 0
+    if (!(h > limit)) {
+      next.push({ ...box })
+      return
+    }
+    const topH = Math.floor(h / 2)
+    const botH = Math.ceil(h / 2)
+    next.push({
+      ...box,
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: topH,
+    })
+    next.push({
+      ...box,
+      x: box.x,
+      y: box.y + topH,
+      w: box.w,
+      h: botH,
+    })
+  })
+  return next.sort((a, b) => a.y - b.y || a.x - b.x)
+}
+
 function opaqueBounds(imageData) {
   const { width, height, data } = imageData
   let minX = width
@@ -948,13 +993,13 @@ export function sliceSheet(source, {
   const crop = normalizeBounds(bounds)
   const raw = mode === 'grid'
     ? splitGridBoxes(source.width, source.height, cols, rows, verticalGuides, horizontalGuides, crop)
-    : findContentBoxes(analyzed.data).map((box) => ({
+    : splitDoubleHeightBoxes(findContentBoxes(analyzed.data).map((box) => ({
       x: box.x / analyzed.scale,
       y: box.y / analyzed.scale,
       w: box.w / analyzed.scale,
       h: box.h / analyzed.scale,
       count: box.count,
-    }))
+    })))
   const boxes = raw
   return boxes.map((box, index) => {
     const canvas = fitToKakaoCanvas(source, box, {
