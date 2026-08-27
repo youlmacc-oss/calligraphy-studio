@@ -23,6 +23,7 @@ import {
 import AiGenerateModal from './components/AiGenerateModal.jsx'
 import CropOverlay from './components/CropOverlay.jsx'
 import EmoticonSplitterModal from './components/EmoticonSplitterModal.jsx'
+import MotionGifStudioModal from './components/MotionGifStudio/MotionGifStudioModal.jsx'
 import GuidebookModal from './components/GuidebookModal.jsx'
 import LayerEditCard from './components/LayerEditCard.jsx'
 import MenuMagnifierHUD, { magnify } from './components/MenuMagnifierHUD.jsx'
@@ -192,6 +193,8 @@ export default function App() {
   const [diagOpen, setDiagOpen] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
   const [emoSplitOpen, setEmoSplitOpen] = useState(false)
+  const [isGifStudioOpen, setIsGifStudioOpen] = useState(false)
+  const gifStudioSourceRef = useRef(null)
   const [favoriteFonts, setFavoriteFonts] = useState(() => loadFavoriteFonts())
   const [customFonts, setCustomFonts] = useState([])
   const [snapGuide, setSnapGuide] = useState({ x: false, y: false })
@@ -1366,11 +1369,17 @@ export default function App() {
             </button>
             <button
               type="button"
-              className={clsx('tool-btn', exportBusy && 'is-on')}
-              disabled={exportBusy}
-              onClick={downloadGif}
+              className={clsx('tool-btn', isGifStudioOpen && 'is-on')}
+              onClick={() => {
+                try {
+                  gifStudioSourceRef.current = canvasRef.current?.toDataURL('image/png') ?? null
+                } catch {
+                  gifStudioSourceRef.current = null
+                }
+                setIsGifStudioOpen(true)
+              }}
               data-tour="gif-export"
-              {...magnify('GIF 다운로드', '선택한 모션 프리셋으로 움직이는 GIF를 만들고 바로 저장합니다')}
+              {...magnify('GIF 다운로드', '독립 모션 GIF 스튜디오를 열어 프리셋과 투명 GIF를 만듭니다')}
             >
               🎬 GIF 다운로드
             </button>
@@ -1803,6 +1812,11 @@ export default function App() {
         onApplySample={applySample}
       />
       <EmoticonSplitterModal open={emoSplitOpen} onClose={() => setEmoSplitOpen(false)} />
+      <MotionGifStudioModal
+        isOpen={isGifStudioOpen}
+        onClose={() => setIsGifStudioOpen(false)}
+        initialSource={gifStudioSourceRef.current}
+      />
       <OnboardingTour
         open={tourOpen}
         stepIndex={tourStep}
