@@ -12,6 +12,7 @@ import {
   applyCustomSliceScale,
   applyOutlineAssist,
   applyTextTone,
+  clearTextPlatePixels,
   clampEmoSideWidth,
   clampPreviewZoomPercent,
   clampSliceScale,
@@ -667,6 +668,24 @@ export async function checkEmoticonSlicer() {
   }
   if (glyphData.data[(33 * 40 + 16) * 4 + 3] > 20 || glyphData.data[(36 * 40 + 12) * 4 + 3] > 20) {
     return { status: 'error', detail: '텍스트 색 치환이 글자 주변에 사각 패치를 칠했습니다.' }
+  }
+  const boxed = document.createElement('canvas')
+  boxed.width = 40
+  boxed.height = 40
+  const boxedCtx = boxed.getContext('2d', { alpha: true })
+  boxedCtx.clearRect(0, 0, 40, 40)
+  boxedCtx.fillStyle = '#ffffff'
+  boxedCtx.fillRect(10, 33, 20, 6)
+  boxedCtx.fillStyle = '#141414'
+  boxedCtx.fillRect(14, 34, 12, 4)
+  const boxedData = boxedCtx.getImageData(0, 0, 40, 40)
+  clearTextPlatePixels(boxedData)
+  applyTextTone(boxedData, 'custom', '#00ccff')
+  if (boxedData.data[(34 * 40 + 12) * 4 + 3] > 20 || boxedData.data[(35 * 40 + 11) * 4 + 3] > 20) {
+    return { status: 'error', detail: '글자 뒤 사각 흰 패치가 색 치환 후에도 남았습니다.' }
+  }
+  if (boxedData.data[(36 * 40 + 20) * 4] !== 0 || boxedData.data[(36 * 40 + 20) * 4 + 1] !== 204) {
+    return { status: 'warn', detail: 'IDLE · 흰 패치 제거 후 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
   }
   const ring = document.createElement('canvas')
   ring.width = 40

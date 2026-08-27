@@ -716,28 +716,6 @@ function isDarkTextInk(r, g, b, a) {
   return r < 80 && g < 80 && b < 80
 }
 
-function isPlateOrFurPixel(r, g, b, a) {
-  if (a < 28) return false
-  const luma = pixelLuma(r, g, b)
-  const chroma = pixelChroma(r, g, b)
-  if (luma >= 140) return true
-  if (chroma < 26 && luma > 82 && luma < 188) return true
-  return false
-}
-
-function nearColorfulBody(data, width, height, x, y) {
-  for (let dy = -5; dy <= 1; dy += 1) {
-    for (let dx = -2; dx <= 2; dx += 1) {
-      const nx = x + dx
-      const ny = y + dy
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
-      const i = (ny * width + nx) * 4
-      if (isColorfulBodyPixel(data[i], data[i + 1], data[i + 2], data[i + 3])) return true
-    }
-  }
-  return false
-}
-
 function resolveTextZoneStartY(height, { bandStart, textZonePercent } = {}) {
   if (textZonePercent != null || bandStart == null) {
     return textZoneStartY(height, textZonePercent ?? TEXT_ZONE_DEFAULT)
@@ -753,57 +731,42 @@ export function buildTextGlyphMask(imageData, options = {}) {
   if (!data || !width || !height) return { mask, y0: 0, width, height }
   const opts = typeof options === 'number' ? { textZonePercent: TEXT_ZONE_DEFAULT } : options
   const y0 = resolveTextZoneStartY(height, opts)
-  const raw = new Uint8Array(width * height)
   for (let y = y0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4
+      if (isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) mask[y * width + x] = 1
+    }
+  }
+  return { mask, y0, width, height }
+}
+
+export function clearTextPlatePixels(imageData, textZonePercent = TEXT_ZONE_DEFAULT) {
+  if (!imageData?.data) return imageData
+  const { data, width, height } = imageData
+  const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
+  const y0 = textZoneStartY(height, textZonePercent)
+  for (let y = y0; y < height; y += 1) {
+    if (!(y > zoneLimit)) continue
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4
       const a = data[i + 3]
       const r = data[i]
       const g = data[i + 1]
       const b = data[i + 2]
-      if (!isDarkTextInk(r, g, b, a)) {
-        if (a < 40 || isColorfulBodyPixel(r, g, b, a) || isPlateOrFurPixel(r, g, b, a)) continue
-        if (nearColorfulBody(data, width, height, x, y)) continue
-        const luma = pixelLuma(r, g, b)
-        if (luma > 96 || pixelChroma(r, g, b) > 30) continue
-        let edge = 0
-        const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
-        for (let k = 0; k < n.length; k += 1) {
-          const nx = x + n[k][0]
-          const ny = y + n[k][1]
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
-          const ni = (ny * width + nx) * 4
-          if (data[ni + 3] < 12) {
-            edge = Math.max(edge, luma)
-            continue
-          }
-          edge = Math.max(edge, Math.abs(luma - pixelLuma(data[ni], data[ni + 1], data[ni + 2])))
-        }
-        if (edge < 46) continue
-      }
-      raw[y * width + x] = 1
+      if (a < 12) continue
+      if (isDarkTextInk(r, g, b, a)) continue
+      if (isColorfulBodyPixel(r, g, b, a)) continue
+      if (isCharacterStrokePixel(r, g, b, a)) continue
+      const luma = pixelLuma(r, g, b)
+      const chroma = pixelChroma(r, g, b)
+      if (luma < 226 || chroma >= 28) continue
+      data[i] = 0
+      data[i + 1] = 0
+      data[i + 2] = 0
+      data[i + 3] = 0
     }
   }
-  for (let y = y0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const p = y * width + x
-      if (!raw[p]) continue
-      const i = p * 4
-      if (isPlateOrFurPixel(data[i], data[i + 1], data[i + 2], data[i + 3]) && !isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
-      let cluster = 0
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) {
-          if (!dx && !dy) continue
-          const nx = x + dx
-          const ny = y + dy
-          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue
-          if (raw[ny * width + nx]) cluster += 1
-        }
-      }
-      if (isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3]) || cluster >= 2) mask[p] = 1
-    }
-  }
-  return { mask, y0, width, height }
+  return imageData
 }
 
 export function applyTextTone(imageData, mode = 'original', customHex = '#111111', options = {}) {
@@ -812,11 +775,10 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
   const [tr, tg, tb] = parseHexColor(customHex)
   const textZonePercent = options.textZonePercent ?? TEXT_ZONE_DEFAULT
   const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
-  const { mask, y0 } = buildTextGlyphMask(imageData, { textZonePercent })
+  const y0 = textZoneStartY(height, textZonePercent)
   for (let y = y0; y < height; y += 1) {
     if (!(y > zoneLimit)) continue
     for (let x = 0; x < width; x += 1) {
-      if (!mask[y * width + x]) continue
       const i = (y * width + x) * 4
       if (!isDarkTextInk(data[i], data[i + 1], data[i + 2], data[i + 3])) continue
       const luma = pixelLuma(data[i], data[i + 1], data[i + 2]) / 255
@@ -848,11 +810,14 @@ export function applyTextTone(imageData, mode = 'original', customHex = '#111111
 export function applyOutlineAssist(imageData, hex = '#111111', options = {}) {
   if (!imageData?.data) return imageData
   const { data, width, height } = imageData
-  const src = new Uint8ClampedArray(data)
+  const src = options.inkSource || new Uint8ClampedArray(data)
   const [sr, sg, sb] = parseHexColor(hex, [12, 12, 14])
   const textZonePercent = options.textZonePercent ?? TEXT_ZONE_DEFAULT
   const zoneLimit = height * (1 - clampTextZonePercent(textZonePercent) / 100)
-  const { mask, y0 } = buildTextGlyphMask({ data: src, width, height }, { textZonePercent })
+  const ink = options.mask
+    ? { mask: options.mask, y0: options.y0 ?? textZoneStartY(height, textZonePercent) }
+    : buildTextGlyphMask({ data: src, width, height }, { textZonePercent })
+  const { mask, y0 } = ink
   const n = [[-1, 0], [1, 0], [0, -1], [0, 1]]
   for (let y = y0; y < height; y += 1) {
     if (!(y > zoneLimit)) continue
@@ -976,10 +941,16 @@ export function fitToKakaoCanvas(source, box, {
     })
   }
   pixels = ctx.getImageData(0, 0, size, size)
+  if (transparent) clearTextPlatePixels(pixels, textZonePercent)
+  const inkMask = outline ? buildTextGlyphMask(pixels, { textZonePercent }) : null
   applyTextTone(pixels, textMode, customColor, { textZonePercent })
   if (outline) {
     const stroke = textMode === 'white' ? '#ffffff' : textMode === 'custom' ? customColor : '#111111'
-    applyOutlineAssist(pixels, stroke, { textZonePercent })
+    applyOutlineAssist(pixels, stroke, {
+      textZonePercent,
+      mask: inkMask.mask,
+      y0: inkMask.y0,
+    })
   }
   flattenTransparentPixels(pixels)
   ctx.clearRect(0, 0, size, size)
