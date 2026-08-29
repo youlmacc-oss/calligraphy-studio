@@ -250,7 +250,7 @@ export default function App() {
   const mainLayer = studio.layers.find((layer) => layer.role === 'main') ?? studio.layers[0]
   const subLayer = studio.layers.find((layer) => layer.role === 'sub')
   const extraLayers = studio.layers.filter((layer) => layer.role !== 'main' && layer.role !== 'sub')
-  const preset = PRESETS_BY_ID[mainLayer?.presetId] ?? PRESETS_BY_ID[studio.presetId] ?? PRESETS_BY_ID['hunmin-woodcut'] ?? PRESETS[0]
+  const preset = PRESETS_BY_ID[mainLayer?.presetId] ?? PRESETS_BY_ID[studio.presetId] ?? PRESETS_BY_ID['kitsch-sticker'] ?? PRESETS[0]
   const aspect = getAspect(studio.aspectId)
   const activeLayer = studio.layers.find((item) => item.id === studio.activeLayerId) ?? studio.layers[0]
   const font = fontsById[activeLayer?.fontId] ?? FONTS[0]
@@ -1430,7 +1430,7 @@ export default function App() {
                 setStudio(defaultStudioState())
                 setGuideOpen(false)
               }}
-              data-tooltip="훈민정음 언해 목각 · 다크 캔버스 · 중앙 십자 가이드 기본 화면을 통째로 다시 불러옵니다"
+              data-tooltip="메인 창 기본 텍스트: 龍 Dragon 풀점 · 키치 스티커 콜라주 · 체커보드"
             >
               <WandSparkles className="h-3.5 w-3.5" /> 기본 샘플
             </button>

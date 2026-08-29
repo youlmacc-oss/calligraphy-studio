@@ -607,11 +607,11 @@ export async function checkLayerIsolation(ctx) {
 }
 
 export async function checkDragEngine() {
-  if (DEFAULT_TEXT !== '龍 Dragon 풍정') {
-    return { status: 'error', detail: '기본 문구가 龍 Dragon 풍정과 다릅니다.' }
+  if (DEFAULT_TEXT !== '龍 Dragon 풀점') {
+    return { status: 'error', detail: '기본 문구가 龍 Dragon 풀점과 다릅니다.' }
   }
-  if (!FACTORY_REV || !String(FACTORY_REV).includes('woodcut-boot')) {
-    return { status: 'error', detail: '공장 목각 리비전이 없습니다.' }
+  if (!FACTORY_REV || !String(FACTORY_REV).includes('kitsch-text')) {
+    return { status: 'error', detail: '공장 키치 텍스트 리비전이 없습니다.' }
   }
   const factory = defaultStudioState()
   const main = factory.layers.find((layer) => layer.role === 'main')
@@ -619,14 +619,14 @@ export async function checkDragEngine() {
     return { status: 'error', detail: '기본 격자/눈금이 꺼져 있습니다.' }
   }
   if (main?.text !== DEFAULT_TEXT || main?.fontId !== DEFAULT_STUDIO_FONT_ID || main?.presetId !== DEFAULT_STUDIO_PRESET_ID || main?.fontSize !== DEFAULT_STUDIO_MAIN_SIZE) {
-    return { status: 'error', detail: '기본 훈민정음 언해 목각 샘플이 아닙니다.' }
+    return { status: 'error', detail: '기본 키치 스티커 텍스트 샘플이 아닙니다.' }
   }
-  if (factory.studioTab !== 'woodcut' || factory.previewBg !== 'dark' || factory.stickerOn !== false || factory.gridOn !== true || factory.aspectId !== '1:1') {
-    return { status: 'error', detail: '기본 목각 탭/다크 캔버스/격자/1:1이 아닙니다.' }
+  if (factory.studioTab !== 'allinone' || factory.previewBg !== 'checker' || factory.stickerOn !== true || factory.stickerTheme !== 'fnb' || factory.aspectId !== '1:1') {
+    return { status: 'error', detail: '기본 올인원/체커보드/F&B 스티커/1:1이 아닙니다.' }
   }
-  const woodcut = GUIDE_SAMPLES['pungjeong-woodcut']
-  if (!woodcut || woodcut.presetId !== 'hunmin-woodcut' || woodcut.layers?.main?.text !== DEFAULT_TEXT) {
-    return { status: 'error', detail: '기본 목각 샘플 원클릭 데이터가 없습니다.' }
+  const kitsch = GUIDE_SAMPLES['puljeom-kitsch']
+  if (!kitsch || kitsch.presetId !== 'kitsch-sticker' || kitsch.layers?.main?.text !== DEFAULT_TEXT) {
+    return { status: 'error', detail: '기본 키치 텍스트 원클릭 데이터가 없습니다.' }
   }
   const overlaySrc = String(LayerGuideOverlay)
   if (!overlaySrc.includes('data-canvas-cross') || !overlaySrc.includes('canvas-crosshair')) {
@@ -655,7 +655,7 @@ export async function checkDragEngine() {
   if (typeof PreviewLightboxModal !== 'function' || !lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
     return { status: 'error', detail: '확대 팝업 체커보드가 없거나 흰 배경이 남아 있습니다.' }
   }
-  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 공장 리비전 목각 강제 · 다크·십자 가이드 · 확대 팝업 checkerboard-bg 고정.' }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 공장 기본 龍 Dragon 풀점 키치 텍스트 · 체커보드 · 확대 팝업 checkerboard-bg 고정.' }
 }
 
 export async function checkTypography() {

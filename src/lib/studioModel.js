@@ -6,18 +6,19 @@ import {
 } from './fontSize.js'
 import { defaultViewEdit } from './viewEdit.js'
 
-export const STORAGE_KEY = 'styler-studio-pro-v5'
+export const STORAGE_KEY = 'styler-studio-pro-v6'
 export const FACTORY_REV_KEY = 'styler-factory-rev'
-export const FACTORY_REV = '2026.08.29-woodcut-boot'
+export const FACTORY_REV = '2026.08.29-kitsch-text'
 export const DEFAULT_STUDIO_MAIN_SIZE = FONT_SIZE_MAIN_DEFAULT
-export const DEFAULT_STUDIO_PRESET_ID = 'hunmin-woodcut'
-export const DEFAULT_STUDIO_FONT_ID = 'hunmin'
+export const DEFAULT_STUDIO_PRESET_ID = 'kitsch-sticker'
+export const DEFAULT_STUDIO_FONT_ID = 'jalnan'
 export const API_STORAGE_KEY = 'styler-api-keys-v1'
 const LEGACY_STUDIO_KEYS = [
   'styler-studio-pro-v1',
   'styler-studio-pro-v2',
   'styler-studio-pro-v3',
   'styler-studio-pro-v4',
+  'styler-studio-pro-v5',
 ]
 
 let layerSeq = 1
@@ -74,7 +75,7 @@ export function createDefaultLayers() {
       strokeWidth: 0,
       strokeWidth2: 0,
       curveAmount: 0,
-      color: '#c4a574',
+      color: '#F6E7C1',
     }),
     createLayer({
       role: 'sub',
@@ -102,10 +103,10 @@ export function defaultStudioState() {
     layers,
     activeLayerId: layers[0].id,
     presetId: DEFAULT_STUDIO_PRESET_ID,
-    studioTab: 'woodcut',
+    studioTab: 'allinone',
     viewMode: 'graphic',
     aspectId: '1:1',
-    stickerOn: false,
+    stickerOn: true,
     stickerTheme: 'fnb',
     chiselDepth: 6,
     roughness: 48,
@@ -123,7 +124,7 @@ export function defaultStudioState() {
     },
     viewEdit: defaultViewEdit(),
     gifMotion: 'pulse',
-    previewBg: 'dark',
+    previewBg: 'checker',
     exportScale: 1,
   }
 }
