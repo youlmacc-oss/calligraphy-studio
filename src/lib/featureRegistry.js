@@ -55,7 +55,7 @@ export const APP_FEATURES_REGISTRY = [
       sectionId: 'pipeline',
       sectionLabel: '3단계 워크플로',
       title: '🧩 시트 생성 → 분할 → 모션 3단계',
-      kicker: '4행 × 5열 (20개) 투명 PNG를 기본으로, 무손실 바이패스와 360 제출까지 한 줄로 이었습니다.',
+      kicker: '4행 × 5열 (20개) 투명 PNG를 기본으로, 무손실 바이패스와 360 제출까지 한 줄로 이었습니다. 배포본은 하단 엔진 칩의 빌드 리비전으로 확인합니다.',
       workflow: guidebookWorkflow(),
       play: GUIDEBOOK_SECTIONS.map((section) => ({
         title: section.title,

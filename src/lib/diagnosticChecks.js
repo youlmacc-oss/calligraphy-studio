@@ -96,6 +96,7 @@ import {
 } from './emoticonSplit.js'
 import { inspectRenderedSlice } from '../utils/debugger.js'
 import { GUIDEBOOK_SECTIONS } from './guidebookSections.js'
+import { APP_BUILD } from './appBuild.js'
 import { evaluateSystemDiagnostics, exportFullDiagnosticLog } from './systemDiagnostics.js'
 import PreviewLightboxModal from '../components/PreviewLightboxModal.jsx'
 import {
@@ -500,6 +501,9 @@ export async function checkGpu() {
 }
 
 export async function checkSheetPipeline() {
+  if (!APP_BUILD) {
+    return { status: 'error', detail: '배포 빌드 리비전이 없습니다.' }
+  }
   if (typeof evaluateSystemDiagnostics !== 'function') {
     return { status: 'error', detail: '3대 모듈 자가진단 엔진이 없습니다.' }
   }
@@ -517,7 +521,7 @@ export async function checkSheetPipeline() {
   if (!GUIDEBOOK_SECTIONS.some((section) => String(section.content || '').includes('4 rows by 5 columns'))) {
     return { status: 'error', detail: '4×5 투명 시트 생성 프롬프트가 가이드북에 없습니다.' }
   }
-  return { status: 'ok', detail: 'PASS · 스튜디오·분할기·생성기 3모듈 · 가이드북 4섹션' }
+  return { status: 'ok', detail: `PASS · 스튜디오·분할기·생성기 3모듈 · 가이드북 4섹션 · ${APP_BUILD}` }
 }
 
 export async function checkBuffers() {

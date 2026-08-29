@@ -60,6 +60,7 @@ import {
 } from './lib/studioModel.js'
 import { loadFavoriteFonts, saveFavoriteFonts, toggleFavoriteId } from './lib/fontFavorites.js'
 import { DIAG_STEPS } from './lib/featureRegistry.js'
+import { APP_BUILD } from './lib/appBuild.js'
 import { subscribeInspectorHud } from './utils/debugger.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
@@ -1684,7 +1685,7 @@ export default function App() {
               </span>
               <span
                 className="live-status-hud__chip"
-                data-tooltip={`실시간 렌더링 엔진 상태: ${renderHud.fps} FPS (프레임 렌더 타임: ${renderHud.ms}ms, 상태: ${renderHud.label})`}
+                data-tooltip={`실시간 렌더링 엔진 상태: ${renderHud.fps} FPS (프레임 렌더 타임: ${renderHud.ms}ms, 상태: ${renderHud.label}, 빌드 ${APP_BUILD})`}
               >
                 <span className="live-status-hud__label">엔진</span>
                 <span className={clsx('live-status-hud__value', `is-perf-${renderHud.status}`)}>
@@ -1693,6 +1694,8 @@ export default function App() {
                   {renderHud.ms}ms
                   <span className="live-status-hud__dot">·</span>
                   {renderHud.label}
+                  <span className="live-status-hud__dot">·</span>
+                  {APP_BUILD}
                 </span>
               </span>
               {sliceInspectorHud.status === 'warn' && sliceInspectorHud.suspectCount > 0 ? (
