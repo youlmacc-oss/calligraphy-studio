@@ -27,6 +27,13 @@ import {
 } from './motionPresets.js'
 import { PLATFORM_PRESETS, resolvePlatformSize } from './platformPresets.js'
 import { getEmoticonCuts, subscribeEmoticonCuts } from './cutSnapshot.js'
+import {
+  PC_IMAGE_ACCEPT,
+  PC_IMAGE_MAX,
+  createPcDragGuard,
+  isPcImageFile,
+  listPcImageFiles,
+} from './motionPcUpload.js'
 import { blitToHiDpiCanvas, primeHqContext } from '../../utils/hqRender.js'
 import { MotionSequencerPanel } from '../MotionStudio/index.js'
 import { MotionStudioProvider } from '../MotionStudio/motionStudioContext.jsx'
@@ -90,8 +97,7 @@ function parseInitialSource(initialSource) {
 }
 
 function isImageFile(file) {
-  const name = String(file?.name || '').toLowerCase()
-  return /\.(png|jpe?g|webp)$/.test(name) || ['image/png', 'image/jpeg', 'image/webp', 'image/jpg'].includes(file?.type)
+  return isPcImageFile(file)
 }
 
 function gifStem(name, index) {
@@ -163,6 +169,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const encodeStartedRef = useRef(0)
   const fileRef = useRef(null)
   const cutsFileRef = useRef(null)
+  const dropDepthRef = useRef(0)
   const sourceTabRef = useRef('canvas')
   const cutsRef = useRef([])
   const fpsProbeRef = useRef({ last: 0, frames: 0, hz: 0 })
@@ -364,30 +371,71 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   }, [applyImage])
 
   const ingestLocalFiles = useCallback((fileList) => {
-    const files = [...(fileList || [])].filter(isImageFile).slice(0, 48)
+    const files = listPcImageFiles(fileList, PC_IMAGE_MAX)
     if (!files.length) {
       setDropNote('PNG, JPG, WebP만 올릴 수 있습니다.')
       setStatusKind('error')
       setStatus('PNG, JPG, WebP만 올릴 수 있습니다.')
       return
     }
-    const added = files.map((file, index) => {
-      const url = URL.createObjectURL(file)
-      objectUrlsRef.current.push(url)
-      return {
-        id: `upload-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`,
-        name: file.name || `image-${index + 1}`,
-        url,
+    void (async () => {
+      setLoading(true)
+      const added = []
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index]
+        const url = URL.createObjectURL(file)
+        objectUrlsRef.current.push(url)
+        try {
+          const image = await loadImage(url)
+          added.push({
+            id: `upload-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`,
+            name: file.name || `image-${index + 1}`,
+            url,
+            preview: url,
+            width: image.naturalWidth || image.width || 0,
+            height: image.naturalHeight || image.height || 0,
+          })
+        } catch {
+          URL.revokeObjectURL(url)
+          objectUrlsRef.current = objectUrlsRef.current.filter((item) => item !== url)
+        }
       }
-    })
-    setUploadedImages((current) => [...current, ...added].slice(0, 48))
-    setSelectedUpload(added[0].id)
-    setLocalUrl(added[0].url)
-    setSourceTab('drop')
-    setDropNote(`${added.length}장 추가됨`)
-    setStatusKind('ok')
-    setStatus(`업로드 ${added.length}장 Ready`)
+      if (!added.length) {
+        setLoading(false)
+        setDropNote('이미지를 읽지 못했습니다.')
+        setStatusKind('error')
+        setStatus('이미지를 읽지 못했습니다.')
+        return
+      }
+      setUploadedImages((current) => [...current, ...added].slice(0, PC_IMAGE_MAX))
+      setSelectedUpload(added[0].id)
+      setLocalUrl(added[0].url)
+      setSourceTab('drop')
+      setDropNote(`${added.length}장 추가됨`)
+      setStatusKind('ok')
+      setStatus(`업로드 ${added.length}장 Ready`)
+      setLoading(false)
+    })()
   }, [])
+
+  const openPcFilePicker = useCallback(() => {
+    const input = fileRef.current
+    if (!input || encoding) return
+    input.value = ''
+    input.click()
+  }, [encoding])
+
+  const pcDrag = useMemo(
+    () => createPcDragGuard(dropDepthRef, setDropOver),
+    [],
+  )
+
+  const onPcDrop = useCallback((event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    pcDrag.reset()
+    ingestLocalFiles(event.dataTransfer?.files)
+  }, [ingestLocalFiles, pcDrag])
 
   const ingestCutFiles = useCallback((fileList) => {
     const files = [...(fileList || [])].filter(isImageFile).slice(0, 28)
@@ -468,6 +516,21 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, parsed.dataUrl])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const blockNav = (event) => {
+      const types = event.dataTransfer?.types
+      if (!types || ![...types].includes('Files')) return
+      event.preventDefault()
+    }
+    window.addEventListener('dragover', blockNav)
+    window.addEventListener('drop', blockNav)
+    return () => {
+      window.removeEventListener('dragover', blockNav)
+      window.removeEventListener('drop', blockNav)
+    }
+  }, [isOpen])
 
   useEffect(() => subscribeEmoticonCuts((next) => {
     setCuts((current) => {
@@ -849,31 +912,43 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
             {sourceTab === 'drop' ? (
               <>
-                <label
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept={PC_IMAGE_ACCEPT}
+                  multiple
+                  className="mgs-file-input"
+                  data-pc-upload="1"
+                  tabIndex={-1}
+                  onChange={(event) => {
+                    ingestLocalFiles(event.target.files)
+                    event.target.value = ''
+                  }}
+                />
+                <div
+                  role="button"
+                  tabIndex={0}
                   className={clsx('mgs-drop', dropOver && 'is-over')}
+                  data-pc-dropzone="1"
+                  data-pc-dragging={dropOver ? '1' : '0'}
                   data-tooltip="PNG/JPG/WebP를 여러 장 한 번에 드래그하거나 클릭해서 올립니다"
                   data-mgs-place="right"
-                  onDragOver={(event) => { event.preventDefault(); setDropOver(true) }}
-                  onDragLeave={() => setDropOver(false)}
-                  onDrop={(event) => {
-                    event.preventDefault()
-                    setDropOver(false)
-                    ingestLocalFiles(event.dataTransfer.files)
+                  onClick={openPcFilePicker}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      openPcFilePicker()
+                    }
                   }}
+                  onDragEnter={pcDrag.onDragEnter}
+                  onDragOver={pcDrag.onDragOver}
+                  onDragLeave={pcDrag.onDragLeave}
+                  onDrop={onPcDrop}
                 >
-                  PNG/JPG/WebP 여러 장을 놓거나 클릭해서 올리기
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp"
-                    multiple
-                    hidden
-                    onChange={(event) => {
-                      ingestLocalFiles(event.target.files)
-                      event.target.value = ''
-                    }}
-                  />
-                </label>
+                  PNG/JPG/WebP 여러 장을 놓거나
+                  <br />
+                  클릭해서 올리기
+                </div>
                 {uploadedImages.length ? (
                   <>
                     <div className="mgs-uploads">
@@ -930,7 +1005,22 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
           </aside>
 
           <section className="mgs-pane mgs-center overflow-hidden">
-            <div className={clsx('mgs-viewport', `is-${viewBg}`, viewBg === 'checker' && 'checkerboard-bg')} data-mgs-stage="1">
+            <div
+              className={clsx('mgs-viewport', `is-${viewBg}`, viewBg === 'checker' && 'checkerboard-bg', dropOver && 'is-drop-over')}
+              data-mgs-stage="1"
+              data-pc-stage-drop="1"
+              data-pc-dragging={dropOver ? '1' : '0'}
+              onDragEnter={pcDrag.onDragEnter}
+              onDragOver={pcDrag.onDragOver}
+              onDragLeave={pcDrag.onDragLeave}
+              onDrop={onPcDrop}
+              onClick={() => {
+                if (!hasSource && !loading && !encoding) {
+                  setSourceTab('drop')
+                  openPcFilePicker()
+                }
+              }}
+            >
               <canvas
                 ref={viewRef}
                 className="mgs-preview-canvas"
@@ -967,7 +1057,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               <span className="mgs-hint">프리뷰 {clampFps(fps)} FPS</span>
             </div>
             <MotionSequencerPanel
-              cuts={visibleCuts}
+              cuts={sourceTab === 'drop' ? uploadedImages : visibleCuts}
+              injectFrames={sourceTab === 'drop' ? uploadedImages : null}
+              cutBankEmpty={sourceTab === 'drop' ? '왼쪽에서 PNG를 올리거나 가운데에 놓으세요.' : '분할기에서 28컷을 먼저 만드세요.'}
               sourceUrl={liveSourceUrl}
               playing={playing}
               onPlayingChange={(next) => {

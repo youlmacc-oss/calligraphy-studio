@@ -135,6 +135,8 @@ import { paintDynamicTextMotion, paintLiveCaptionLayer } from '../components/Mot
 import { PARTICLE_LAYERS } from '../components/MotionStudio/particleOverlayEngine.js'
 import { estimateStoreSpec } from '../components/MotionStudio/storeSpecHud.js'
 import { STUDIO_HUD_STEPS } from './studioHudChecks.js'
+import MotionGifStudioModal from '../components/MotionGifStudio/MotionGifStudioModal.jsx'
+import { isPcImageFile, listPcImageFiles } from '../components/MotionGifStudio/motionPcUpload.js'
 import MotionPreviewCanvas from '../components/MotionStudio/MotionPreviewCanvas.jsx'
 import MotionSequencerPanel from '../components/MotionStudio/MotionSequencerPanel.jsx'
 import MotionEffectSelector from '../components/MotionStudio/MotionEffectSelector.jsx'
@@ -2028,6 +2030,25 @@ export async function checkMotionSequencer() {
   }
   if (!panelSrc.includes('data-motion-seq') || !panelSrc.includes('일시정지') || !panelSrc.includes('MotionEffectSelector')) {
     return { status: 'error', detail: '프레임 시퀀서 패널 또는 모션 이펙트 선택기가 없습니다.' }
+  }
+  const uploadSrc = String(MotionGifStudioModal)
+  if (!uploadSrc.includes('data-pc-dropzone') || !uploadSrc.includes('data-pc-stage-drop') || !uploadSrc.includes('data-pc-upload')) {
+    return { status: 'error', detail: '내 PC 업로드 드롭존 또는 파일 입력이 없습니다.' }
+  }
+  if (!uploadSrc.includes('openPcFilePicker') || !uploadSrc.includes('input.click()') || !uploadSrc.includes("input.value = ''")) {
+    return { status: 'error', detail: '파일 탐색기 클릭 트리거가 없습니다.' }
+  }
+  if (!uploadSrc.includes('stopPropagation') || !uploadSrc.includes('dropEffect') || !uploadSrc.includes('createPcDragGuard')) {
+    return { status: 'error', detail: '드래그 앤 드롭 preventDefault 가드가 없습니다.' }
+  }
+  if (!panelSrc.includes('injectFrames') || !panelSrc.includes('makeSequenceItem')) {
+    return { status: 'error', detail: '업로드 이미지가 시퀀서 타임라인에 주입되지 않습니다.' }
+  }
+  if (!isPcImageFile({ name: 'a.png', type: 'image/png' }) || isPcImageFile({ name: 'a.txt', type: 'text/plain' })) {
+    return { status: 'error', detail: 'PC 업로드 이미지 필터가 실패했습니다.' }
+  }
+  if (listPcImageFiles([{ name: 'a.png', type: 'image/png' }, { name: 'b.txt', type: 'text/plain' }]).length !== 1) {
+    return { status: 'error', detail: '다중 파일 필터가 PNG만 남기지 않습니다.' }
   }
   if (!panelSrc.includes('data-caption-bar') || !panelSrc.includes('CaptionControlBar')) {
     return { status: 'error', detail: '자막 입력창 또는 ON/OFF 토글이 없습니다.' }

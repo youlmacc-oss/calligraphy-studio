@@ -1,2 +1,2 @@
 /** Visible Pages revision so a stale CDN/index.html cache is obvious. */
-export const APP_BUILD = '2026.08.29-kitsch-text'
+export const APP_BUILD = '2026.08.29-pc-upload'

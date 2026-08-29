@@ -32,6 +32,8 @@ function speedLabel(value) {
 
 export default function MotionSequencerPanel({
   cuts = [],
+  injectFrames = null,
+  cutBankEmpty = '분할기에서 28컷을 먼저 만드세요.',
   sourceUrl = '',
   playing: playingProp,
   onPlayingChange,
@@ -57,6 +59,7 @@ export default function MotionSequencerPanel({
   const [captionSize, setCaptionSize] = useState('md')
   const [captionStroke, setCaptionStroke] = useState('black')
   const chatMirrorRef = useRef(null)
+  const injectStampRef = useRef('')
   const speed = studio?.speed ?? localSpeed
   const setSpeed = studio?.setSpeed ?? setLocalSpeed
   const slot = sequence.length
@@ -138,6 +141,15 @@ export default function MotionSequencerPanel({
   useEffect(() => {
     onCaptionLive?.()
   }, [captionOn, captionText, captionSize, captionStroke, effect, fps, speed, loopSeconds, onCaptionLive])
+
+  useEffect(() => {
+    if (!Array.isArray(injectFrames) || !injectFrames.length) return
+    const stamp = injectFrames.map((item) => item.id || item.url).join('|')
+    if (!stamp || injectStampRef.current === stamp) return
+    injectStampRef.current = stamp
+    setSequence(injectFrames.map((item, index) => makeSequenceItem(item, index, index)))
+    setPlaying(true)
+  }, [injectFrames])
 
   const appendCut = (cut, index) => {
     const url = cutFrameUrl(cut)
@@ -273,7 +285,7 @@ export default function MotionSequencerPanel({
               })}
             </div>
           ) : (
-            <p className="ms-empty">분할기에서 28컷을 먼저 만드세요.</p>
+            <p className="ms-empty">{cutBankEmpty}</p>
           )}
           <p className="ms-kicker">타임라인 {timelineFrames.length}</p>
           <FrameSequencerTrack

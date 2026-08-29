@@ -227,6 +227,20 @@ async function runVisualCheck() {
   await page.waitForTimeout(400)
   await page.screenshot({ path: STUDIO_SHOT, fullPage: false })
 
+  await page.getByRole('button', { name: '내 PC 업로드' }).click()
+  await page.waitForSelector('[data-pc-dropzone="1"]', { timeout: 8000 })
+  const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 })
+  await page.locator('[data-pc-dropzone="1"]').click()
+  const chooser = await chooserPromise
+  if (!chooser.isMultiple()) {
+    throw new Error('PC upload file picker is not multiple')
+  }
+  await chooser.setFiles([sheetPath, sheetPath])
+  await page.waitForSelector('.mgs-upload-card', { timeout: 20000 })
+  await page.waitForFunction(() => document.querySelectorAll('.mgs-upload-card').length >= 2, { timeout: 20000 })
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: SPLIT_SHOT, fullPage: false })
+
   const heading = await page.locator('#mgs-title').textContent()
   const stillLoop = await page.locator('[data-motion-seq]').getAttribute('data-still-loop')
   const playing = await page.locator('[data-play-toggle="stage"]').getAttribute('data-playing')
@@ -234,7 +248,7 @@ async function runVisualCheck() {
   const specText = await page.locator('[data-store-spec]').innerText()
   console.log('\n=============================================')
   console.log(`📸 [그리드 캡처]: public/test-result-grid.png (${cutCount}칸)`)
-  console.log(`📸 [가이드북 3단계]: public/test-result.png`)
+  console.log(`📸 [내 PC 업로드]: public/test-result.png`)
   console.log(`📸 [모션 스튜디오]: public/test-result-studio.png (${heading || '모션 스튜디오'} · stillLoop=${stillLoop} · jelly=${jellyOn} · playing=${playing})`)
   console.log(`🔍 [시각 검증 완료]: 텍스트 끄기(빈 입력) · 채팅 미리보기 실시간 미러 · 스펙 ${specText.replace(/\s+/g, ' ').trim()} · 체커보드`)
   console.log('=============================================\n')
