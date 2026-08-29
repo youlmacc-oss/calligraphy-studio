@@ -1,20 +1,23 @@
 export const GUIDE_SAMPLES = {
-  'pungjeong-kitsch': {
-    id: 'pungjeong-kitsch',
-    label: '龍 Dragon 풍정 키치',
-    presetId: 'kitsch-sticker',
-    studioTab: 'allinone',
-    stickerOn: true,
+  'pungjeong-woodcut': {
+    id: 'pungjeong-woodcut',
+    label: '龍 Dragon 풍정 목각',
+    presetId: 'hunmin-woodcut',
+    studioTab: 'woodcut',
+    stickerOn: false,
     stickerTheme: 'fnb',
-    previewBg: 'checker',
+    previewBg: 'dark',
+    gridOn: true,
+    gifMotion: 'pulse',
+    aspectId: '1:1',
     layers: {
       main: {
         text: '龍 Dragon 풍정',
-        fontId: 'jalnan',
-        presetId: 'kitsch-sticker',
+        fontId: 'hunmin',
+        presetId: 'hunmin-woodcut',
         fontSize: 70,
         fontWeight: 400,
-        color: '#F6E7C1',
+        color: '#c4a574',
         strokeWidth: 0,
         strokeWidth2: 0,
         curveAmount: 0,
@@ -164,6 +167,8 @@ export function applyGuideSample(studio, sample) {
     stickerOn: sample.stickerOn ?? studio.stickerOn,
     stickerTheme: sample.stickerTheme ?? studio.stickerTheme,
     previewBg: sample.previewBg ?? studio.previewBg,
+    gridOn: sample.gridOn ?? studio.gridOn,
+    aspectId: sample.aspectId ?? studio.aspectId,
     layers: (studio.layers || []).map((layer) => {
       const patch = sample.layers?.[layer.role]
       if (!patch) return layer

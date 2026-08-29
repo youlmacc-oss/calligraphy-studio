@@ -1417,11 +1417,11 @@ export default function App() {
             <button
               type="button"
               className="tool-btn"
-              data-default-kitsch="1"
-              onClick={() => applySample(GUIDE_SAMPLES['pungjeong-kitsch'])}
-              data-tooltip="크림 글자·갈색 외곽·F&B 스티커가 붙은 기본 키치 룩을 다시 불러옵니다"
+              data-default-sample="1"
+              onClick={() => applySample(GUIDE_SAMPLES['pungjeong-woodcut'])}
+              data-tooltip="훈민정음 언해 목각 · 다크 캔버스 · 중앙 십자 가이드 기본 샘플을 다시 불러옵니다"
             >
-              <WandSparkles className="h-3.5 w-3.5" /> 기본 키치
+              <WandSparkles className="h-3.5 w-3.5" /> 기본 샘플
             </button>
             <button type="button" className={clsx('tool-btn', studio.layerLocked && 'is-on')} onClick={() => patchStudio({ layerLocked: !studio.layerLocked }, false)} data-tooltip="캔버스 요소 위치 고정 및 잠금 해제">
               {studio.layerLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}

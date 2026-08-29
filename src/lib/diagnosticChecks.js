@@ -101,6 +101,7 @@ import { GUIDEBOOK_SECTIONS } from './guidebookSections.js'
 import { APP_BUILD } from './appBuild.js'
 import { evaluateSystemDiagnostics, exportFullDiagnosticLog } from './systemDiagnostics.js'
 import PreviewLightboxModal from '../components/PreviewLightboxModal.jsx'
+import LayerGuideOverlay from '../components/LayerGuideOverlay.jsx'
 import {
   GOLDEN_BASELINE,
   auditFrozenGoldenBaseline,
@@ -615,14 +616,18 @@ export async function checkDragEngine() {
     return { status: 'error', detail: '기본 격자/눈금이 꺼져 있습니다.' }
   }
   if (main?.text !== DEFAULT_TEXT || main?.fontId !== DEFAULT_STUDIO_FONT_ID || main?.presetId !== DEFAULT_STUDIO_PRESET_ID || main?.fontSize !== DEFAULT_STUDIO_MAIN_SIZE) {
-    return { status: 'error', detail: '기본 키치 스티커 샘플(배민 잘난체 70px)이 아닙니다.' }
+    return { status: 'error', detail: '기본 훈민정음 언해 목각 샘플이 아닙니다.' }
   }
-  if (factory.studioTab !== 'allinone' || factory.previewBg !== 'checker' || factory.stickerOn !== true || factory.stickerTheme !== 'fnb') {
-    return { status: 'error', detail: '기본 스튜디오 탭/체커보드/F&B 스티커가 키치 샘플과 다릅니다.' }
+  if (factory.studioTab !== 'woodcut' || factory.previewBg !== 'dark' || factory.stickerOn !== false || factory.gridOn !== true || factory.aspectId !== '1:1') {
+    return { status: 'error', detail: '기본 목각 탭/다크 캔버스/격자/1:1이 아닙니다.' }
   }
-  const kitsch = GUIDE_SAMPLES['pungjeong-kitsch']
-  if (!kitsch || kitsch.presetId !== 'kitsch-sticker' || kitsch.layers?.main?.text !== DEFAULT_TEXT) {
-    return { status: 'error', detail: '기본 키치 샘플 원클릭 데이터가 없습니다.' }
+  const woodcut = GUIDE_SAMPLES['pungjeong-woodcut']
+  if (!woodcut || woodcut.presetId !== 'hunmin-woodcut' || woodcut.layers?.main?.text !== DEFAULT_TEXT) {
+    return { status: 'error', detail: '기본 목각 샘플 원클릭 데이터가 없습니다.' }
+  }
+  const overlaySrc = String(LayerGuideOverlay)
+  if (!overlaySrc.includes('data-canvas-cross') || !overlaySrc.includes('canvas-crosshair')) {
+    return { status: 'error', detail: '캔버스 중앙 십자 가이드가 없습니다.' }
   }
   const layer = {
     id: 'diag-hit',
@@ -647,7 +652,7 @@ export async function checkDragEngine() {
   if (typeof PreviewLightboxModal !== 'function' || !lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
     return { status: 'error', detail: '확대 팝업 체커보드가 없거나 흰 배경이 남아 있습니다.' }
   }
-  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 기본 龍 Dragon 풍정 키치 스티커 · 격자 ON · 확대 팝업 checkerboard-bg 고정.' }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 기본 龍 Dragon 풍정 목각 · 다크·십자 가이드 · 확대 팝업 checkerboard-bg 고정.' }
 }
 
 export async function checkTypography() {

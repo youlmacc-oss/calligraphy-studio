@@ -63,8 +63,15 @@ export default function LayerGuideOverlay({
       height={viewH || '100%'}
       viewBox={viewW && viewH ? `0 0 ${viewW} ${viewH}` : undefined}
       data-layer-guide={box ? '1' : '0'}
+      data-canvas-cross={viewW && viewH ? '1' : '0'}
       aria-hidden="true"
     >
+      {viewW && viewH ? (
+        <g className="canvas-crosshair" data-canvas-crosshair="1">
+          <line x1={viewW / 2} y1={0} x2={viewW / 2} y2={viewH} />
+          <line x1={0} y1={viewH / 2} x2={viewW} y2={viewH / 2} />
+        </g>
+      ) : null}
       {box ? (
         <g transform={`translate(${box.x} ${box.y}) rotate(${((box.rotation || 0) * 180) / Math.PI})`}>
           <line x1={-box.w / 2} y1={0} x2={box.w / 2} y2={0} className="layer-guide-center" stroke={stroke} />

@@ -6,10 +6,10 @@ import {
 } from './fontSize.js'
 import { defaultViewEdit } from './viewEdit.js'
 
-export const STORAGE_KEY = 'styler-studio-pro-v3'
+export const STORAGE_KEY = 'styler-studio-pro-v4'
 export const DEFAULT_STUDIO_MAIN_SIZE = FONT_SIZE_MAIN_DEFAULT
-export const DEFAULT_STUDIO_PRESET_ID = 'kitsch-sticker'
-export const DEFAULT_STUDIO_FONT_ID = 'jalnan'
+export const DEFAULT_STUDIO_PRESET_ID = 'hunmin-woodcut'
+export const DEFAULT_STUDIO_FONT_ID = 'hunmin'
 export const API_STORAGE_KEY = 'styler-api-keys-v1'
 
 let layerSeq = 1
@@ -57,17 +57,32 @@ export function createDefaultLayers() {
       fontSize: DEFAULT_STUDIO_MAIN_SIZE,
       fontWeight: 400,
       opacity: 1,
+      ox: 0,
       oy: 0,
-      color: '#F6E7C1',
+      align: 'center',
+      letterSpacing: 0,
+      lineHeight: 1.2,
+      rotation: 0,
+      strokeWidth: 0,
+      strokeWidth2: 0,
+      curveAmount: 0,
+      color: '#c4a574',
     }),
     createLayer({
+      role: 'sub',
       name: '서브 타이틀',
       text: 'AI Text Styler',
       fontId: 'great-vibes',
       presetId: '',
       fontSize: FONT_SIZE_SUB_DEFAULT,
+      fontWeight: 400,
       opacity: 1,
+      ox: 0,
       oy: 0.24,
+      align: 'center',
+      letterSpacing: 0,
+      lineHeight: 1.2,
+      rotation: 0,
       color: '#e0f2fe',
     }),
   ]
@@ -79,10 +94,10 @@ export function defaultStudioState() {
     layers,
     activeLayerId: layers[0].id,
     presetId: DEFAULT_STUDIO_PRESET_ID,
-    studioTab: 'allinone',
+    studioTab: 'woodcut',
     viewMode: 'graphic',
     aspectId: '1:1',
-    stickerOn: true,
+    stickerOn: false,
     stickerTheme: 'fnb',
     chiselDepth: 6,
     roughness: 48,
@@ -100,7 +115,7 @@ export function defaultStudioState() {
     },
     viewEdit: defaultViewEdit(),
     gifMotion: 'pulse',
-    previewBg: 'checker',
+    previewBg: 'dark',
     exportScale: 1,
   }
 }
