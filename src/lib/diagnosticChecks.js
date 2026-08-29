@@ -610,7 +610,7 @@ export async function checkDragEngine() {
   if (DEFAULT_TEXT !== '龍 Dragon 풍정') {
     return { status: 'error', detail: '기본 문구가 龍 Dragon 풍정과 다릅니다.' }
   }
-  if (!FACTORY_REV || !String(FACTORY_REV).includes('woodcut-lock')) {
+  if (!FACTORY_REV || !String(FACTORY_REV).includes('woodcut-boot')) {
     return { status: 'error', detail: '공장 목각 리비전이 없습니다.' }
   }
   const factory = defaultStudioState()

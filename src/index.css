@@ -897,8 +897,11 @@ body {
 }
 
 .mode-tabs {
-  flex: 1 1 420px;
+  flex: 1 1 auto;
   justify-content: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  min-width: 0;
 }
 
 .view-toggle {
@@ -925,10 +928,12 @@ body {
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(0, 0, 0, 0.28);
-  padding: 0.62rem 0.95rem;
+  padding: 0.5rem 0.75rem;
   font-size: var(--ui-fs-nav);
   font-weight: 700;
   color: var(--ui-muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
   transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
 }
 

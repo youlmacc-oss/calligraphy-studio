@@ -8,7 +8,7 @@ import { defaultViewEdit } from './viewEdit.js'
 
 export const STORAGE_KEY = 'styler-studio-pro-v5'
 export const FACTORY_REV_KEY = 'styler-factory-rev'
-export const FACTORY_REV = '2026.08.29-woodcut-lock'
+export const FACTORY_REV = '2026.08.29-woodcut-boot'
 export const DEFAULT_STUDIO_MAIN_SIZE = FONT_SIZE_MAIN_DEFAULT
 export const DEFAULT_STUDIO_PRESET_ID = 'hunmin-woodcut'
 export const DEFAULT_STUDIO_FONT_ID = 'hunmin'
@@ -176,18 +176,12 @@ function wipeLegacyStudioKeys() {
 
 export function loadStudioState() {
   try {
-    const rev = localStorage.getItem(FACTORY_REV_KEY)
-    if (rev !== FACTORY_REV) {
-      wipeLegacyStudioKeys()
-      localStorage.removeItem(STORAGE_KEY)
-      localStorage.setItem(FACTORY_REV_KEY, FACTORY_REV)
-      const next = defaultStudioState()
-      saveStudioState(next)
-      return next
-    }
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultStudioState()
-    return studioFromParsed(JSON.parse(raw))
+    wipeLegacyStudioKeys()
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.setItem(FACTORY_REV_KEY, FACTORY_REV)
+    const next = defaultStudioState()
+    saveStudioState(next)
+    return next
   } catch {
     return defaultStudioState()
   }

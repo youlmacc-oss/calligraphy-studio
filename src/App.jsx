@@ -52,6 +52,7 @@ import {
 import {
   createLayer,
   defaultStudioState,
+  FACTORY_REV,
   loadApiKeys,
   loadStudioState,
   saveApiKeys,
@@ -232,6 +233,10 @@ export default function App() {
   studioRef.current = studio
   leftPanelWidthRef.current = leftPanelWidth
   diagOpenRef.current = diagOpen
+
+  useLayoutEffect(() => {
+    setStudio(defaultStudioState())
+  }, [FACTORY_REV])
 
   useEffect(() => subscribeInspectorHud(setSliceInspectorHud), [])
 
@@ -1152,7 +1157,7 @@ export default function App() {
     <div className={clsx('studio-shell', isResizing && 'is-resizing')} style={{ '--left-panel-width': `${leftPanelWidth}px` }}>
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.08),transparent_45%),radial-gradient(ellipse_at_bottom_right,_rgba(168,85,247,0.08),transparent_40%)]" />
 
-      <header className="app-nav">
+      <header className="app-nav" data-studio-tab={studio.studioTab}>
         <div className="app-nav-inner">
           <h1 className="app-logo">🎨 AI Text Styler Studio Pro</h1>
           <div className="mode-tabs" role="tablist" aria-label="스튜디오 모드">
