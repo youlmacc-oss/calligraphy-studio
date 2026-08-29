@@ -6,7 +6,8 @@ import {
 } from './exportFormats.js'
 import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
-import { FONT_CATEGORIES } from '../presets.js'
+import { DEFAULT_TEXT, FONT_CATEGORIES } from '../presets.js'
+import { DEFAULT_STUDIO_FONT_ID, DEFAULT_STUDIO_MAIN_SIZE, DEFAULT_STUDIO_PRESET_ID, defaultStudioState } from './studioModel.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import {
   clampFontSize,
@@ -604,6 +605,20 @@ export async function checkLayerIsolation(ctx) {
 }
 
 export async function checkDragEngine() {
+  if (DEFAULT_TEXT !== '龍 Dragon 풍정') {
+    return { status: 'error', detail: '기본 문구가 龍 Dragon 풍정과 다릅니다.' }
+  }
+  const factory = defaultStudioState()
+  const main = factory.layers.find((layer) => layer.role === 'main')
+  if (!factory.gridOn) {
+    return { status: 'error', detail: '기본 격자/눈금이 꺼져 있습니다.' }
+  }
+  if (main?.text !== DEFAULT_TEXT || main?.fontId !== DEFAULT_STUDIO_FONT_ID || main?.presetId !== DEFAULT_STUDIO_PRESET_ID || main?.fontSize !== DEFAULT_STUDIO_MAIN_SIZE) {
+    return { status: 'error', detail: '기본 목각 샘플(훈민정음 언해 39px)이 아닙니다.' }
+  }
+  if (factory.studioTab !== 'woodcut' || factory.previewBg !== 'dark' || factory.stickerOn !== false) {
+    return { status: 'error', detail: '기본 스튜디오 탭/배경/스티커가 목각 샘플과 다릅니다.' }
+  }
   const layer = {
     id: 'diag-hit',
     role: 'main',
@@ -627,7 +642,7 @@ export async function checkDragEngine() {
   if (typeof PreviewLightboxModal !== 'function' || !lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
     return { status: 'error', detail: '확대 팝업 체커보드가 없거나 흰 배경이 남아 있습니다.' }
   }
-  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 확대 팝업 checkerboard-bg 고정.' }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 기본 龍 Dragon 풍정 목각 샘플 · 격자 ON · 확대 팝업 checkerboard-bg 고정.' }
 }
 
 export async function checkTypography() {

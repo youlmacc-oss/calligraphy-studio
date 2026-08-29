@@ -205,7 +205,7 @@ export const STUDIO_FONT_GROUP = {
 export const CALLIGRAPHY_PRESET_IDS = ['traditional-calligraphy', 'carved-seal', 'organic-botanical']
 export const WOODCUT_STUDIO_IDS = ['woodblock-print', 'hunmin-woodcut', 'tripitaka-woodcut', 'rye-woodtype', 'pirata-woodcut']
 
-export const DEFAULT_TEXT = '龍 Dragon 풀정'
+export const DEFAULT_TEXT = '龍 Dragon 풍정'
 
 export const CALLIGRAPHY_SHADERS = new Set([
   'calligraphy',

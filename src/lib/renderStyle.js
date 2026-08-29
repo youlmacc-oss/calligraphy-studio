@@ -1,4 +1,4 @@
-import { FONTS, PRESETS } from '../presets.js'
+import { DEFAULT_TEXT, FONTS, PRESETS } from '../presets.js'
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from './fontSize.js'
 import { curveExtraPad } from './proTools.js'
 import { paintStickers } from './stickers.js'
@@ -863,7 +863,7 @@ async function ensureFont(font, fontSize, fontWeight) {
 
 export function displayText(text) {
   const raw = String(text ?? '').replace(/\r\n/g, '\n')
-  return raw.length ? raw : '龍 Dragon 풀정'
+  return raw.length ? raw : DEFAULT_TEXT
 }
 
 export function textLines(text) {
@@ -1322,9 +1322,10 @@ export function hitTestStudio(layers, px, py, viewW, viewH, scale, options = {})
   return null
 }
 
-function drawGrid(ctx, viewW, viewH) {
+function drawGrid(ctx, viewW, viewH, previewBg = 'dark') {
   ctx.save()
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)'
+  const light = previewBg === 'light'
+  ctx.strokeStyle = light ? 'rgba(15, 23, 42, 0.18)' : 'rgba(226, 232, 240, 0.28)'
   ctx.lineWidth = 1
   const step = 48
   for (let i = step; i < viewW; i += step) {
@@ -1339,7 +1340,8 @@ function drawGrid(ctx, viewW, viewH) {
     ctx.lineTo(viewW, i)
     ctx.stroke()
   }
-  ctx.strokeStyle = 'rgba(34,211,238,0.18)'
+  ctx.strokeStyle = light ? 'rgba(8, 145, 178, 0.5)' : 'rgba(34, 211, 238, 0.62)'
+  ctx.lineWidth = 1.25
   ctx.beginPath()
   ctx.moveTo(viewW / 2, 0)
   ctx.lineTo(viewW / 2, viewH)
@@ -1555,7 +1557,7 @@ async function drawStudioScene(ctx, options) {
     ctx.fillRect(0, 0, viewW, viewH)
   } else {
     drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background, options.previewBg || 'dark')
-    if (gridOn) drawGrid(ctx, viewW, viewH)
+    if (gridOn) drawGrid(ctx, viewW, viewH, options.previewBg || 'dark')
   }
   for (const { layer } of layersInPaintOrder(layers)) {
     if (layer.visible === false) continue
@@ -1606,7 +1608,7 @@ export async function drawLivePreview(canvas, options) {
       width: cssW,
       height: cssH,
       scale,
-      transparent: true,
+      transparent: options.transparent === true,
       showOverlay: options.showOverlay !== false,
     })
     if (options.viewEdit) {

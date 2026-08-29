@@ -1,12 +1,14 @@
 import { DEFAULT_TEXT, FONTS, PRESETS } from '../presets.js'
 import {
   FONT_SIZE_EXTRA_DEFAULT,
-  FONT_SIZE_MAIN_DEFAULT,
   FONT_SIZE_SUB_DEFAULT,
 } from './fontSize.js'
 import { defaultViewEdit } from './viewEdit.js'
 
-export const STORAGE_KEY = 'styler-studio-pro-v1'
+export const STORAGE_KEY = 'styler-studio-pro-v2'
+export const DEFAULT_STUDIO_MAIN_SIZE = 39
+export const DEFAULT_STUDIO_PRESET_ID = 'hunmin-woodcut'
+export const DEFAULT_STUDIO_FONT_ID = 'hunmin'
 export const API_STORAGE_KEY = 'styler-api-keys-v1'
 
 let layerSeq = 1
@@ -49,12 +51,13 @@ export function createDefaultLayers() {
       role: 'main',
       name: '메인 타이틀',
       text: DEFAULT_TEXT,
-      fontId: PRESETS[0].fontId,
-      presetId: PRESETS[0].id,
-      fontSize: FONT_SIZE_MAIN_DEFAULT,
-      fontWeight: 700,
+      fontId: DEFAULT_STUDIO_FONT_ID,
+      presetId: DEFAULT_STUDIO_PRESET_ID,
+      fontSize: DEFAULT_STUDIO_MAIN_SIZE,
+      fontWeight: 400,
       opacity: 1,
       oy: 0,
+      color: '#f8fafc',
     }),
     createLayer({
       name: '서브 타이틀',
@@ -74,11 +77,11 @@ export function defaultStudioState() {
   return {
     layers,
     activeLayerId: layers[0].id,
-    presetId: PRESETS[0].id,
-    studioTab: 'allinone',
+    presetId: DEFAULT_STUDIO_PRESET_ID,
+    studioTab: 'woodcut',
     viewMode: 'graphic',
     aspectId: '1:1',
-    stickerOn: true,
+    stickerOn: false,
     stickerTheme: 'fnb',
     chiselDepth: 6,
     roughness: 48,

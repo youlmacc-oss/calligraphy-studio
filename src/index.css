@@ -210,15 +210,15 @@ body {
 }
 
 .layer-guide-box {
-  stroke-width: 1.6;
+  stroke-width: 1.8;
   stroke-dasharray: 6 4;
   vector-effect: non-scaling-stroke;
 }
 
 .layer-guide-center {
-  stroke-width: 1;
+  stroke-width: 1.15;
   stroke-dasharray: 4 5;
-  opacity: 0.9;
+  opacity: 1;
   vector-effect: non-scaling-stroke;
 }
 

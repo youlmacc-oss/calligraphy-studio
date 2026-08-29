@@ -1411,7 +1411,7 @@ export default function App() {
             <button type="button" className="tool-btn" onClick={undo} data-tooltip="실행 취소 (Ctrl+Z)"><Undo2 className="h-3.5 w-3.5" /> Undo</button>
             <button type="button" className="tool-btn" onClick={redo} data-tooltip="다시 실행 (Ctrl+Y)"><Redo2 className="h-3.5 w-3.5" /> Redo</button>
             <button type="button" className="tool-btn" onClick={resetActive} data-tooltip="텍스트를 캔버스 정중앙에 배치"><RotateCcw className="h-3.5 w-3.5" /> 정중앙 정렬</button>
-            <button type="button" className={clsx('tool-btn', studio.gridOn && 'is-on')} onClick={() => patchStudio({ gridOn: !studio.gridOn }, false)} data-tooltip="편집 가이드 격자선 표시 토글">
+            <button type="button" className={clsx('tool-btn', studio.gridOn && 'is-on')} onClick={() => patchStudio({ gridOn: !studio.gridOn }, false)} data-grid-on={studio.gridOn ? '1' : '0'} data-tooltip="편집 가이드 격자선 표시 토글">
               <Grid3x3 className="h-3.5 w-3.5" /> 격자/눈금
             </button>
             <button type="button" className={clsx('tool-btn', studio.layerLocked && 'is-on')} onClick={() => patchStudio({ layerLocked: !studio.layerLocked }, false)} data-tooltip="캔버스 요소 위치 고정 및 잠금 해제">
