@@ -1,4 +1,5 @@
 import { encodeGifFromCanvases as encodeGifSimple } from './gifEncode.js'
+import { primeHqContext } from '../utils/hqRender.js'
 
 function canvasToBlob(canvas, type, quality) {
   return new Promise((resolve) => {
@@ -24,6 +25,7 @@ export async function canvasToJpegBlob(canvas, quality = 0.95) {
   sheet.width = canvas.width
   sheet.height = canvas.height
   const ctx = sheet.getContext('2d')
+  primeHqContext(ctx)
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, sheet.width, sheet.height)
   ctx.drawImage(canvas, 0, 0)
@@ -39,8 +41,7 @@ export function resizeCanvas(source, size) {
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext('2d')
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
+  primeHqContext(ctx)
   const scale = Math.min(size / source.width, size / source.height)
   const w = source.width * scale
   const h = source.height * scale
@@ -170,8 +171,7 @@ export function scaleCanvasToMax(source, maxEdge = 480) {
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = '#07070c'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
+  primeHqContext(ctx)
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
   return canvas
 }

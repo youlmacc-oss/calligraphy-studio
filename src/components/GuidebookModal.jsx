@@ -110,7 +110,11 @@ function FeatureBlock({ feature, startNo, onApplySample }) {
   let next = startNo
   const play = content.play || []
   return (
-    <section id={`guide-sec-${content.sectionId || feature.id}`} className="guide-feature">
+    <section
+      id={`guide-sec-${content.sectionId || feature.id}`}
+      className="guide-feature"
+      data-guide-pipeline={content.sectionId === 'pipeline' ? '1' : undefined}
+    >
       {content.title ? <h3 className="guide-feature-title">{content.title}</h3> : null}
       {content.kicker ? <p className="guide-kicker">{content.kicker}</p> : null}
       {content.sample ? (

@@ -27,7 +27,8 @@ import MotionGifStudioModal from './components/MotionGifStudio/MotionGifStudioMo
 import GuidebookModal from './components/GuidebookModal.jsx'
 import LayerEditCard from './components/LayerEditCard.jsx'
 import LayerGuideOverlay from './components/LayerGuideOverlay.jsx'
-import MenuMagnifierHUD, { magnify } from './components/MenuMagnifierHUD.jsx'
+import { magnify } from './components/MenuMagnifierHUD.jsx'
+import GlobalTooltip from './components/GlobalTooltip.jsx'
 import OnboardingTour from './components/OnboardingTour.jsx'
 import ProgressModal from './components/ProgressModal.jsx'
 import SelfDiagnosticModal from './components/SelfDiagnosticModal.jsx'
@@ -1159,7 +1160,7 @@ export default function App() {
                 role="tab"
                 aria-selected={studio.studioTab === tab.id}
                 onClick={() => handleStudioTab(tab.id)}
-                className={clsx('mode-tab', studio.studioTab === tab.id && 'is-on')}
+                className={clsx('mode-tab tooltip-bottom allow-long-text', studio.studioTab === tab.id && 'is-on')}
                 {...magnify(tab.label, tab.hint)}
               >
                 {tab.label}
@@ -1171,9 +1172,9 @@ export default function App() {
               <button
                 key={item.id}
                 type="button"
-                {...magnify(item.id, item.hint)}
+                data-tooltip="캔버스 비율 전환"
                 onClick={() => patchStudio({ aspectId: item.id })}
-                className={clsx('view-btn', studio.aspectId === item.id && 'is-on')}
+                className={clsx('view-btn tooltip-bottom', studio.aspectId === item.id && 'is-on')}
               >
                 {item.id}
               </button>
@@ -1183,34 +1184,35 @@ export default function App() {
             <button
               type="button"
               onClick={() => patchStudio({ viewMode: 'graphic' }, false)}
-              className={clsx('view-btn', studio.viewMode === 'graphic' && 'is-on')}
-              {...magnify('일반 그래픽 뷰', '색과 효과가 들어간 완성 미리보기를 봅니다')}
+              className={clsx('view-btn tooltip-bottom', studio.viewMode === 'graphic' && 'is-on')}
+              data-tooltip="알파 채널 및 마스크 검증 모드 전환"
             >
-              일반 그래픽 뷰
+              일반 뷰
             </button>
             <button
               type="button"
               onClick={() => patchStudio({ viewMode: 'mask' }, false)}
-              className={clsx('view-btn', studio.viewMode === 'mask' && 'is-on')}
-              {...magnify('AI 흑백 마스크 뷰', 'AI 생성용 흑백 실루엣을 확인합니다')}
+              className={clsx('view-btn tooltip-bottom', studio.viewMode === 'mask' && 'is-on')}
+              data-tooltip="알파 채널 및 마스크 검증 모드 전환"
             >
-              AI 흑백 마스크 뷰
+              마스크 뷰
             </button>
           </div>
           <div className="nav-utility">
             <button
               type="button"
-              className="nav-utility-btn"
+              className="nav-utility-btn tooltip-bottom allow-long-text"
               onClick={() => setDiagOpen(true)}
-              {...magnify('시스템 정밀 자가진단', `${DIAG_STEPS.length}단계 Live HUD로 뷰포트·줌 35%·모드 A/B 분할·Flood T=18·텍스트 상하단·Inspector·ZIP을 실시간 점검합니다`)}
+              {...magnify('시스템 정밀 자가진단', `${DIAG_STEPS.length}단계 Live HUD로 뷰포트·줌 35%·모드 A/B 분할·Flood T=18·3단 텍스트 엔진·확대 팝업 체커보드·Inspector·ZIP을 실시간 점검합니다`)}
             >
               🩺 시스템 정밀 자가진단
             </button>
             <button
               type="button"
-              className="nav-utility-btn is-guide"
+              className="nav-utility-btn is-guide tooltip-bottom allow-long-text"
               onClick={() => setGuideOpen(true)}
-              {...magnify('인터랙티브 가이드북', '간단 설정부터 크롭·블렌드·Grok 프로 마스크 파이프라인까지 실전 조작법을 안내합니다')}
+              data-guide-book="1"
+              {...magnify('인터랙티브 가이드북', '4×5 시트 생성·무손실 분할·모션 ZIP과 3대 모듈 자가진단 활용법을 안내합니다')}
             >
               📖 인터랙티브 가이드북
             </button>
@@ -1405,22 +1407,22 @@ export default function App() {
             </button>
           ) : null}
           <div className="canvas-toolbar" data-tour="nudge">
-            <button type="button" className="tool-btn" onClick={undo} {...magnify('Undo 실행 취소', '바로 이전 작업으로 되돌립니다 (Ctrl+Z)')}><Undo2 className="h-3.5 w-3.5" /> Undo</button>
-            <button type="button" className="tool-btn" onClick={redo} {...magnify('Redo 다시 실행', '취소한 작업을 다시 적용합니다 (Ctrl+Y)')}><Redo2 className="h-3.5 w-3.5" /> Redo</button>
-            <button type="button" className="tool-btn" onClick={resetActive} {...magnify('정중앙 정렬', '선택한 글자를 캔버스 한가운데로 되돌립니다')}><RotateCcw className="h-3.5 w-3.5" /> 🎯 정중앙 정렬</button>
-            <button type="button" className={clsx('tool-btn', studio.gridOn && 'is-on')} onClick={() => patchStudio({ gridOn: !studio.gridOn }, false)} {...magnify('격자 / 눈금', '배치를 돕기 위한 안내선을 켜거나 끕니다')}>
-              <Grid3x3 className="h-3.5 w-3.5" /> 📐 격자/눈금
+            <button type="button" className="tool-btn" onClick={undo} data-tooltip="실행 취소 (Ctrl+Z)"><Undo2 className="h-3.5 w-3.5" /> Undo</button>
+            <button type="button" className="tool-btn" onClick={redo} data-tooltip="다시 실행 (Ctrl+Y)"><Redo2 className="h-3.5 w-3.5" /> Redo</button>
+            <button type="button" className="tool-btn" onClick={resetActive} data-tooltip="텍스트를 캔버스 정중앙에 배치"><RotateCcw className="h-3.5 w-3.5" /> 정중앙 정렬</button>
+            <button type="button" className={clsx('tool-btn', studio.gridOn && 'is-on')} onClick={() => patchStudio({ gridOn: !studio.gridOn }, false)} data-tooltip="편집 가이드 격자선 표시 토글">
+              <Grid3x3 className="h-3.5 w-3.5" /> 격자/눈금
             </button>
-            <button type="button" className={clsx('tool-btn', studio.layerLocked && 'is-on')} onClick={() => patchStudio({ layerLocked: !studio.layerLocked }, false)} {...magnify('위치 잠금', '실수로 글자를 드래그하지 않도록 고정합니다')}>
+            <button type="button" className={clsx('tool-btn', studio.layerLocked && 'is-on')} onClick={() => patchStudio({ layerLocked: !studio.layerLocked }, false)} data-tooltip="캔버스 요소 위치 고정 및 잠금 해제">
               {studio.layerLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
-              {studio.layerLocked ? '🔒 위치 잠금' : '위치 잠금 해제'}
+              {studio.layerLocked ? '위치 잠금' : '잠금 해제'}
             </button>
             <button
               type="button"
               className={clsx('tool-btn', isGifStudioOpen && 'is-on')}
               onClick={openGifStudio}
               data-tour="gif-export"
-              {...magnify('모션 GIF 스튜디오', '독립 3단 모션 GIF 스튜디오를 열고 현재 캔버스를 소스로 전달합니다')}
+              data-tooltip="움직이는 무한루프 GIF 제작 스튜디오 열기"
             >
               🎬 모션 GIF 스튜디오
             </button>
@@ -1429,7 +1431,7 @@ export default function App() {
               className={clsx('tool-btn', emoSplitOpen && 'is-on')}
               onClick={() => setEmoSplitOpen(true)}
               data-tour="emo-split"
-              {...magnify('이모티콘 시트 분할기', '2열 와이드 스튜디오에서 시트를 나누고, 하단 텍스트만 색 보정한 360×360 ZIP을 받습니다')}
+              data-tooltip="28구 이모티콘 시트 자동 분할 도구 열기"
             >
               🧩 이모티콘 시트 분할기
             </button>
@@ -1437,7 +1439,7 @@ export default function App() {
               type="button"
               className={clsx('tool-btn', tourOpen && 'is-on')}
               onClick={startTour}
-              {...magnify('빠른 시작 투어', '핵심 버튼 4곳을 순서대로 안내합니다')}
+              data-tooltip="핵심 버튼 4곳을 순서대로 안내합니다"
             >
               ❓ 빠른 시작 투어
             </button>
@@ -1451,28 +1453,28 @@ export default function App() {
               type="button"
               className={clsx('edit-tool', cropMode && 'is-on')}
               onClick={() => (cropMode ? cancelCrop() : beginCrop())}
-              {...magnify('자유 자르기 / 크롭', '원하는 영역만 남기고 캔버스를 자릅니다')}
+              data-tooltip="캔버스 영역 크롭"
             >
-              <Scissors className="h-4 w-4" /> ✂️ 자유 자르기 / 크롭
+              <Scissors className="h-4 w-4" /> 자유 자르기 / 크롭
             </button>
-            <button type="button" className="edit-tool" onClick={rotateCanvas90} {...magnify('90° 시계방향 회전', '화면 전체를 오른쪽으로 한 번 돌립니다')}>
-              <RotateCw className="h-4 w-4" /> 🔄 90° 시계방향
+            <button type="button" className="edit-tool" onClick={rotateCanvas90} data-tooltip="90도 회전">
+              <RotateCw className="h-4 w-4" /> 90° 시계방향
             </button>
             <button
               type="button"
               className={clsx('edit-tool', viewEdit.flipH && 'is-on')}
               onClick={() => patchViewEdit({ flipH: !viewEdit.flipH })}
-              {...magnify('좌우 반전', '이미지를 거울처럼 가로로 뒤집습니다')}
+              data-tooltip="좌우 뒤집기"
             >
-              <FlipHorizontal2 className="h-4 w-4" /> ↔ 좌우 반전
+              <FlipHorizontal2 className="h-4 w-4" /> 좌우 반전
             </button>
             <button
               type="button"
               className={clsx('edit-tool', viewEdit.flipV && 'is-on')}
               onClick={() => patchViewEdit({ flipV: !viewEdit.flipV })}
-              {...magnify('상하 반전', '이미지를 세로로 뒤집습니다')}
+              data-tooltip="상하 뒤집기"
             >
-              <FlipVertical2 className="h-4 w-4" /> ↕ 상하 반전
+              <FlipVertical2 className="h-4 w-4" /> 상하 반전
             </button>
             <div className="filter-popover-wrap">
               <button
@@ -1625,16 +1627,30 @@ export default function App() {
               aria-live="polite"
               aria-label="실시간 텍스트 인포 바"
               data-tour="live-hud"
-              {...magnify('실시간 텍스트 인포 바', '선택한 레이어의 글자 수, 폰트, 좌표, 프리셋이 캔버스 아래에 바로 반영됩니다')}
             >
-              <span className={clsx('live-status-hud__badge', `is-${liveStatus.badge.tone}`)}>
+              <span
+                className={clsx('live-status-hud__badge', `is-${liveStatus.badge.tone}`)}
+                data-tooltip={
+                  liveStatus.badge.tone === 'main'
+                    ? '현재 선택된 편집 레이어: 메인 타이틀 레이어'
+                    : liveStatus.badge.tone === 'sub'
+                      ? '현재 선택된 편집 레이어: 서브 타이틀 레이어'
+                      : '현재 선택된 편집 레이어: 추가 텍스트 레이어'
+                }
+              >
                 [{liveStatus.badge.text}]
               </span>
-              <span className="live-status-hud__chip">
+              <span
+                className="live-status-hud__chip"
+                data-tooltip="현재 입력된 텍스트 총 글자 수 및 줄 수 현황"
+              >
                 <span className="live-status-hud__label">글자</span>
                 <span className="live-status-hud__value">{liveStatus.stats}</span>
               </span>
-              <span className="live-status-hud__chip">
+              <span
+                className="live-status-hud__chip"
+                data-tooltip={`현재 적용 폰트: ${liveStatus.fontName} | 크기: ${liveStatus.fontSize}px | 자간: ${liveStatus.tracking}px | 행간: ${liveStatus.leading}배`}
+              >
                 <span className="live-status-hud__label">폰트</span>
                 <span className="live-status-hud__value">
                   {liveStatus.fontName}
@@ -1646,7 +1662,10 @@ export default function App() {
                   행간 {liveStatus.leading}배
                 </span>
               </span>
-              <span className="live-status-hud__chip">
+              <span
+                className="live-status-hud__chip"
+                data-tooltip={`캔버스 내 위치: X: ${liveStatus.x}, Y: ${liveStatus.y} | 회전각: ${liveStatus.rotation}° | 불투명도: ${liveStatus.opacity}%`}
+              >
                 <span className="live-status-hud__label">캔버스</span>
                 <span className="live-status-hud__value">
                   좌표(X: {liveStatus.x}, Y: {liveStatus.y})
@@ -1656,11 +1675,17 @@ export default function App() {
                   투명도({liveStatus.opacity}%)
                 </span>
               </span>
-              <span className="live-status-hud__chip">
+              <span
+                className="live-status-hud__chip"
+                data-tooltip="현재 적용된 올인원 원클릭 스타일 프리셋"
+              >
                 <span className="live-status-hud__label">프리셋</span>
                 <span className="live-status-hud__value">{liveStatus.presetName}</span>
               </span>
-              <span className="live-status-hud__chip">
+              <span
+                className="live-status-hud__chip"
+                data-tooltip={`실시간 렌더링 엔진 상태: ${renderHud.fps} FPS (프레임 렌더 타임: ${renderHud.ms}ms, 상태: ${renderHud.label})`}
+              >
                 <span className="live-status-hud__label">엔진</span>
                 <span className={clsx('live-status-hud__value', `is-perf-${renderHud.status}`)}>
                   {renderHud.fps} FPS
@@ -1673,7 +1698,7 @@ export default function App() {
               {sliceInspectorHud.status === 'warn' && sliceInspectorHud.suspectCount > 0 ? (
                 <span
                   className="live-status-hud__chip live-status-hud__warn"
-                  title="이모티콘 슬라이스 진단에서 결함이 감지되었습니다. 분할기의 [🐞 진단 로그]를 복사하세요."
+                  data-tooltip="이모티콘 슬라이스 진단에서 결함이 감지되었습니다. 분할기의 [🐞 진단 로그]를 복사하세요."
                 >
                   <span className="live-status-hud__label">슬라이스</span>
                   <span className="live-status-hud__value">⚠ {sliceInspectorHud.suspectCount}</span>
@@ -1845,7 +1870,7 @@ export default function App() {
         promptPreview={promptPack.positive}
         onDownloadResult={() => downloadFile(aiResultUrl, 'ai-final')}
       />
-      <MenuMagnifierHUD />
+      <GlobalTooltip />
       <SelfDiagnosticModal
         open={diagOpen}
         onClose={closeDiag}

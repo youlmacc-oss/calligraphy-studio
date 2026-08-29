@@ -1,8 +1,17 @@
 import { clampLoopSeconds, paintMotionFrame } from './motionPresets.js'
-import { delayMsFromOptions, encodeRgbaFrames, wrapGifBytes } from './gifEncodeCore.js'
+import { delayMsFromOptions, encodeRgbaFrames, wrapGifBytes, maskRgbaTransparency, ALPHA_CUT } from './gifEncodeCore.js'
+import { primeHqContext } from '../../utils/hqRender.js'
+import { applyBilateralEdgePreserve } from '../../utils/imageProcessor.js'
 
 function yieldFrame() {
-  return new Promise((resolve) => setTimeout(resolve, 0))
+  return new Promise((resolve) => {
+    const kick = () => setTimeout(resolve, 0)
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(kick)
+      return
+    }
+    kick()
+  })
 }
 
 export function countGifFrames(fps, loopSeconds) {
@@ -102,7 +111,7 @@ export async function encodeMotionGif({
   height,
   fps = 12,
   loopSeconds = 2,
-  preset = 'jellyBounce',
+  preset = 'none',
   intensity = 70,
   onProgress,
   signal,
@@ -114,7 +123,8 @@ export async function encodeMotionGif({
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
+  primeHqContext(ctx)
   const frames = []
   onProgress?.(0, 0, frameCount, 'render')
   try {
@@ -128,7 +138,8 @@ export async function encodeMotionGif({
         intensity,
       })
       const pixels = ctx.getImageData(0, 0, w, h)
-      frames.push({ data: new Uint8ClampedArray(pixels.data), width: w, height: h })
+      applyBilateralEdgePreserve(pixels, { mix: 0.52 })
+      frames.push({ data: maskRgbaTransparency(pixels.data, ALPHA_CUT), width: w, height: h })
       onProgress?.(Math.round(((i + 1) / frameCount) * 45), i + 1, frameCount, 'render')
       await yieldFrame()
     }
@@ -137,6 +148,7 @@ export async function encodeMotionGif({
       height: h,
       fps,
       transparent: true,
+      alphaThreshold: ALPHA_CUT,
       signal,
       onProgress: (pct, index, total) => {
         onProgress?.(45 + Math.round(pct * 0.55), index, total, 'encode')

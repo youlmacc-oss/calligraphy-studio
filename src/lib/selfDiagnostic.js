@@ -1,5 +1,6 @@
 import { DIAG_STEPS, getDiagnosticFeatures } from './featureRegistry.js'
-import { enrichDiagnosticWithPipeline } from './diagnosticChecks.js'
+import { enrichDiagnosticWithPipeline, compareLiveToGoldenBaseline } from './diagnosticChecks.js'
+import { GOLDEN_BASELINE } from '../utils/diagnosticsBaseline.js'
 import { saveFavoriteFonts, loadFavoriteFonts } from './fontFavorites.js'
 import { inspectStudioFonts, preloadStudioFonts } from './fontPreload.js'
 
@@ -49,7 +50,7 @@ export async function runLiveDiagnostics({
   const log = (message, level = 'INFO') => {
     onLog?.({ at: stamp(), level, message })
   }
-  log(`Live Diagnostic HUD online. ${steps.length}-step registry scan started.`)
+  log(`Live Diagnostic HUD online. ${steps.length}-step registry scan · 3-engine text · lightbox checkerboard · Golden Baseline ${GOLDEN_BASELINE.version}.`)
   const checks = []
   for (let index = 0; index < steps.length; index += 1) {
     if (signal?.aborted) break
@@ -98,12 +99,28 @@ export async function runLiveDiagnostics({
     : 0
   const health = Math.round(((score.ok + score.warn * 0.6) / Math.max(1, checks.length)) * 100)
   const aborted = Boolean(signal?.aborted)
+  const baseline = compareLiveToGoldenBaseline()
+  if (!baseline.ok) {
+    log(`Golden Baseline drift · ${baseline.detail}`, 'ERROR')
+  } else {
+    log(`Golden Baseline ${baseline.version} locked.`, 'INFO')
+  }
   if (aborted) {
     log(`Scan aborted at ${checks.length}/${steps.length}.`, 'WARN')
   } else {
-    log(`Scan complete. [${steps.length}/${steps.length}] 100% · Health ${health}% · avg ${avg}ms`)
+    log(`Scan complete. [${steps.length}/${steps.length}] 100% · Health ${health}% · avg ${avg}ms · ${baseline.detail}`)
   }
-  return { checks, score, avg, health, ranAt: Date.now(), total: steps.length, aborted }
+  return {
+    checks,
+    score,
+    avg,
+    health: baseline.ok ? health : Math.min(health, 70),
+    ranAt: Date.now(),
+    total: steps.length,
+    aborted,
+    baselineVersion: GOLDEN_BASELINE.version,
+    baseline,
+  }
 }
 
 export async function optimizeStudio({ onRevoke, onLog } = {}) {

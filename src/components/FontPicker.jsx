@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Star, Upload } from 'lucide-react'
-import { DEFAULT_TEXT, FONT_GROUPS, FONTS, getFontMeta } from '../presets.js'
+import { Check, ChevronDown, Star, Upload } from 'lucide-react'
+import { DEFAULT_TEXT, FONT_CATEGORIES, FONT_TAB_LABELS, FONT_TAB_TOOLTIPS, FONTS, getFontMeta } from '../presets.js'
 import { resolveWeight } from '../lib/renderStyle.js'
 import { CUSTOM_FONT_GROUP, isFontFile } from '../lib/customFonts.js'
 
@@ -11,12 +11,30 @@ const SCROLL_EDGE = 4
 const FAVORITES_GROUP = {
   id: 'favorites',
   tag: '⭐ 즐겨찾기',
-  label: '애용 글꼴 빠른 선택',
-  hint: '메인/서브가 공유하는 별표 목록',
+  label: '⭐ 즐겨찾기',
+  hint: '즐겨찾기한 글꼴만 빠르게 고릅니다',
+  tooltip: '즐겨찾기한 글꼴만 빠르게 고릅니다',
+}
+
+function CategoryTabButton({ cat, active, onSelect }) {
+  const label = FONT_TAB_LABELS[cat.id] || cat.label
+  const tooltip = FONT_TAB_TOOLTIPS[cat.id] || cat.tooltip
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={clsx('font-cat-tab', active && 'is-on', cat.id === 'favorites' && 'is-fav')}
+      data-tooltip={tooltip}
+      onClick={() => onSelect(cat.id)}
+    >
+      {label}
+    </button>
+  )
 }
 
 function pickerGroups() {
-  return [FAVORITES_GROUP, CUSTOM_FONT_GROUP, ...FONT_GROUPS]
+  return [FAVORITES_GROUP, CUSTOM_FONT_GROUP, ...FONT_CATEGORIES]
 }
 
 function CategoryTabRail({ groups, activeId, onSelect }) {
@@ -118,26 +136,22 @@ function CategoryTabRail({ groups, activeId, onSelect }) {
         type="button"
         className={clsx('font-cat-arrow', !canPrev && 'is-disabled')}
         aria-label="이전 카테고리"
-        title="◀ 이전 카테고리"
+        data-tooltip="◀ 이전 카테고리"
         disabled={!canPrev}
         onClick={() => slideBy(-1)}
       >
-        <ChevronLeft className="h-5 w-5" strokeWidth={2.6} />
+        ◀
       </button>
 
       <div className="font-cat-scroll-wrap">
         <div className="font-cat-tabs" ref={scrollerRef} role="tablist" aria-label="폰트 카테고리">
-          {groups.map((group) => (
-            <button
-              key={group.id}
-              type="button"
-              role="tab"
-              aria-selected={activeId === group.id}
-              className={clsx('font-cat-tab', activeId === group.id && 'is-on', group.id === 'favorites' && 'is-fav')}
-              onClick={() => onSelect(group.id)}
-            >
-              {group.tag}
-            </button>
+          {groups.map((cat) => (
+            <CategoryTabButton
+              key={cat.id}
+              cat={cat}
+              active={activeId === cat.id}
+              onSelect={onSelect}
+            />
           ))}
         </div>
         <div
@@ -165,11 +179,11 @@ function CategoryTabRail({ groups, activeId, onSelect }) {
         type="button"
         className={clsx('font-cat-arrow', !canNext && 'is-disabled')}
         aria-label="다음 카테고리"
-        title="다음 카테고리 ▶"
+        data-tooltip="다음 카테고리 ▶"
         disabled={!canNext}
         onClick={() => slideBy(1)}
       >
-        <ChevronRight className="h-5 w-5" strokeWidth={2.6} />
+        ▶
       </button>
     </div>
   )
@@ -205,10 +219,10 @@ export default function FontPicker({
   const hovered = catalog.find((item) => item.id === hoverId) ?? null
   const guideFont = hovered ?? current
   const currentMeta = current.custom
-    ? { tag: '📂 내 폰트', mood: '내 PC에서 올린 글꼴', use: '이 레이어에 즉시 적용', blurb: 'FontFace로 등록된 커스텀 폰트입니다.', guide: '업로드한 글꼴은 이 브라우저 세션에서 바로 쓰입니다.' }
+    ? { tag: '📂 내 글꼴', mood: '내 PC에서 올린 글꼴', use: '이 레이어에 즉시 적용', blurb: 'FontFace로 등록된 커스텀 폰트입니다.', guide: '업로드한 글꼴은 이 브라우저 세션에서 바로 쓰입니다.' }
     : getFontMeta(current)
   const guideMeta = guideFont.custom
-    ? { tag: '📂 내 폰트', mood: '내 PC에서 올린 글꼴', use: '이 레이어에 즉시 적용', blurb: 'FontFace로 등록된 커스텀 폰트입니다.', guide: '업로드한 글꼴은 이 브라우저 세션에서 바로 쓰입니다.' }
+    ? { tag: '📂 내 글꼴', mood: '내 PC에서 올린 글꼴', use: '이 레이어에 즉시 적용', blurb: 'FontFace로 등록된 커스텀 폰트입니다.', guide: '업로드한 글꼴은 이 브라우저 세션에서 바로 쓰입니다.' }
     : getFontMeta(guideFont)
 
   useEffect(() => {
@@ -320,9 +334,9 @@ export default function FontPicker({
     <div className="font-picker" ref={rootRef}>
       <button
         type="button"
-        className="font-picker-trigger"
-        data-tooltip-title="폰트 선택"
-        data-tooltip-desc="이 레이어에 쓸 글꼴을 고릅니다. 목록은 미리보기로 확인하세요."
+        className="font-picker-trigger allow-long-text"
+        data-label-exempt="true"
+        data-tooltip="이 레이어에 쓸 글꼴을 고릅니다. 목록은 미리보기로 확인하세요."
         onClick={() => {
           if (open) {
             setHoverId(null)
@@ -347,7 +361,7 @@ export default function FontPicker({
             {previewLine || SAMPLE}
           </span>
         </span>
-        <ChevronDown className={clsx('h-5 w-5 shrink-0 text-cyan-300 transition', open && 'rotate-180')} />
+        <ChevronDown aria-hidden="true" className={clsx('h-5 w-5 shrink-0 text-cyan-300 transition', open && 'rotate-180')} />
       </button>
 
       <div className={clsx('font-guide', hovered && 'is-hover')}>
@@ -389,7 +403,12 @@ export default function FontPicker({
               <strong>내 PC 폰트 올리기</strong>
               <p>TTF / OTF / WOFF를 끌어다 놓거나 선택</p>
             </div>
-            <button type="button" className="mini-btn" onClick={() => fileRef.current?.click()}>
+            <button
+              type="button"
+              className="mini-btn"
+              data-tooltip="TTF/OTF/WOFF 글꼴 파일을 이 브라우저에 등록"
+              onClick={() => fileRef.current?.click()}
+            >
               파일 선택
             </button>
             <input
@@ -410,26 +429,24 @@ export default function FontPicker({
             onSelect={selectGroup}
           />
 
-          {groups.map((group) => {
-            const expanded = openGroup === group.id
-            const fonts = group.id === 'favorites'
+          {groups.map((cat) => {
+            const expanded = openGroup === cat.id
+            const fonts = cat.id === 'favorites'
               ? catalog.filter((item) => favoriteSet.has(item.id))
-              : group.id === 'custom'
+              : cat.id === 'custom'
                 ? extraFonts
-                : FONTS.filter((item) => item.group === group.id)
+                : FONTS.filter((item) => item.group === cat.id)
             return (
-              <div key={group.id} className={clsx('font-picker-group', expanded && 'is-open')}>
+              <div key={cat.id} className={clsx('font-picker-group', expanded && 'is-open')}>
                 <button
                   type="button"
                   className="font-acc-head"
-                  onClick={() => selectGroup(group.id)}
+                  data-tooltip={FONT_TAB_TOOLTIPS[cat.id] || cat.tooltip}
                   aria-expanded={expanded}
+                  onClick={() => selectGroup(cat.id)}
                 >
-                  <span>
-                    <span className="block text-[15px] font-bold text-slate-50">{group.tag} {group.label}</span>
-                    <span className="mt-0.5 block text-[13px] text-slate-200">{group.hint} · {fonts.length}종</span>
-                  </span>
-                  <ChevronDown className={clsx('h-4 w-4 text-cyan-200 transition', expanded && 'rotate-180')} />
+                  {FONT_TAB_LABELS[cat.id] || cat.label}
+                  <span className="font-acc-chevron" aria-hidden="true" />
                 </button>
                 {expanded && (
                   <div className="font-acc-body" onMouseLeave={leaveList}>
@@ -447,7 +464,9 @@ export default function FontPicker({
                             type="button"
                             role="option"
                             aria-selected={selected}
-                            className="font-picker-pick"
+                            className="font-picker-pick allow-long-text"
+                            data-label-exempt="true"
+                            data-tooltip={`${item.label} 글꼴 적용`}
                             onFocus={(event) => previewHover(item, event)}
                             onClick={() => pickFont(item)}
                           >
@@ -459,27 +478,27 @@ export default function FontPicker({
                                 {previewLine || SAMPLE}
                               </span>
                             </span>
-                            {selected ? <Check className="h-4 w-4 shrink-0 text-cyan-300" /> : null}
+                            {selected ? <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-cyan-300" /> : null}
                           </button>
                           <button
                             type="button"
                             className={clsx('font-fav-btn', favored && 'is-on')}
                             aria-label={favored ? `${item.label} 즐겨찾기 해제` : `${item.label} 즐겨찾기 추가`}
                             aria-pressed={favored}
-                            title={favored ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                            data-tooltip={favored ? '즐겨찾기 해제' : '즐겨찾기 추가'}
                             onClick={(event) => {
                               event.preventDefault()
                               event.stopPropagation()
                               onToggleFavorite?.(item.id)
                             }}
                           >
-                            <Star className="h-4 w-4" fill={favored ? 'currentColor' : 'none'} />
+                            <Star aria-hidden="true" className="h-4 w-4" fill={favored ? 'currentColor' : 'none'} />
                           </button>
                         </div>
                       )
                     }) : (
                       <p className="font-fav-empty">
-                        {group.id === 'custom'
+                        {cat.id === 'custom'
                           ? '위쪽에 TTF/OTF/WOFF를 올리면 이 목록에 나타납니다.'
                           : '아직 즐겨찾기가 없습니다. 다른 탭에서 글꼴 우측 ⭐를 누르면 여기에 모입니다.'}
                       </p>
@@ -497,7 +516,7 @@ export default function FontPicker({
             <div className="font-preview-card" style={{ left: card.left, top: card.top }} data-no-magnifier>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-base font-semibold text-white">{hovered.label}</p>
-                <span className="font-preview-tag">{hovered.custom ? '📂 내 폰트' : getFontMeta(hovered).tag}</span>
+                <span className="font-preview-tag">{hovered.custom ? '📂 내 글꼴' : getFontMeta(hovered).tag}</span>
               </div>
               <div
                 className="font-preview-sample"

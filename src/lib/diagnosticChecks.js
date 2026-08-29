@@ -6,6 +6,7 @@ import {
 } from './exportFormats.js'
 import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
+import { FONT_CATEGORIES } from '../presets.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import {
   clampFontSize,
@@ -29,9 +30,28 @@ import {
   EMO_SIDE_MIN,
   enhanceSliceImageData,
   equalSplitGuides,
+  CROP_EDGE_INSET,
   fitToKakaoCanvas,
   floodFillAlphaKey,
   applyFloodFillTransparency,
+  processHighQualitySmartSplit,
+  processHighQualityCrop,
+  extractCleanEmoticonCell,
+  detectSmartEmoticonGrid,
+  generateSheetGrid,
+  getRecommendedGrid,
+  guessStickerGridShape,
+  handleDefaultSheetUpload,
+  handleSheetAutoDetection,
+  isAcceptedSheetFile,
+  isOverSplitSmartGrid,
+  PNG_GUIDE_BODY,
+  SHEET_GRID_PRESETS,
+  processHybridSheetCell,
+  sniffCanvasHasAlpha,
+  PNG_GUIDE_OK_LABEL,
+  PNG_GUIDE_HIDE_LABEL,
+  captionForCutIndex,
   FLOOD_FILL_TOLERANCE,
   insertGuide,
   KAKAO_FIT_RATIO,
@@ -52,6 +72,21 @@ import {
   stepPreviewZoomPercent,
   TEXT_ZONE_DEFAULT,
   TEXT_ZONE_ANCHOR_DEFAULT,
+  TEXT_RECOLOR_BYPASS,
+  TEXT_ROI_HARD_LOCK,
+  TEXT_STROKE_PRESERVE,
+  TEXT_ENGINE_DEFAULT,
+  TEXT_ENGINE_MODES,
+  TEXT_ENGINE_ORIGINAL,
+  TEXT_ENGINE_SMART_RECOLOR,
+  TEXT_ENGINE_VECTOR_OVERLAY,
+  applyTextEngine,
+  characterReadOnlyCeil,
+  normalizeTextEngineMode,
+  paintCutCaption,
+  CHARACTER_LOCK_RATIO,
+  CHARACTER_WRITE_FLOOR_RATIO,
+  SPLITTER_LIVE_REV,
   PUNCH_HOLES_DEFAULT,
   VIEW_BG_DEFAULT,
   cycleViewBgMode,
@@ -60,6 +95,54 @@ import {
   textZoneStartY,
 } from './emoticonSplit.js'
 import { inspectRenderedSlice } from '../utils/debugger.js'
+import { GUIDEBOOK_SECTIONS } from './guidebookSections.js'
+import { evaluateSystemDiagnostics, exportFullDiagnosticLog } from './systemDiagnostics.js'
+import PreviewLightboxModal from '../components/PreviewLightboxModal.jsx'
+import {
+  GOLDEN_BASELINE,
+  auditFrozenGoldenBaseline,
+} from '../utils/diagnosticsBaseline.js'
+import { HQ_KERNEL, polishHqImageData } from '../utils/hqRender.js'
+import { applyBilateralEdgePreserve, applyDefringeToContext, defringeAlphaEdge, featherAlphaEdge, resamplePremultiplied } from '../utils/imageProcessor.js'
+import { MOTION_NONE, MOTION_PRESETS, sampleMotion as sampleGifPreset, isMotionNone } from '../components/MotionGifStudio/motionPresets.js'
+import {
+  SEQUENCE_FPS_DEFAULT,
+  SEQUENCE_FPS_MAX,
+  SEQUENCE_FPS_MIN,
+  clampSequenceFps,
+  expandPingPong,
+  moveSequenceItem,
+  pingPongPlayIndex,
+  resolvePlaybackFrames,
+  stillLoopFrameCount,
+  captionLoopIndex,
+} from '../components/MotionStudio/motionSequencer.js'
+import {
+  sampleTextMotion,
+  TEXT_MOTION_EFFECTS,
+  TEXT_MOTION_BOUNCE,
+  TEXT_MOTION_NONE,
+  TEXT_MOTION_PULSE,
+  TEXT_MOTION_TYPEWRITER,
+  resolveCaption,
+  captionForSequenceItem,
+} from '../components/MotionStudio/dynamicTextMotion.js'
+import { paintDynamicTextMotion, paintLiveCaptionLayer } from '../components/MotionStudio/DynamicTextMotionRenderer.js'
+import { PARTICLE_LAYERS } from '../components/MotionStudio/particleOverlayEngine.js'
+import { estimateStoreSpec } from '../components/MotionStudio/storeSpecHud.js'
+import { STUDIO_HUD_STEPS } from './studioHudChecks.js'
+import MotionPreviewCanvas from '../components/MotionStudio/MotionPreviewCanvas.jsx'
+import MotionSequencerPanel from '../components/MotionStudio/MotionSequencerPanel.jsx'
+import MotionEffectSelector from '../components/MotionStudio/MotionEffectSelector.jsx'
+import CaptionControlBar from '../components/MotionStudio/CaptionControlBar.jsx'
+import MotionExportPanel from '../components/MotionStudio/MotionExportPanel.jsx'
+import EncodeProgressModal from '../components/MotionStudio/EncodeProgressModal.jsx'
+import MotionClipManager from '../components/MotionStudio/MotionClipManager.jsx'
+import MotionZipToolbarButton from '../components/MotionStudio/MotionZipToolbarButton.jsx'
+import ChatRoomSimulator, { mirrorPreviewFrame } from '../components/MotionStudio/ChatRoomSimulator.jsx'
+import { ENCODER_SIZE, composeSequenceCanvases, composeStillMotionCanvases, encodeGifFromCanvases as encodeMotionGif, yieldToMain, frameProgressCopy } from '../utils/encoder/MotionEncoderEngine.js'
+import { isAnimatedWebp, muxAnimatedWebp } from '../utils/encoder/webpAnimMux.js'
+import { createSequenceClip, motionClipFileName } from '../utils/encoder/BatchExportEngine.js'
 import JSZip from 'jszip'
 import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
@@ -95,19 +178,81 @@ function cssBlobFor(selectorPart) {
   return chunks.join('\n')
 }
 
+function goldenGridCutCount() {
+  const { grid, targetCanvas } = GOLDEN_BASELINE.splitter
+  return splitGridBoxes(
+    targetCanvas.width * grid.cols,
+    targetCanvas.height * grid.rows,
+    grid.cols,
+    grid.rows,
+  ).length
+}
+
+function readLiveTooltipBaseline() {
+  const expectedId = GOLDEN_BASELINE.uiIntegrity.requiredFloatingEngineId
+  if (typeof document === 'undefined') {
+    return { engineId: '', tooltipFontSize: '' }
+  }
+  const node = document.getElementById(expectedId)
+  return {
+    engineId: node ? expectedId : '',
+    tooltipFontSize: node && typeof getComputedStyle === 'function'
+      ? getComputedStyle(node).fontSize
+      : '',
+  }
+}
+
+export function compareLiveToGoldenBaseline(extra = {}) {
+  return auditFrozenGoldenBaseline({
+    floodTolerance: FLOOD_FILL_TOLERANCE,
+    canvasWidth: KAKAO_STICKER_SIZE,
+    canvasHeight: KAKAO_STICKER_SIZE,
+    cutCount: goldenGridCutCount(),
+    textEngineDefault: TEXT_ENGINE_DEFAULT,
+    textEngineModes: TEXT_ENGINE_MODES.map((item) => item.id),
+    presetIds: MOTION_PRESETS.map((item) => item.id),
+    ...readLiveTooltipBaseline(),
+    ...extra,
+  })
+}
+
+function withGoldenBaseline(result, slice = 'all') {
+  if (!result?.status) return result
+  const audit = compareLiveToGoldenBaseline()
+  const part = slice === 'all' ? audit : audit[slice]
+  if (!part) return result
+  const fail = part.fail || []
+  const version = GOLDEN_BASELINE.version
+  if (fail.length === 0) {
+    return { ...result, detail: `${result.detail} · baseline ${version}` }
+  }
+  const drift = fail.map((row) => row.detail).join(' · ')
+  if (result.status === 'error') {
+    return { ...result, detail: `${result.detail} · BASELINE DRIFT ${drift}` }
+  }
+  return { status: 'error', detail: `BASELINE DRIFT ${drift}` }
+}
+
 export function enrichDiagnosticWithPipeline(stepId, result) {
   if (!result?.status) return result
   const extra = assertPipelineHud(stepId)
-  if (!extra) return result
-  if (result.status === 'error') return result
-  if (extra.status === 'error') return extra
-  if (extra.status === 'warn' && result.status === 'ok') {
-    return { status: 'warn', detail: `${result.detail} · ${extra.detail}` }
+  let merged = result
+  if (extra) {
+    if (result.status === 'error') {
+      merged = result
+    } else if (extra.status === 'error') {
+      merged = extra
+    } else if (extra.status === 'warn' && result.status === 'ok') {
+      merged = { status: 'warn', detail: `${result.detail} · ${extra.detail}` }
+    } else if (result.status === 'ok' && extra.detail) {
+      merged = { status: 'ok', detail: `${result.detail} · ${extra.detail}` }
+    }
   }
-  if (result.status === 'ok' && extra.detail) {
-    return { status: 'ok', detail: `${result.detail} · ${extra.detail}` }
-  }
-  return result
+  if (stepId === 'fps-pipeline') return withGoldenBaseline(merged, 'all')
+  if (stepId === 'gif-engine') return withGoldenBaseline(merged, 'motion')
+  if (stepId === 'live-hud') return withGoldenBaseline(merged, 'ui')
+  if (stepId === 'export' || stepId === 'emoticon-slicer' || stepId === 'text-engine') return withGoldenBaseline(merged, 'splitter')
+  return merged
 }
 
 function assertPipelineHud(stepId) {
@@ -155,7 +300,14 @@ function assertPipelineHud(stepId) {
       if (VIEW_BG_DEFAULT !== 'checker' || cycleViewBgMode('checker') !== 'dark' || cycleViewBgMode('light') !== 'checker') {
         return { status: 'error', detail: '체커보드/다크/라이트 배경 모드 순환이 실패했습니다.' }
       }
-      return { status: 'ok', detail: '배경 모드 순환 확인' }
+      if (typeof PreviewLightboxModal !== 'function') {
+        return { status: 'error', detail: '확대 미리보기 팝업이 없습니다.' }
+      }
+      const lightboxSrc = String(PreviewLightboxModal)
+      if (!lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
+        return { status: 'error', detail: '확대 팝업 체커보드가 없거나 bg-white가 남아 있습니다.' }
+      }
+      return { status: 'ok', detail: '배경 모드 순환 · 확대 팝업 격자 고정' }
     }
     case 'type': {
       const keep = splitDoubleHeightBoxes([{ x: 0, y: 0, w: 40, h: 40 }, { x: 50, y: 0, w: 40, h: 40 }])
@@ -194,40 +346,96 @@ function assertPipelineHud(stepId) {
       return { status: 'ok', detail: '업로드 직후 기본 연산값 확인' }
     }
     case 'export': {
-      if (FLOOD_FILL_TOLERANCE !== 18) {
-        return { status: 'error', detail: `Flood-Fill T가 ${FLOOD_FILL_TOLERANCE}입니다(기대 18).` }
+      const spec = GOLDEN_BASELINE.splitter
+      if (FLOOD_FILL_TOLERANCE !== spec.alphaThreshold) {
+        return { status: 'error', detail: `Flood-Fill T가 ${FLOOD_FILL_TOLERANCE}입니다(기대 baseline ${spec.alphaThreshold}).` }
       }
-      return { status: 'ok', detail: 'T=18 하이라이트 보호 허용치 확인' }
+      return { status: 'ok', detail: `T=${spec.alphaThreshold} 하이라이트 보호 허용치 ≡ ${GOLDEN_BASELINE.version}` }
     }
     case 'ai': {
-      if (PUNCH_HOLES_DEFAULT !== false) {
+      const spec = GOLDEN_BASELINE.splitter
+      if (PUNCH_HOLES_DEFAULT !== spec.punchHoles || spec.punchHoles !== false) {
         return { status: 'error', detail: '내부 고립 구멍 투명화 기본값이 OFF가 아닙니다.' }
       }
-      return { status: 'ok', detail: '구멍 투명화 기본 OFF 확인' }
+      if (spec.textModeDefault !== 'original' || spec.textRecolorBypass !== true || spec.textEngineDefault !== 'ORIGINAL') {
+        return { status: 'error', detail: '텍스트 기본 original/ORIGINAL 또는 리컬러 바이패스 플래그가 깨졌습니다.' }
+      }
+      return { status: 'ok', detail: '구멍 투명화 기본 OFF · 텍스트 original 비절단 확인' }
     }
     case 'favorites': {
       if (textZoneStartY(360, 20) !== 289 || textZoneBounds(360, 20, 'top').y1 !== 72) {
         return { status: 'error', detail: '텍스트 존 하단/상단 스위치 좌표가 깨졌습니다.' }
       }
-      return { status: 'ok', detail: '텍스트 존 상/하단 확인' }
+      if (TEXT_ENGINE_DEFAULT !== 'ORIGINAL' || TEXT_ENGINE_MODES.length !== 3) {
+        return { status: 'error', detail: '3단 텍스트 엔진 레지스트리가 깨졌습니다.' }
+      }
+      return { status: 'ok', detail: '텍스트 존 상/하단 · 3단 엔진 ORIGINAL 기본' }
     }
     case 'live-hud': {
-      if (typeof applyTextTone !== 'function' || typeof clearTextPlatePixels !== 'function') {
-        return { status: 'error', detail: '1:1 픽셀 치환 함수가 없습니다.' }
+      if (typeof applyTextTone !== 'function') {
+        return { status: 'error', detail: '텍스트 톤 함수가 없습니다.' }
       }
-      return { status: 'ok', detail: '흰 패치 펀치 · 획 1:1 치환 모듈 확인' }
+      if (
+        !TEXT_RECOLOR_BYPASS
+        || !TEXT_ROI_HARD_LOCK
+        || !TEXT_STROKE_PRESERVE
+        || CHARACTER_LOCK_RATIO !== 0.8
+        || CHARACTER_WRITE_FLOOR_RATIO !== 0.32
+        || !SPLITTER_LIVE_REV
+      ) {
+        return { status: 'error', detail: '픽셀 리컬러 바이패스 또는 캐릭터 영역 잠금이 깨졌습니다.' }
+      }
+      if (captionForCutIndex(14) !== '어리둥절') {
+        return { status: 'error', detail: '15번 컷 캡션 매핑이 어리둥절이 아닙니다.' }
+      }
+      if (TEXT_ENGINE_DEFAULT !== 'ORIGINAL' || normalizeTextEngineMode('vector_overlay') !== 'VECTOR_OVERLAY') {
+        return { status: 'error', detail: '3단 텍스트 엔진 기본값 또는 모드 정규화가 깨졌습니다.' }
+      }
+      return { status: 'ok', detail: '픽셀 리컬러 바이패스 · 3단 텍스트 엔진 · 15번 어리둥절' }
     }
     case 'gif-engine': {
       if (OUTLINE_DEFAULT !== true) {
         return { status: 'error', detail: 'Outline 기본값이 ON이 아닙니다.' }
       }
-      return { status: 'ok', detail: 'Outline 기본 ON 확인' }
+      if (!Array.isArray(HQ_KERNEL) || HQ_KERNEL.length !== 9 || HQ_KERNEL[4] !== 5) {
+        return { status: 'error', detail: 'HQ 3×3 샤프 커널이 깨졌습니다.' }
+      }
+      if (typeof resamplePremultiplied !== 'function' || typeof applyBilateralEdgePreserve !== 'function') {
+        return { status: 'error', detail: '알파 독립 프리멀티플라이 리샘플러가 없습니다.' }
+      }
+      return { status: 'ok', detail: 'Outline 기본 ON · HQ 샤프 커널 · Premul/Bilateral(인코드 전용) 확인' }
     }
     case 'emoticon-slicer': {
-      if (KAKAO_STICKER_SIZE !== 360 || typeof inspectRenderedSlice !== 'function') {
+      const spec = GOLDEN_BASELINE.splitter
+      if (KAKAO_STICKER_SIZE !== spec.targetCanvas.width || KAKAO_STICKER_SIZE !== spec.targetCanvas.height) {
+        return { status: 'error', detail: `${KAKAO_STICKER_SIZE} 규격 ≠ baseline ${spec.targetCanvas.width}×${spec.targetCanvas.height}.` }
+      }
+      if (typeof inspectRenderedSlice !== 'function') {
         return { status: 'error', detail: '360 규격 또는 Diagnostic Inspector가 없습니다.' }
       }
-      return { status: 'ok', detail: '360 Safe Margin · Inspector 연동' }
+      if (typeof polishHqImageData !== 'function') {
+        return { status: 'error', detail: '360 HQ 폴리시 파이프라인이 없습니다.' }
+      }
+      const cuts = goldenGridCutCount()
+      if (cuts !== spec.totalCuts) {
+        return { status: 'error', detail: `골든 그리드 ${spec.grid.rows}×${spec.grid.cols}=${cuts} ≠ baseline ${spec.totalCuts}컷.` }
+      }
+      if (typeof applyTextEngine !== 'function' || spec.textEngineDefault !== 'ORIGINAL') {
+        return { status: 'error', detail: '텍스트 엔진이 fit 파이프라인에서 분리되지 않았습니다.' }
+      }
+      return { status: 'ok', detail: `${spec.targetCanvas.width} Safe Margin · ${spec.totalCuts}컷 · 엔진 분리 · ${GOLDEN_BASELINE.version}` }
+    }
+    case 'text-engine': {
+      if (TEXT_ENGINE_DEFAULT !== 'ORIGINAL') {
+        return { status: 'error', detail: '텍스트 엔진 기본값이 ORIGINAL이 아닙니다.' }
+      }
+      if (normalizeTextEngineMode('smart_recolor') !== TEXT_ENGINE_SMART_RECOLOR) {
+        return { status: 'error', detail: 'SMART_RECOLOR 정규화가 실패했습니다.' }
+      }
+      if (captionForCutIndex(14) !== '어리둥절') {
+        return { status: 'error', detail: '15번 컷 캡션 매핑이 어리둥절이 아닙니다.' }
+      }
+      return { status: 'ok', detail: '3단 엔진 · 15번 어리둥절 · ORIGINAL 기본' }
     }
     case 'pro-engine': {
       if (typeof inspectRenderedSlice !== 'function') {
@@ -240,6 +448,22 @@ function assertPipelineHud(stepId) {
         return { status: 'error', detail: 'PNG 즉시 다운로드 파이프라인이 없습니다.' }
       }
       return { status: 'ok', detail: 'ZIP/PNG 패키징 모듈 확인' }
+    }
+    case 'motion-seq': {
+      if (clampSequenceFps(8) !== 8 || clampSequenceFps(3) !== 4 || clampSequenceFps(30) !== 24) {
+        return { status: 'error', detail: '시퀀서 FPS 클램프(4~24, 기본 8)가 깨졌습니다.' }
+      }
+      const bounce = sampleTextMotion(TEXT_MOTION_BOUNCE, 2, 8, '테스트')
+      if (!bounce || bounce.y === 0) {
+        return { status: 'error', detail: '바운스 텍스트 모션 보간이 실패했습니다.' }
+      }
+      if (ENCODER_SIZE !== 360 || typeof encodeMotionGif !== 'function') {
+        return { status: 'error', detail: '모션 인코더 360×360 엔진이 없습니다.' }
+      }
+      if (motionClipFileName(0, 'gif') !== 'motion-01.gif') {
+        return { status: 'error', detail: 'ZIP 파일명 규칙이 motion-01.gif가 아닙니다.' }
+      }
+      return { status: 'ok', detail: '프레임 시퀀서 · 텍스트 모션 · 인코더 · ZIP 확인' }
     }
     default:
       return null
@@ -275,6 +499,27 @@ export async function checkGpu() {
   return { status: 'ok', detail: `2D + ${gl instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL'} 컨텍스트 무결성 확인.` }
 }
 
+export async function checkSheetPipeline() {
+  if (typeof evaluateSystemDiagnostics !== 'function') {
+    return { status: 'error', detail: '3대 모듈 자가진단 엔진이 없습니다.' }
+  }
+  const report = evaluateSystemDiagnostics('ALL')
+  if (report.status === 'warn' || report.moduleList?.length !== 3) {
+    return { status: 'error', detail: '3대 모듈 자가진단이 실패했습니다.' }
+  }
+  const log = exportFullDiagnosticLog(report)
+  if (!log.includes('[PASS]') || !log.includes('Alpha Sniffer') || !log.includes('4 rows by 5 columns')) {
+    return { status: 'error', detail: '전사 진단 리포트 포맷이 비어 있습니다.' }
+  }
+  if (!Array.isArray(GUIDEBOOK_SECTIONS) || GUIDEBOOK_SECTIONS.length !== 4) {
+    return { status: 'error', detail: '가이드북 3단계+진단 섹션이 없습니다.' }
+  }
+  if (!GUIDEBOOK_SECTIONS.some((section) => String(section.content || '').includes('4 rows by 5 columns'))) {
+    return { status: 'error', detail: '4×5 투명 시트 생성 프롬프트가 가이드북에 없습니다.' }
+  }
+  return { status: 'ok', detail: 'PASS · 스튜디오·분할기·생성기 3모듈 · 가이드북 4섹션' }
+}
+
 export async function checkBuffers() {
   const sizes = [[1024, 1024, '1:1'], [1920, 1080, '16:9'], [1080, 1920, '9:16']]
   const failed = []
@@ -290,7 +535,40 @@ export async function checkBuffers() {
   return { status: 'ok', detail: '1024×1024 · 1920×1080 · 1080×1920 메모리 할당과 픽셀 읽기 정상.' }
 }
 
+function auditFontCategoryLabelData() {
+  const spec = GOLDEN_BASELINE.uiIntegrity
+  const banned = spec.bannedLabelKeywords || []
+  const bad = FONT_CATEGORIES.filter((item) => {
+    const label = String(item.label || '').replace(/\s+/g, ' ').trim()
+    const tooltip = String(item.tooltip || '').trim()
+    if (!label || !tooltip) return true
+    if (label.length > spec.maxButtonLabelLength) return true
+    if (label === tooltip || label.includes(tooltip)) return true
+    return banned.some((word) => label.includes(word))
+  })
+  return bad
+}
+
+function auditLabelScanHostContract() {
+  const hosts = GOLDEN_BASELINE.uiIntegrity.labelScanHosts
+  if (!Array.isArray(hosts) || hosts.length < 5) return false
+  return hosts.every((host) => typeof host === 'string' && !host.includes(','))
+}
+
 export async function checkFonts(_ctx, onLog) {
+  if (!auditLabelScanHostContract()) {
+    return {
+      status: 'error',
+      detail: '라벨 스캔 호스트가 쉼표 선택자라 CSS :not 함정이 재발합니다. LABEL_SCAN_HOSTS 배열을 유지하세요.',
+    }
+  }
+  const dirtyTabs = auditFontCategoryLabelData()
+  if (dirtyTabs.length) {
+    return {
+      status: 'error',
+      detail: `폰트 탭 label이 tooltip과 격리되지 않음: ${dirtyTabs.map((item) => item.id).join(', ')}`,
+    }
+  }
   const report = await inspectStudioFonts()
   onLog?.(`Testing ${report.total} WebFonts... ${report.ready}/${report.total} Loaded`)
   const ratio = report.ready / Math.max(1, report.total)
@@ -341,7 +619,11 @@ export async function checkDragEngine() {
   if (padded.w <= plain.w || padded.h <= plain.h) {
     return { status: 'error', detail: '외곽선·그림자 패딩이 선택 박스에 반영되지 않습니다.' }
   }
-  return { status: 'ok', detail: '2D 앵커·회전 히트박스·장식 패딩이 중앙 드래그/가장자리 미스를 구분합니다.' }
+  const lightboxSrc = String(PreviewLightboxModal)
+  if (typeof PreviewLightboxModal !== 'function' || !lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
+    return { status: 'error', detail: '확대 팝업 체커보드가 없거나 흰 배경이 남아 있습니다.' }
+  }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 확대 팝업 checkerboard-bg 고정.' }
 }
 
 export async function checkTypography() {
@@ -642,9 +924,40 @@ export async function checkGifEngine() {
   if (!blob || blob.size < 32) {
     return { status: 'warn', detail: 'IDLE · 인코더는 로드됐지만 샘플 GIF가 비어 있습니다.' }
   }
+  const studioIds = MOTION_PRESETS.map((item) => item.id)
+  if (MOTION_PRESETS.length !== 10) {
+    return { status: 'error', detail: '모션 스튜디오 프리셋이 10종이 아닙니다.' }
+  }
+  if (!isMotionNone(MOTION_NONE) || isMotionNone('jellyBounce')) {
+    return { status: 'error', detail: '모션 없음(none) 토글 판별이 실패했습니다.' }
+  }
+  const nonePose = sampleGifPreset(MOTION_NONE, 0.4, 1)
+  if (nonePose.dx !== 0 || nonePose.dy !== 0 || nonePose.rotateDeg !== 0 || nonePose.scaleX !== 1 || nonePose.scaleY !== 1) {
+    return { status: 'error', detail: '모션 없음 상태가 원본 1:1 고정이 아닙니다.' }
+  }
+  const extraIds = ['angryShake', 'rollingTilt', 'squashStretch', 'heartbeat', 'zoomPunch']
+  if (extraIds.some((id) => !studioIds.includes(id))) {
+    return { status: 'error', detail: '메신저 모션 확장 5종이 없습니다.' }
+  }
+  const tilt = sampleGifPreset('rollingTilt', 0.25, 1)
+  if (Math.abs(tilt.rotateDeg - 12) > 0.05) {
+    return { status: 'error', detail: '롤링 틸트 ±12° 보간이 실패했습니다.' }
+  }
+  const punch = sampleGifPreset('zoomPunch', 0.5, 1)
+  if (punch.scaleX <= 1.1) {
+    return { status: 'error', detail: '줌 앤 펀치 돌출 스케일이 실패했습니다.' }
+  }
+  const beat = sampleGifPreset('heartbeat', 0.18, 1)
+  if (beat.scaleX <= 1.05) {
+    return { status: 'error', detail: '하트 비트 쿵-쾅 펄스가 실패했습니다.' }
+  }
+  const motion = auditFrozenGoldenBaseline({ presetIds: studioIds }).motion
+  if (!motion.ok) {
+    return { status: 'error', detail: `모션 스튜디오 프리셋 drift · ${motion.fail.map((row) => row.detail).join(' · ')}` }
+  }
   return {
     status: 'ok',
-    detail: `PASS · ${GIF_MOTIONS.map((item) => item.name).join(' / ')} · 인코더 ${blob.size}B · 프레임 ${frames.length}`,
+    detail: `PASS · 레거시 ${GIF_MOTIONS.map((item) => item.name).join(' / ')} · 스튜디오 10종 ≡ ${GOLDEN_BASELINE.version} · 인코더 ${blob.size}B · 프레임 ${frames.length}`,
   }
 }
 
@@ -665,6 +978,119 @@ export async function checkEmoticonSlicer() {
   const smart = sliceSheet(sheet, { mode: 'smart', transparent: true })
   if (smart.length !== 2) {
     return { status: 'error', detail: `모드 A 스마트 감지가 ${smart.length}객체를 반환했습니다(기대 2).` }
+  }
+  if (typeof detectSmartEmoticonGrid !== 'function') {
+    return { status: 'error', detail: '투영 프로파일 스마트 그리드 엔진이 없습니다.' }
+  }
+  const grid2 = detectSmartEmoticonGrid(sheet)
+  if (grid2.cells.length !== 2 || grid2.rows !== 1 || grid2.cols !== 2) {
+    return { status: 'error', detail: `투영 프로파일이 1×2 시트를 ${grid2.rows}×${grid2.cols}(${grid2.cells.length})로 오인했습니다.` }
+  }
+  const quad = document.createElement('canvas')
+  quad.width = 200
+  quad.height = 200
+  const quadCtx = quad.getContext('2d')
+  quadCtx.fillStyle = '#ffffff'
+  quadCtx.fillRect(0, 0, 200, 200)
+  quadCtx.fillStyle = '#111111'
+  quadCtx.fillRect(12, 12, 72, 72)
+  quadCtx.fillRect(116, 12, 72, 72)
+  quadCtx.fillRect(12, 116, 72, 72)
+  quadCtx.fillRect(116, 116, 72, 72)
+  const quadGrid = detectSmartEmoticonGrid(quad)
+  if (quadGrid.cells.length !== 4 || quadGrid.rows !== 2 || quadGrid.cols !== 2) {
+    return { status: 'error', detail: `투영 프로파일이 2×2 시트를 ${quadGrid.rows}×${quadGrid.cols}(${quadGrid.cells.length})로 오인했습니다.` }
+  }
+  const stacked = document.createElement('canvas')
+  stacked.width = 120
+  stacked.height = 160
+  const stackedCtx = stacked.getContext('2d')
+  stackedCtx.fillStyle = '#ffffff'
+  stackedCtx.fillRect(0, 0, 120, 160)
+  stackedCtx.fillStyle = '#111111'
+  stackedCtx.fillRect(22, 12, 76, 78)
+  stackedCtx.fillRect(32, 112, 56, 14)
+  const stackedGrid = detectSmartEmoticonGrid(stacked)
+  if (stackedGrid.cells.length !== 1) {
+    return { status: 'error', detail: `캐릭터+자막이 ${stackedGrid.cells.length}칸으로 쪼개졌습니다.` }
+  }
+  if ((stackedGrid.cells[0].y + stackedGrid.cells[0].h) < 120) {
+    return { status: 'error', detail: '캐릭터+자막 결합 박스가 하단 글자를 포함하지 않습니다.' }
+  }
+  const pack = document.createElement('canvas')
+  pack.width = 500
+  pack.height = 400
+  const packCtx = pack.getContext('2d', { alpha: true })
+  packCtx.clearRect(0, 0, 500, 400)
+  packCtx.fillStyle = 'rgba(210, 210, 210, 0.14)'
+  packCtx.fillRect(0, 0, 500, 400)
+  for (let row = 0; row < 4; row += 1) {
+    for (let col = 0; col < 5; col += 1) {
+      packCtx.globalAlpha = 1
+      packCtx.fillStyle = '#1f2937'
+      packCtx.fillRect(14 + col * 96, 12 + row * 96, 70, 56)
+      packCtx.fillRect(22 + col * 96, 74 + row * 96, 54, 12)
+    }
+  }
+  const packGrid = detectSmartEmoticonGrid(pack)
+  if (packGrid.cells.length !== 20 || packGrid.rows !== 4 || packGrid.cols !== 5) {
+    return { status: 'error', detail: `투영 프로파일이 4×5 투명 시트를 ${packGrid.rows}×${packGrid.cols}(${packGrid.cells.length})로 오인했습니다.` }
+  }
+  const packSlices = sliceSheet(pack, { mode: 'smart', transparent: true })
+  if (packSlices.length !== 20) {
+    return { status: 'error', detail: `4×5 시트가 sliceSheet 상태에서 ${packSlices.length}개로 멈췄습니다.` }
+  }
+  if (typeof handleSheetAutoDetection !== 'function' || typeof handleDefaultSheetUpload !== 'function') {
+    return { status: 'error', detail: '시트 로드 자동 감지 핸들러가 없습니다.' }
+  }
+  let boundCells = null
+  const auto = handleSheetAutoDetection(pack, (cells) => { boundCells = cells }, () => {})
+  if (!Array.isArray(boundCells) || boundCells.length !== 20 || auto.count !== 20) {
+    return { status: 'error', detail: '업로드 자동 감지가 20칸을 상태에 주입하지 못했습니다.' }
+  }
+  let defaultBound = null
+  const defaultSnap = handleDefaultSheetUpload(pack, (cells) => { defaultBound = cells }, () => {})
+  if (!Array.isArray(defaultBound) || defaultBound.length !== 20 || defaultSnap.rows !== 4 || defaultSnap.cols !== 5) {
+    return { status: 'error', detail: '기본 4×5 스냅이 20칸을 상태에 주입하지 못했습니다.' }
+  }
+  if (!isAcceptedSheetFile({ type: 'image/jpeg', name: 'sheet.jpg' }) || !isAcceptedSheetFile({ type: '', name: 'sheet.webp' })) {
+    return { status: 'error', detail: 'JPG/WebP 업로드 허용이 막혀 있습니다.' }
+  }
+  if (!String(PNG_GUIDE_BODY || '').includes('4행 × 5열')) {
+    return { status: 'error', detail: '4×5 투명 시트 권장 가이드가 없습니다.' }
+  }
+  const strips = document.createElement('canvas')
+  strips.width = 500
+  strips.height = 400
+  const stripsCtx = strips.getContext('2d', { alpha: true })
+  stripsCtx.clearRect(0, 0, 500, 400)
+  stripsCtx.fillStyle = '#1f2937'
+  stripsCtx.fillRect(8, 4, 148, 392)
+  stripsCtx.fillRect(176, 4, 148, 392)
+  stripsCtx.fillRect(344, 4, 148, 392)
+  const stripGrid = detectSmartEmoticonGrid(strips)
+  if (stripGrid.cells.length !== 20 || stripGrid.rows !== 4 || stripGrid.cols !== 5) {
+    return { status: 'error', detail: `붕괴 3스트립이 ${stripGrid.rows}×${stripGrid.cols}(${stripGrid.cells.length})로 남았습니다(기대 4×5=20).` }
+  }
+  const rec = getRecommendedGrid(500, 400)
+  if (rec.rows !== 4 || rec.cols !== 5) {
+    return { status: 'error', detail: `표준 시트 추천 그리드가 ${rec.rows}×${rec.cols}입니다(기대 4×5).` }
+  }
+  const snapped = guessStickerGridShape(800, 700, 5, 6)
+  if (snapped.rows !== 4 || snapped.cols !== 5) {
+    return { status: 'error', detail: `5×6 피크가 ${snapped.rows}×${snapped.cols}로 남았습니다(기대 4×5 스냅).` }
+  }
+  if (generateSheetGrid(500, 400, 5, 4).length !== 20 || !Array.isArray(SHEET_GRID_PRESETS) || SHEET_GRID_PRESETS.length !== 4) {
+    return { status: 'error', detail: '시트 규격 프리셋 또는 generateSheetGrid(5×4)가 없습니다.' }
+  }
+  const fake30 = []
+  for (let row = 0; row < 5; row += 1) {
+    for (let col = 0; col < 6; col += 1) {
+      fake30.push({ x: col * 80, y: row * 80, w: 70, h: 70 })
+    }
+  }
+  if (!isOverSplitSmartGrid(fake30, 500, 400)) {
+    return { status: 'error', detail: '5×6=30 과다 분할을 감지하지 못했습니다.' }
   }
   const doubled = splitDoubleHeightBoxes([
     { x: 0, y: 0, w: 40, h: 40 },
@@ -688,6 +1114,13 @@ export async function checkEmoticonSlicer() {
   if (wide[0].w !== 40 || wide[1].w !== 40) {
     return { status: 'error', detail: '정상 너비 모드 A 박스가 후처리에서 변경되었습니다.' }
   }
+  const spec = GOLDEN_BASELINE.splitter
+  if (TEXT_RECOLOR_BYPASS !== spec.textRecolorBypass || spec.textRecolorBypass !== true) {
+    return { status: 'error', detail: '텍스트 리컬러 바이패스 플래그가 골든 기준선과 다릅니다.' }
+  }
+  if (TEXT_ENGINE_DEFAULT !== spec.textEngineDefault || spec.textEngineDefault !== 'ORIGINAL') {
+    return { status: 'error', detail: '텍스트 엔진 기본값이 골든 ORIGINAL과 다릅니다.' }
+  }
   const grid = splitGridBoxes(240, 120, 2, 1)
   const custom = splitGridBoxes(100, 50, 2, 2, [0.25], [0.6])
   const even = equalSplitGuides(3)
@@ -696,6 +1129,10 @@ export async function checkEmoticonSlicer() {
   const framed = splitGuideBoxes(100, 100, [0.5], [], crop)
   if (grid.length !== 2) {
     return { status: 'error', detail: '균등 그리드 칸 수가 열×행과 다릅니다.' }
+  }
+  const goldenCuts = goldenGridCutCount()
+  if (goldenCuts !== spec.totalCuts) {
+    return { status: 'error', detail: `골든 그리드 ${spec.grid.rows}×${spec.grid.cols}가 ${goldenCuts}칸입니다(기대 ${spec.totalCuts}).` }
   }
   if (!custom[0] || Math.abs(custom[0].w - 25) > 1 || Math.abs(custom[2]?.y - 30) > 2) {
     return { status: 'error', detail: '모드 B 커스텀 절단선 좌표가 Bounding Box에 반영되지 않습니다.' }
@@ -718,7 +1155,7 @@ export async function checkEmoticonSlicer() {
   }
   const fit = containFitRect(200, 100, KAKAO_STICKER_SIZE, KAKAO_FIT_RATIO)
   if (fit.renderX < 10 || fit.renderY < 10 || fit.renderW > KAKAO_STICKER_SIZE * KAKAO_FIT_RATIO + 1) {
-    return { status: 'error', detail: '360×360 안전 여백 contain-fit이 실패했습니다.' }
+    return { status: 'error', detail: `${spec.targetCanvas.width}×${spec.targetCanvas.height} 안전 여백 contain-fit이 실패했습니다.` }
   }
   const half = applyCustomSliceScale(fit, 50)
   const grown = applyCustomSliceScale(fit, 150)
@@ -748,8 +1185,8 @@ export async function checkEmoticonSlicer() {
     return { status: 'error', detail: '크기 비율 조절이 모드 A 객체 수에 영향을 줬습니다.' }
   }
   const kakao = fitToKakaoCanvas(sheet, grid[0])
-  if (kakao.width !== KAKAO_STICKER_SIZE || kakao.height !== KAKAO_STICKER_SIZE) {
-    return { status: 'error', detail: `360×360 리사이저가 ${kakao.width}×${kakao.height}를 반환했습니다.` }
+  if (kakao.width !== spec.targetCanvas.width || kakao.height !== spec.targetCanvas.height) {
+    return { status: 'error', detail: `${spec.targetCanvas.width}×${spec.targetCanvas.height} 리사이저가 ${kakao.width}×${kakao.height}를 반환했습니다.` }
   }
   const corner = kakao.getContext('2d').getImageData(2, 2, 1, 1).data
   if (corner[3] > 40) {
@@ -772,8 +1209,8 @@ export async function checkEmoticonSlicer() {
   const outerPx = keyed.data[2 * 4 + 3]
   const ringPx = keyed.data[((16 * 48) + 16) * 4 + 3]
   const eyePx = keyed.data[((24 * 48) + 24) * 4 + 3]
-  if (outerPx > 12) {
-    return { status: 'error', detail: '외곽 플러드필이 미색 배경을 투명으로 바꾸지 못했습니다.' }
+  if (outerPx > spec.allowedCornerAlphaMax) {
+    return { status: 'error', detail: `외곽 플러드필 코너 알파 ${outerPx} > baseline ${spec.allowedCornerAlphaMax}.` }
   }
   if (ringPx < 180) {
     return { status: 'error', detail: '플러드필이 캐릭터 외곽 픽셀을 지웠습니다.' }
@@ -781,13 +1218,13 @@ export async function checkEmoticonSlicer() {
   if (eyePx < 180) {
     return { status: 'error', detail: '플러드필이 캐릭터 내부 흰색을 지웠습니다.' }
   }
-  if (FLOOD_FILL_TOLERANCE !== 18) {
-    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 18).` }
+  if (FLOOD_FILL_TOLERANCE !== spec.alphaThreshold) {
+    return { status: 'error', detail: `플러드필 허용 오차가 ${FLOOD_FILL_TOLERANCE}입니다(기대 baseline ${spec.alphaThreshold}).` }
   }
   if (OUTLINE_DEFAULT !== true) {
     return { status: 'error', detail: 'Outline 외곽선 보강 기본값이 ON이 아닙니다.' }
   }
-  if (PUNCH_HOLES_DEFAULT !== false) {
+  if (PUNCH_HOLES_DEFAULT !== spec.punchHoles || spec.punchHoles !== false) {
     return { status: 'error', detail: '내부 고립 구멍 투명화 기본값이 OFF가 아닙니다.' }
   }
   if (TEXT_ZONE_ANCHOR_DEFAULT !== 'bottom' || VIEW_BG_DEFAULT !== 'checker') {
@@ -814,8 +1251,8 @@ export async function checkEmoticonSlicer() {
   const paperPx = guarded.data[1 * 4 + 3]
   const strokePx = guarded.data[((24 * 48) + 9) * 4 + 3]
   const highlightPx = guarded.data[((24 * 48) + 24) * 4 + 3]
-  if (paperPx > 12) {
-    return { status: 'error', detail: '외곽 플러드필이 원형 테두리 밖 배경을 투명으로 바꾸지 못했습니다.' }
+  if (paperPx > spec.allowedCornerAlphaMax) {
+    return { status: 'error', detail: `외곽 플러드필 원형 밖 알파 ${paperPx} > baseline ${spec.allowedCornerAlphaMax}.` }
   }
   if (strokePx < 180) {
     return { status: 'error', detail: '플러드필이 캐릭터 진한 외곽선을 넘었습니다.' }
@@ -867,6 +1304,77 @@ export async function checkEmoticonSlicer() {
   if (plateData.data[(32 * 48 + 20) * 4 + 3] < 180) {
     return { status: 'error', detail: '글자 획이 흰 패치 제거 과정에서 지워졌습니다.' }
   }
+  if (typeof processHighQualitySmartSplit !== 'function' || typeof processHighQualityCrop !== 'function') {
+    return { status: 'error', detail: '2-Pass 고품질 알파 마스킹 엔진이 없습니다.' }
+  }
+  if (typeof extractCleanEmoticonCell !== 'function' || !String(extractCleanEmoticonCell).includes('destination-in')) {
+    return { status: 'error', detail: 'destination-in 알파 마스크 합성 엔진이 없습니다.' }
+  }
+  if (typeof sniffCanvasHasAlpha !== 'function' || typeof processHybridSheetCell !== 'function') {
+    return { status: 'error', detail: '알파 스니프 하이브리드 분할 엔진이 없습니다.' }
+  }
+  if (!String(processHybridSheetCell).includes('sniffCanvasHasAlpha') || !String(processHybridSheetCell).includes('extractLosslessCell')) {
+    return { status: 'error', detail: '하이브리드 셀이 무손실 우회를 쓰지 않습니다.' }
+  }
+  if (String(PNG_GUIDE_OK_LABEL || '').length > GOLDEN_BASELINE.uiIntegrity.maxButtonLabelLength) {
+    return { status: 'error', detail: '투명 PNG 안내 확인 버튼이 16자를 넘습니다.' }
+  }
+  if (String(PNG_GUIDE_HIDE_LABEL || '').length > GOLDEN_BASELINE.uiIntegrity.maxButtonLabelLength) {
+    return { status: 'error', detail: '투명 PNG 안내 숨김 버튼이 16자를 넘습니다.' }
+  }
+  const alphaSheet = document.createElement('canvas')
+  alphaSheet.width = 24
+  alphaSheet.height = 24
+  const alphaCtx = alphaSheet.getContext('2d', { alpha: true })
+  alphaCtx.clearRect(0, 0, 24, 24)
+  if (!sniffCanvasHasAlpha(alphaSheet)) {
+    return { status: 'error', detail: '투명 시트 알파 스니프가 모서리 알파를 놓쳤습니다.' }
+  }
+  const paperSheet = document.createElement('canvas')
+  paperSheet.width = 24
+  paperSheet.height = 24
+  const paperCtx = paperSheet.getContext('2d', { alpha: true })
+  paperCtx.fillStyle = '#ffffff'
+  paperCtx.fillRect(0, 0, 24, 24)
+  if (sniffCanvasHasAlpha(paperSheet)) {
+    return { status: 'error', detail: '불투명 흰 시트를 투명으로 오인했습니다.' }
+  }
+  if (typeof defringeAlphaEdge !== 'function' || typeof featherAlphaEdge !== 'function') {
+    return { status: 'error', detail: '1px 알파 디프린지 또는 1.5px 페더 필터가 없습니다.' }
+  }
+  const fringe = new ImageData(8, 8)
+  for (let i = 0; i < fringe.data.length; i += 4) {
+    fringe.data[i] = 255
+    fringe.data[i + 1] = 255
+    fringe.data[i + 2] = 255
+    fringe.data[i + 3] = 255
+  }
+  for (let y = 0; y < 8; y += 1) fringe.data[(y * 8) * 4 + 3] = 0
+  defringeAlphaEdge(fringe)
+  if (fringe.data[(0 * 8 + 1) * 4 + 3] > 16) {
+    return { status: 'error', detail: '1px 디프린지가 알파 경계 후광을 침식하지 않습니다.' }
+  }
+  if (fringe.data[(3 * 8 + 3) * 4 + 3] < 180) {
+    return { status: 'error', detail: '1px 디프린지가 내부 불투명 픽셀을 지웠습니다.' }
+  }
+  const letter = document.createElement('canvas')
+  letter.width = 48
+  letter.height = 48
+  const letterCtx = letter.getContext('2d')
+  letterCtx.fillStyle = '#f4f4f6'
+  letterCtx.fillRect(0, 0, 48, 48)
+  letterCtx.fillStyle = '#111111'
+  letterCtx.fillRect(16, 38, 16, 10)
+  letterCtx.fillStyle = '#ffffff'
+  letterCtx.fillRect(20, 41, 8, 4)
+  const letterData = floodFillAlphaKey(letterCtx.getImageData(0, 0, 48, 48))
+  punchIsolatedBackgroundHoles(letterData, { protectBounds: textZoneBounds(48, 20, 'bottom') })
+  if (letterData.data[((43 * 48) + 24) * 4 + 3] < 180) {
+    return { status: 'error', detail: '글자 바운딩 박스 내부 고립 영역이 구멍 투명화에서 보호되지 않았습니다.' }
+  }
+  if (CROP_EDGE_INSET !== 1) {
+    return { status: 'error', detail: '360 크롭 1px 재단선 인셋이 없습니다.' }
+  }
   const probe = document.createElement('canvas')
   probe.width = 8
   probe.height = 8
@@ -911,22 +1419,41 @@ export async function checkEmoticonSlicer() {
     return { status: 'error', detail: '텍스트 감지 높이 클램프가 5~50%를 지키지 않습니다.' }
   }
   applyTextTone(local, 'custom', '#00ccff')
-  if (local.data[bodyAt] !== bodyBefore[0] || local.data[bodyAt + 1] !== bodyBefore[1] || local.data[bodyAt + 2] !== bodyBefore[2]) {
-    return { status: 'error', detail: '텍스트 보정이 상단 캐릭터 본체 픽셀을 변경했습니다.' }
+  if (local.data[bodyAt] !== bodyBefore[0] || local.data[aboveAt] !== aboveBefore[0] || local.data[furAt] !== furBefore[0]) {
+    return { status: 'error', detail: '텍스트 ROI 락이 캐릭터/털 픽셀을 변경했습니다.' }
   }
-  if (local.data[aboveAt] !== aboveBefore[0] || local.data[aboveAt + 1] !== aboveBefore[1] || local.data[aboveAt + 2] !== aboveBefore[2]) {
-    return { status: 'error', detail: '텍스트 보정이 감지 한계선 위의 검정 픽셀을 변경했습니다.' }
+  if (local.data[textAt] !== 20 || local.data[textAt + 1] !== 20 || local.data[textAt + 2] !== 20) {
+    return { status: 'error', detail: '리컬러 바이패스가 하단 캡션 원본을 바꿨습니다.' }
   }
-  if (local.data[furAt] !== furBefore[0] || local.data[furAt + 1] !== furBefore[1] || local.data[furAt + 2] !== furBefore[2]) {
-    return { status: 'error', detail: '텍스트 보정이 회색 털/플레이트 픽셀을 침범했습니다.' }
+  const hangul = document.createElement('canvas')
+  hangul.width = 40
+  hangul.height = 40
+  const hangulCtx = hangul.getContext('2d')
+  hangulCtx.fillStyle = '#ff8866'
+  hangulCtx.fillRect(0, 0, 40, 28)
+  hangulCtx.fillStyle = '#141414'
+  hangulCtx.fillRect(18, 6, 4, 4)
+  hangulCtx.fillRect(10, 32, 20, 3)
+  hangulCtx.fillRect(8, 36, 24, 3)
+  const hangulData = hangulCtx.getImageData(0, 0, 40, 40)
+  const eyeBefore = [hangulData.data[(7 * 40 + 19) * 4], hangulData.data[(7 * 40 + 19) * 4 + 1], hangulData.data[(7 * 40 + 19) * 4 + 2]]
+  applyTextTone(hangulData, 'custom', '#00ccff')
+  if (hangulData.data[(33 * 40 + 18) * 4] !== 20 || hangulData.data[(33 * 40 + 18) * 4 + 1] !== 20) {
+    return { status: 'error', detail: '리컬러 바이패스가 캡션 윗획 원본을 바꿨습니다.' }
   }
-  if (local.data[textAt] !== 0 || local.data[textAt + 1] !== 204 || local.data[textAt + 2] !== 255) {
-    return { status: 'warn', detail: 'IDLE · 하단 검정 글자 획이 커스텀 색으로 치환되지 않았습니다.' }
+  if (hangulData.data[(37 * 40 + 20) * 4] !== 20 || hangulData.data[(37 * 40 + 20) * 4 + 1] !== 20) {
+    return { status: 'error', detail: '리컬러 바이패스가 캡션 아랫획 원본을 바꿨습니다.' }
+  }
+  if (hangulData.data[(32 * 40 + 10) * 4] !== 20) {
+    return { status: 'error', detail: '리컬러가 캡션 먹선 외곽을 지웠습니다.' }
+  }
+  if (hangulData.data[(7 * 40 + 19) * 4] !== eyeBefore[0] || hangulData.data[(10 * 40 + 8) * 4] !== 255) {
+    return { status: 'error', detail: '리컬러가 캐릭터 눈/본체까지 침범했습니다.' }
   }
   const tight = bandCtx.getImageData(0, 0, 40, 40)
   applyTextTone(tight, 'custom', '#00ccff', { textZonePercent: 10 })
-  if (tight.data[textAt] !== 20 || tight.data[textAt + 1] !== 20 || tight.data[textAt + 2] !== 20) {
-    return { status: 'error', detail: '텍스트 감지 높이 10%가 한계선 밖 글자까지 치환했습니다.' }
+  if (tight.data[bodyAt] !== bodyBefore[0] || tight.data[aboveAt] !== aboveBefore[0]) {
+    return { status: 'error', detail: '텍스트 시드 10%가 본체/분리 픽셀까지 치환했습니다.' }
   }
   const topBand = bandCtx.getImageData(0, 0, 40, 40)
   topBand.data[(4 * 40 + 20) * 4] = 20
@@ -934,11 +1461,8 @@ export async function checkEmoticonSlicer() {
   topBand.data[(4 * 40 + 20) * 4 + 2] = 20
   topBand.data[(4 * 40 + 20) * 4 + 3] = 255
   applyTextTone(topBand, 'custom', '#00ccff', { textZonePercent: 20, textZoneAnchor: 'top' })
-  if (topBand.data[(4 * 40 + 20) * 4] !== 0 || topBand.data[(4 * 40 + 20) * 4 + 1] !== 204) {
-    return { status: 'error', detail: '상단 텍스트 스위치가 위쪽 검정 획을 치환하지 않았습니다.' }
-  }
-  if (topBand.data[textAt] !== 20 || topBand.data[textAt + 1] !== 20 || topBand.data[textAt + 2] !== 20) {
-    return { status: 'error', detail: '상단 텍스트 스위치가 하단 검정 획까지 치환했습니다.' }
+  if (topBand.data[(4 * 40 + 20) * 4] !== 20) {
+    return { status: 'error', detail: '상단 스위치가 캐릭터 영역 검정 픽셀을 변경했습니다.' }
   }
   const glyph = document.createElement('canvas')
   glyph.width = 40
@@ -949,11 +1473,8 @@ export async function checkEmoticonSlicer() {
   glyphCtx.fillRect(16, 34, 8, 4)
   const glyphData = glyphCtx.getImageData(0, 0, 40, 40)
   applyTextTone(glyphData, 'custom', '#00ccff')
-  if (glyphData.data[(36 * 40 + 18) * 4] !== 0 || glyphData.data[(36 * 40 + 18) * 4 + 1] !== 204) {
-    return { status: 'warn', detail: 'IDLE · 투명 위 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
-  }
-  if (glyphData.data[(33 * 40 + 16) * 4 + 3] > 20 || glyphData.data[(36 * 40 + 12) * 4 + 3] > 20) {
-    return { status: 'error', detail: '텍스트 색 치환이 글자 주변에 사각 패치를 칠했습니다.' }
+  if (glyphData.data[(36 * 40 + 18) * 4] !== 20 || glyphData.data[(36 * 40 + 18) * 4 + 1] !== 20) {
+    return { status: 'error', detail: '리컬러 바이패스가 투명 위 캡션 원본을 바꿨습니다.' }
   }
   const boxed = document.createElement('canvas')
   boxed.width = 40
@@ -967,11 +1488,11 @@ export async function checkEmoticonSlicer() {
   const boxedData = boxedCtx.getImageData(0, 0, 40, 40)
   clearTextPlatePixels(boxedData)
   applyTextTone(boxedData, 'custom', '#00ccff')
-  if (boxedData.data[(34 * 40 + 12) * 4 + 3] > 20 || boxedData.data[(35 * 40 + 11) * 4 + 3] > 20) {
-    return { status: 'error', detail: '글자 뒤 사각 흰 패치가 색 치환 후에도 남았습니다.' }
+  if (boxedData.data[(36 * 40 + 20) * 4] !== 20 || boxedData.data[(36 * 40 + 20) * 4 + 1] !== 20) {
+    return { status: 'error', detail: '리컬러 바이패스가 흰 판 위 캡션 원본을 바꿨습니다.' }
   }
-  if (boxedData.data[(36 * 40 + 20) * 4] !== 0 || boxedData.data[(36 * 40 + 20) * 4 + 1] !== 204) {
-    return { status: 'warn', detail: 'IDLE · 흰 패치 제거 후 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
+  if (boxedData.data[(34 * 40 + 12) * 4 + 3] < 200) {
+    return { status: 'error', detail: '흰 패치 펀치가 원본 플레이트를 지웠습니다.' }
   }
   const cream = document.createElement('canvas')
   cream.width = 40
@@ -987,15 +1508,69 @@ export async function checkEmoticonSlicer() {
   const creamData = creamCtx.getImageData(0, 0, 40, 40)
   clearTextPlatePixels(creamData)
   applyTextTone(creamData, 'custom', '#00ccff')
-  if (creamData.data[(34 * 40 + 10) * 4 + 3] > 20 || creamData.data[(35 * 40 + 11) * 4 + 3] > 20) {
-    return { status: 'error', detail: '미색 사각 패치가 픽셀 펀치 후에도 남았습니다.' }
+  if (creamData.data[(36 * 40 + 20) * 4] !== 20 || creamData.data[(36 * 40 + 20) * 4 + 1] !== 20) {
+    return { status: 'error', detail: '리컬러 바이패스가 미색 판 위 캡션 원본을 바꿨습니다.' }
   }
-  if (creamData.data[(36 * 40 + 20) * 4] !== 0 || creamData.data[(36 * 40 + 20) * 4 + 1] !== 204) {
-    return { status: 'warn', detail: 'IDLE · 미색 패치 제거 후 검정 획이 커스텀 색으로 치환되지 않았습니다.' }
+  if (creamData.data[(34 * 40 + 10) * 4] !== 210) {
+    return { status: 'error', detail: '미색 패치가 리컬러에서 지워졌습니다.' }
   }
-  const haloAt = (36 * 40 + 13) * 4
-  if (creamData.data[haloAt] !== 0 || creamData.data[haloAt + 1] !== 204 || creamData.data[haloAt + 2] !== 255) {
-    return { status: 'error', detail: '글자 가장자리 회색이 선택 색으로 맞추어지지 않았습니다.' }
+  const lastRow = document.createElement('canvas')
+  lastRow.width = 40
+  lastRow.height = 40
+  const lastCtx = lastRow.getContext('2d')
+  lastCtx.fillStyle = '#ff8866'
+  lastCtx.fillRect(0, 0, 40, 22)
+  lastCtx.fillStyle = '#141414'
+  lastCtx.fillRect(18, 6, 4, 4)
+  lastCtx.fillRect(8, 24, 24, 8)
+  lastCtx.fillStyle = '#ffffff'
+  lastCtx.fillRect(10, 26, 20, 4)
+  const lastData = lastCtx.getImageData(0, 0, 40, 40)
+  const lastEye = [lastData.data[(7 * 40 + 19) * 4], lastData.data[(7 * 40 + 19) * 4 + 1], lastData.data[(7 * 40 + 19) * 4 + 2]]
+  const lastBody = lastData.data[(10 * 40 + 10) * 4]
+  applyTextTone(lastData, 'custom', '#00ccff')
+  if (lastData.data[(7 * 40 + 19) * 4] !== lastEye[0] || lastData.data[(10 * 40 + 10) * 4] !== lastBody) {
+    return { status: 'error', detail: '마지막 행 리컬러가 캐릭터 픽셀을 변경했습니다.' }
+  }
+  if (lastData.data[(24 * 40 + 8) * 4] !== 20 || lastData.data[(24 * 40 + 8) * 4 + 1] !== 20) {
+    return { status: 'error', detail: '리컬러가 캡션 먹선 외곽을 지웠습니다.' }
+  }
+  if (lastData.data[(28 * 40 + 18) * 4] !== 255 || lastData.data[(28 * 40 + 18) * 4 + 1] !== 255) {
+    return { status: 'error', detail: '리컬러 바이패스가 캡션 흰 채움 원본을 바꿨습니다.' }
+  }
+  const lifted = document.createElement('canvas')
+  lifted.width = 360
+  lifted.height = 360
+  const liftedCtx = lifted.getContext('2d')
+  liftedCtx.fillStyle = '#ff8866'
+  liftedCtx.fillRect(0, 0, 360, 110)
+  liftedCtx.fillStyle = '#7c3aed'
+  liftedCtx.beginPath()
+  liftedCtx.arc(180, 70, 48, 0, Math.PI * 2)
+  liftedCtx.fill()
+  liftedCtx.fillStyle = '#141414'
+  liftedCtx.fillRect(160, 40, 20, 20)
+  liftedCtx.fillRect(70, 120, 220, 28)
+  liftedCtx.fillStyle = '#ffffff'
+  liftedCtx.fillRect(80, 126, 200, 16)
+  const liftedData = liftedCtx.getImageData(0, 0, 360, 360)
+  const plateBefore = [liftedData.data[(70 * 360 + 180) * 4], liftedData.data[(70 * 360 + 180) * 4 + 1], liftedData.data[(70 * 360 + 180) * 4 + 2]]
+  applyTextTone(liftedData, 'custom', '#00ccff')
+  if (liftedData.data[(70 * 360 + 180) * 4] !== plateBefore[0] || liftedData.data[(50 * 360 + 170) * 4] !== 20) {
+    return { status: 'error', detail: '22~28번 유형 리컬러가 원형판/눈을 변경했습니다.' }
+  }
+  if (liftedData.data[(120 * 360 + 70) * 4] !== 20) {
+    return { status: 'error', detail: '리컬러가 중간 높이 캡션 먹선을 지웠습니다.' }
+  }
+  if (liftedData.data[(134 * 360 + 180) * 4] !== 255 || liftedData.data[(134 * 360 + 180) * 4 + 1] !== 255) {
+    return { status: 'error', detail: '리컬러 바이패스가 중간 높이 캡션 흰 채움 원본을 바꿨습니다.' }
+  }
+  if (typeof PreviewLightboxModal !== 'function') {
+    return { status: 'error', detail: '확대 미리보기 팝업 컴포넌트가 없습니다.' }
+  }
+  const lightboxSrc = String(PreviewLightboxModal)
+  if (!lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
+    return { status: 'error', detail: '확대 팝업 체커보드 배경이 없거나 흰 배경이 남아 있습니다.' }
   }
   const ring = document.createElement('canvas')
   ring.width = 40
@@ -1006,11 +1581,8 @@ export async function checkEmoticonSlicer() {
   ringCtx.fillRect(18, 34, 4, 4)
   const outline = ringCtx.getImageData(0, 0, 40, 40)
   applyOutlineAssist(outline, '#111111')
-  if (outline.data[(33 * 40 + 18) * 4 + 3] < 80) {
-    return { status: 'warn', detail: 'IDLE · 하단 글자 1px 외곽선 보강이 알파 엣지에 스트로크를 넣지 않았습니다.' }
-  }
-  if (outline.data[(5 * 40 + 18) * 4 + 3] > 20) {
-    return { status: 'error', detail: '외곽선 보강이 상단 캐릭터 영역까지 번졌습니다.' }
+  if (outline.data[(33 * 40 + 18) * 4 + 3] > 20 || outline.data[(5 * 40 + 18) * 4 + 3] > 20) {
+    return { status: 'error', detail: '외곽선 보강 바이패스가 원본에 스트로크를 넣었습니다.' }
   }
   const inspected = inspectRenderedSlice({
     canvas: kakao,
@@ -1041,7 +1613,174 @@ export async function checkEmoticonSlicer() {
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
   return {
     status: 'ok',
-    detail: `PASS · 스마트 ${smart.length}객체 · 가로세로결합분할 · 구멍OFF기본 · 텍스트상하단 · 배경순환 · 파이프라인CropFloodT${FLOOD_FILL_TOLERANCE} · 진단인스펙터 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · Outline기본ON · 그리드 ${grid.length}칸 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B`,
+    detail: `PASS · 스마트 ${smart.length}객체 · 가로세로결합분할 · 구멍OFF기본 · 3단엔진${TEXT_ENGINE_DEFAULT} · 팝업체커보드 · 텍스트상하단 · 배경순환 · 파이프라인CropFloodT${FLOOD_FILL_TOLERANCE} · 진단인스펙터 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · Outline기본ON · 그리드 ${grid.length}칸 · 골든 ${goldenCuts}컷 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B · ${GOLDEN_BASELINE.version}`,
+  }
+}
+
+function hashBand(data, width, y0, y1) {
+  let hash = 2166136261
+  const top = Math.max(0, y0)
+  const bottom = Math.min(data.length / (width * 4), y1)
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4
+      hash ^= data[i]
+      hash = Math.imul(hash, 16777619)
+      hash ^= data[i + 3]
+      hash = Math.imul(hash, 16777619)
+    }
+  }
+  return hash
+}
+
+function probeLightboxCheckerboard() {
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
+    return { status: 'warn', detail: 'IDLE · 체커보드 CSS를 읽을 DOM이 없습니다.' }
+  }
+  const host = document.createElement('div')
+  host.className = 'checkerboard-bg emo-lightbox-stage'
+  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:40px;height:40px;'
+  document.body.appendChild(host)
+  const style = getComputedStyle(host)
+  const image = style.backgroundImage || ''
+  const color = style.backgroundColor || ''
+  document.body.removeChild(host)
+  const solidWhite = /rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/i.test(color) && (!image || image === 'none')
+  if (solidWhite) {
+    return { status: 'error', detail: '확대 팝업 스테이지가 흰색 배경입니다.' }
+  }
+  if (!/conic|gradient|repeating/i.test(image)) {
+    return { status: 'warn', detail: 'IDLE · checkerboard-bg 격자 패턴을 스타일시트에서 찾지 못했습니다.' }
+  }
+  return { status: 'ok', detail: '팝업 checkerboard-bg 격자 확인' }
+}
+
+export async function checkTextEngine() {
+  const spec = GOLDEN_BASELINE.splitter
+  const modes = TEXT_ENGINE_MODES.map((item) => item.id)
+  if (TEXT_ENGINE_DEFAULT !== TEXT_ENGINE_ORIGINAL || spec.textEngineDefault !== 'ORIGINAL') {
+    return { status: 'error', detail: '텍스트 엔진 기본값이 ORIGINAL이 아닙니다.' }
+  }
+  if (
+    normalizeTextEngineMode('original') !== TEXT_ENGINE_ORIGINAL
+    || normalizeTextEngineMode('vector_overlay') !== TEXT_ENGINE_VECTOR_OVERLAY
+    || normalizeTextEngineMode('smart_recolor') !== TEXT_ENGINE_SMART_RECOLOR
+  ) {
+    return { status: 'error', detail: '3단 텍스트 엔진 모드 정규화가 실패했습니다.' }
+  }
+  if (modes.join(',') !== (spec.textEngineModes || []).join(',')) {
+    return { status: 'error', detail: '골든 기준선 3단 엔진 목록과 런타임 모드가 다릅니다.' }
+  }
+  const tooLong = TEXT_ENGINE_MODES.find((item) => String(item.label || '').length > GOLDEN_BASELINE.uiIntegrity.maxButtonLabelLength)
+  if (tooLong) {
+    return { status: 'error', detail: `엔진 라벨 "${tooLong.label}"이 ${GOLDEN_BASELINE.uiIntegrity.maxButtonLabelLength}자를 넘습니다.` }
+  }
+  if (TEXT_ENGINE_MODES.some((item) => !String(item.tooltip || '').trim() || item.tooltip === item.label)) {
+    return { status: 'error', detail: '엔진 버튼 설명문이 data-tooltip 격리를 지키지 않습니다.' }
+  }
+  if (captionForCutIndex(14) !== '어리둥절') {
+    return { status: 'error', detail: '15번 컷 캡션 매핑이 어리둥절이 아닙니다.' }
+  }
+  if (characterReadOnlyCeil(360, 289) !== 289) {
+    return { status: 'error', detail: 'SMART_RECOLOR Y_threshold(읽기 전용 천장)가 289가 아닙니다.' }
+  }
+
+  let painted = false
+  applyTextEngine({ dummy: true }, {
+    textEngineMode: TEXT_ENGINE_ORIGINAL,
+    paintVector: () => { painted = true },
+    recolorPixels: () => { painted = true },
+  })
+  if (painted) {
+    return { status: 'error', detail: 'ORIGINAL 모드가 벡터/리컬러 콜백을 호출했습니다.' }
+  }
+
+  const vector = document.createElement('canvas')
+  vector.width = 360
+  vector.height = 360
+  const vectorCtx = vector.getContext('2d')
+  if (!vectorCtx) return { status: 'warn', detail: 'IDLE · 벡터 오버레이 프로브 컨텍스트를 열 수 없습니다.' }
+  vectorCtx.clearRect(0, 0, 360, 360)
+  paintCutCaption(vector, '어리둥절')
+  const ink = vectorCtx.getImageData(0, 230, 360, 130)
+  let inkHits = 0
+  for (let i = 3; i < ink.data.length; i += 4) {
+    if (ink.data[i] > 40) inkHits += 1
+  }
+  if (inkHits < 80) {
+    return { status: 'error', detail: 'VECTOR_OVERLAY 3중 외곽선이 하단 밴드에 캡션을 그리지 못했습니다.' }
+  }
+  const topKeep = vectorCtx.getImageData(180, 40, 1, 1).data
+  if (topKeep[3] > 20) {
+    return { status: 'error', detail: '벡터 오버레이가 상단 캐릭터 밴드를 칠했습니다.' }
+  }
+  const glyph = document.createElement('canvas')
+  glyph.width = 360
+  glyph.height = 360
+  const glyphCtx = glyph.getContext('2d')
+  glyphCtx.clearRect(0, 0, 360, 360)
+  paintCutCaption(glyph, 'ㅇ')
+  const gpix = glyphCtx.getImageData(0, 0, 360, 360).data
+  let minX = 360
+  let maxX = 0
+  let minY = 360
+  let maxY = 0
+  for (let y = 0; y < 360; y += 1) {
+    for (let x = 0; x < 360; x += 1) {
+      if (gpix[(y * 360 + x) * 4 + 3] < 40) continue
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+  if (maxX <= minX || maxY <= minY) {
+    return { status: 'error', detail: '벡터 오버레이가 한글 ㅇ을 그리지 못했습니다.' }
+  }
+  const cx = (minX + maxX) >> 1
+  const cy = (minY + maxY) >> 1
+  if (gpix[(cy * 360 + cx) * 4 + 3] < 180) {
+    return { status: 'error', detail: '벡터 오버레이가 글자 내부 닫힌 영역을 투명으로 남겼습니다.' }
+  }
+
+  const roi = document.createElement('canvas')
+  roi.width = 360
+  roi.height = 360
+  const roiCtx = roi.getContext('2d')
+  roiCtx.fillStyle = '#ff8866'
+  roiCtx.fillRect(0, 0, 360, 210)
+  roiCtx.fillStyle = '#ffb48c'
+  roiCtx.fillRect(40, 80, 70, 50)
+  roiCtx.fillStyle = '#ff5a8a'
+  roiCtx.fillRect(200, 90, 80, 60)
+  roiCtx.fillStyle = '#141414'
+  roiCtx.fillRect(70, 300, 220, 28)
+  roiCtx.fillStyle = '#ffffff'
+  roiCtx.fillRect(80, 306, 200, 16)
+  const pixels = roiCtx.getImageData(0, 0, 360, 360)
+  const lockY = characterReadOnlyCeil(360, 289)
+  const before = hashBand(pixels.data, 360, 0, lockY)
+  const hand = [pixels.data[(100 * 360 + 70) * 4], pixels.data[(100 * 360 + 70) * 4 + 1], pixels.data[(100 * 360 + 70) * 4 + 2]]
+  const cake = [pixels.data[(120 * 360 + 240) * 4], pixels.data[(120 * 360 + 240) * 4 + 1], pixels.data[(120 * 360 + 240) * 4 + 2]]
+  applyTextTone(pixels, 'custom', '#00ccff', { textEngineMode: TEXT_ENGINE_SMART_RECOLOR })
+  const after = hashBand(pixels.data, 360, 0, lockY)
+  if (after !== before) {
+    return { status: 'error', detail: 'SMART_RECOLOR가 Y_threshold 위 캐릭터 영역을 변경했습니다.' }
+  }
+  if (pixels.data[(100 * 360 + 70) * 4] !== hand[0] || pixels.data[(120 * 360 + 240) * 4] !== cake[0]) {
+    return { status: 'error', detail: 'SMART_RECOLOR가 손/케이크 컬러 픽셀을 침범했습니다.' }
+  }
+
+  const lightboxSrc = String(PreviewLightboxModal)
+  if (typeof PreviewLightboxModal !== 'function' || !lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
+    return { status: 'error', detail: '확대 팝업에 checkerboard-bg가 없거나 bg-white가 남아 있습니다.' }
+  }
+  const board = probeLightboxCheckerboard()
+  if (board.status === 'error') return board
+
+  return {
+    status: board.status === 'warn' ? 'warn' : 'ok',
+    detail: `PASS · ORIGINAL 무변 · VECTOR 캡션 ${inkHits}px · SMART Y≥${lockY} · 15번 어리둥절 · ${board.detail} · ${GOLDEN_BASELINE.version}`,
   }
 }
 
@@ -1110,38 +1849,232 @@ export async function checkFpsPipeline() {
       let last = 0
       let count = 0
       const step = (now) => {
-        if (last) deltas.push(now - last)
-        last = now
         count += 1
-        if (count < 8) requestAnimationFrame(step)
+        if (count > 4 && last) deltas.push(now - last)
+        last = now
+        if (count < 24) requestAnimationFrame(step)
         else resolve()
       }
       requestAnimationFrame(step)
     }),
-    new Promise((resolve) => window.setTimeout(resolve, 600)),
+    new Promise((resolve) => window.setTimeout(resolve, 900)),
   ])
-  const avg = deltas.length ? deltas.reduce((sum, item) => sum + item, 0) / deltas.length : 16.7
-  const fps = Math.min(60, 1000 / Math.max(1, avg))
+  const sorted = deltas.slice().sort((a, b) => a - b)
+  const mid = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 16.7
+  const fps = Math.min(60, 1000 / Math.max(1, mid))
   const probe = document.createElement('canvas')
   probe.width = 256
   probe.height = 256
   const t0 = performance.now()
   const ctx = probe.getContext('2d')
-  if (!ctx) return { status: 'warn', detail: 'IDLE · 파이프라인 프로브 컨텍스트를 열지 못했습니다.' }
+  if (!ctx) return { status: 'warn', detail: 'IDLE · 파이프라인 프로브 컨텍스트를 열 수 없습니다.' }
+  if (!Array.isArray(HQ_KERNEL) || HQ_KERNEL.length !== 9 || HQ_KERNEL[4] !== 5 || typeof polishHqImageData !== 'function') {
+    return { status: 'error', detail: 'HQ 렌더 파이프라인(커널/폴리시)이 기준선에서 빠졌습니다.' }
+  }
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.fillStyle = '#22d3ee'
   ctx.fillRect(0, 0, 256, 256)
   ctx.getImageData(8, 8, 48, 48)
   const latency = performance.now() - t0
   const live = readRenderPerf()
+  const minHz = GOLDEN_BASELINE.motionEngine.allowedHzMin
+  if (fps < minHz && latency > 40) {
+    return {
+      status: 'error',
+      detail: `rAF ${Math.round(fps)} FPS < baseline ${minHz}Hz · 프로브 ${latency.toFixed(1)}ms · ${live.text}`,
+    }
+  }
+  if (fps < minHz) {
+    return {
+      status: 'warn',
+      detail: `IDLE · 진단 스캔 중 rAF ${Math.round(fps)} FPS (페인트 프로브 ${latency.toFixed(1)}ms는 정상) · ${live.text}`,
+    }
+  }
   const stable = fps >= 45 && latency <= 40
   if (!stable) {
     return {
       status: 'warn',
-      detail: `IDLE · rAF ${Math.round(fps)} FPS / 프로브 ${latency.toFixed(1)}ms · 라이브 ${live.text}`,
+      detail: `IDLE · rAF ${Math.round(fps)} FPS / 프로브 ${latency.toFixed(1)}ms · 라이브 ${live.text} · baseline ${minHz}Hz 통과`,
     }
   }
   return {
     status: 'ok',
-    detail: `PASS · ${Math.round(fps)} FPS / 프로브 ${latency.toFixed(1)}ms · ${live.text}`,
+    detail: `PASS · ${Math.round(fps)} FPS ≥ ${minHz}Hz / 프로브 ${latency.toFixed(1)}ms · ${live.text} · ${GOLDEN_BASELINE.version}`,
+  }
+}
+
+export async function checkMotionSequencer() {
+  if (SEQUENCE_FPS_DEFAULT !== 8 || SEQUENCE_FPS_MIN !== 4 || SEQUENCE_FPS_MAX !== 24) {
+    return { status: 'error', detail: '시퀀서 기본 FPS가 8(4~24)이 아닙니다.' }
+  }
+  if (clampSequenceFps(SEQUENCE_FPS_DEFAULT) !== 8 || clampSequenceFps(1) !== 4 || clampSequenceFps(99) !== 24) {
+    return { status: 'error', detail: '시퀀서 FPS 클램프가 실패했습니다.' }
+  }
+  const moved = moveSequenceItem([{ id: 'a' }, { id: 'b' }, { id: 'c' }], 2, -1)
+  if (moved[1]?.id !== 'c' || moved[2]?.id !== 'b') {
+    return { status: 'error', detail: '타임라인 순서 변경이 실패했습니다.' }
+  }
+  if (STUDIO_HUD_STEPS.length !== 10 || STUDIO_HUD_STEPS[0]?.id !== 'BFS_DEFRINGE') {
+    return { status: 'error', detail: '모션 스튜디오 HUD 10항목이 동기화되지 않았습니다.' }
+  }
+  const bounceBack = expandPingPong(['a', 'b', 'c', 'd'], true)
+  if (bounceBack.join('') !== 'abcdcb' || pingPongPlayIndex(4, 4, true) !== 2) {
+    return { status: 'error', detail: '핑퐁 루프 1-2-3-4-3-2 순환이 실패했습니다.' }
+  }
+  if (PARTICLE_LAYERS.length !== 4 || !PARTICLE_LAYERS.some((item) => item.id === 'sparkle')) {
+    return { status: 'error', detail: '파티클 오버레이 4종이 없습니다.' }
+  }
+  const virtual = resolvePlaybackFrames([], 'data:image/png,still')
+  if (!virtual.stillLoop || virtual.frames.length !== 1 || stillLoopFrameCount(8, 2, 1) !== 16) {
+    return { status: 'error', detail: '단일 이미지 가상 프레임 루프가 실패했습니다.' }
+  }
+  const spec = estimateStoreSpec({ frameCount: 4, fps: 8, pingPong: true })
+  if (spec.frames !== 6 || spec.kb <= 0) {
+    return { status: 'error', detail: '심사 스펙 HUD 계산이 실패했습니다.' }
+  }
+  const ids = TEXT_MOTION_EFFECTS.map((item) => item.id)
+  if (TEXT_MOTION_EFFECTS.length !== 5 || !ids.includes(TEXT_MOTION_BOUNCE) || !ids.includes(TEXT_MOTION_TYPEWRITER)) {
+    return { status: 'error', detail: '텍스트 모션 프리셋 5종이 없습니다.' }
+  }
+  const none = sampleTextMotion(TEXT_MOTION_NONE, 2, 8, '테스트')
+  if (none.x !== 0 || none.y !== 0 || none.scale !== 1 || none.text !== '테스트') {
+    return { status: 'error', detail: '없음(고정 텍스트) 포즈가 항등이 아닙니다.' }
+  }
+  const bounce = sampleTextMotion(TEXT_MOTION_BOUNCE, 2, 8, '테스트')
+  if (bounce.y === 0) {
+    return { status: 'error', detail: '바운스 Y 진폭 보간이 실패했습니다.' }
+  }
+  const pulse = sampleTextMotion(TEXT_MOTION_PULSE, 2, 8, '테스트')
+  if (pulse.scale < 0.9 || pulse.scale > 1.15) {
+    return { status: 'error', detail: '펄스 Scale 0.9~1.15 보간이 실패했습니다.' }
+  }
+  const typed = sampleTextMotion(TEXT_MOTION_TYPEWRITER, 0, 4, 'ABCD')
+  if (typed.text !== 'A') {
+    return { status: 'error', detail: '타이프라이터 글자 슬라이스가 실패했습니다.' }
+  }
+  if (resolveCaption(false, '아파요') !== '' || resolveCaption(true, '안녕') !== '안녕' || resolveCaption(true, '   ') !== '') {
+    return { status: 'error', detail: '자막 OFF/빈 입력이 잔여 텍스트를 남깁니다.' }
+  }
+  if (resolveCaption(true, '아파요', { customText: '' }) !== '' || captionForSequenceItem({ cutIndex: 0 }) !== '') {
+    return { status: 'error', detail: '빈 customText가 기본 예시 문구로 되돌아갑니다.' }
+  }
+  const liveClock = captionLoopIndex(0.5, 8, 2, 1)
+  if (liveClock.total !== 16 || liveClock.index !== 8) {
+    return { status: 'error', detail: '자막 루프 인덱스가 메인 프리뷰와 동기화되지 않습니다.' }
+  }
+  if (!String(paintLiveCaptionLayer).includes('isTextEnabled') || !String(paintLiveCaptionLayer).includes('customText')) {
+    return { status: 'error', detail: '메인 프리뷰 자막 레이어가 isTextEnabled/customText를 받지 않습니다.' }
+  }
+  const previewSrc = String(MotionPreviewCanvas)
+  const panelSrc = String(MotionSequencerPanel)
+  const selectorSrc = String(MotionEffectSelector)
+  const rendererSrc = String(paintDynamicTextMotion)
+  if (!previewSrc.includes('checkerboard-bg') || previewSrc.includes('bg-white')) {
+    return { status: 'error', detail: '모션 프리뷰 캔버스에 checkerboard-bg가 없거나 bg-white가 있습니다.' }
+  }
+  if (!previewSrc.includes('paintDynamicTextMotion') || !previewSrc.includes('buildCaptionPose')) {
+    return { status: 'error', detail: '프리뷰가 DynamicTextMotionRenderer와 연결되어 있지 않습니다.' }
+  }
+  if (!previewSrc.includes('captionLoopIndex')) {
+    return { status: 'error', detail: '프리뷰 자막 모션이 루프 시간에 연결되지 않았습니다.' }
+  }
+  if (!previewSrc.includes('applyDefringeToContext')) {
+    return { status: 'error', detail: '모션 프리뷰에 1px 디프린지가 없습니다.' }
+  }
+  if (!previewSrc.includes('paintParticleOverlay') || !previewSrc.includes('pingPongPlayIndex')) {
+    return { status: 'error', detail: '프리뷰에 파티클 또는 핑퐁 루프가 없습니다.' }
+  }
+  if (!previewSrc.includes('requestAnimationFrame') || !previewSrc.includes('paintMotionFrame')) {
+    return { status: 'error', detail: '단일 이미지 requestAnimationFrame 모션 루프가 없습니다.' }
+  }
+  if (!previewSrc.includes('mirrorPreviewFrame') || !String(mirrorPreviewFrame).includes('drawImage')) {
+    return { status: 'error', detail: '채팅 미리보기 캔버스 미러링이 없습니다.' }
+  }
+  if (!isMotionNone(MOTION_NONE) || sampleGifPreset(MOTION_NONE, 0.5, 1).scaleX !== 1 || sampleGifPreset('jellyBounce', 0.18, 1).scaleY === 1) {
+    return { status: 'error', detail: '모션 없음 고정 또는 젤리 바운스 분리가 실패했습니다.' }
+  }
+  if (!panelSrc.includes('data-motion-seq') || !panelSrc.includes('일시정지') || !panelSrc.includes('MotionEffectSelector')) {
+    return { status: 'error', detail: '프레임 시퀀서 패널 또는 모션 이펙트 선택기가 없습니다.' }
+  }
+  if (!panelSrc.includes('data-caption-bar') || !panelSrc.includes('CaptionControlBar')) {
+    return { status: 'error', detail: '자막 입력창 또는 ON/OFF 토글이 없습니다.' }
+  }
+  if (!panelSrc.includes('captionLiveRef') || !panelSrc.includes('onCaptionLive')) {
+    return { status: 'error', detail: '메인 프리뷰 자막 동기화 ref가 없습니다.' }
+  }
+  if (!String(CaptionControlBar).includes('data-caption-input') || !String(CaptionControlBar).includes('data-caption-on')) {
+    return { status: 'error', detail: '자막 입력창 또는 ON/OFF 토글이 없습니다.' }
+  }
+  if (!panelSrc.includes('data-loop-mode') || !panelSrc.includes('ParticleOverlayBar') || !panelSrc.includes('ChatRoomSimulator') || !panelSrc.includes('StoreSpecHud')) {
+    return { status: 'error', detail: '핑퐁·파티클·채팅 시뮬·심사 HUD가 없습니다.' }
+  }
+  if (!selectorSrc.includes('data-text-effect')) {
+    return { status: 'error', detail: 'MotionEffectSelector에 data-text-effect가 없습니다.' }
+  }
+  if (!rendererSrc.includes('strokeText') || !rendererSrc.includes('fillText')) {
+    return { status: 'error', detail: '동적 텍스트 렌더러가 Canvas 2D strokeText/fillText를 쓰지 않습니다.' }
+  }
+  if (ENCODER_SIZE !== 360) {
+    return { status: 'error', detail: '인코더 출력 해상도가 360×360이 아닙니다.' }
+  }
+  const muxed = muxAnimatedWebp([Uint8Array.of(1, 2, 3, 4)], { width: 360, height: 360, delay: 125 })
+  if (!isAnimatedWebp(muxed)) {
+    return { status: 'error', detail: 'Animated WebP 뮤저가 ANIM/ANMF 컨테이너를 만들지 않습니다.' }
+  }
+  const gifSrc = String(encodeMotionGif)
+  const exportSrc = String(MotionExportPanel)
+  const progressSrc = String(EncodeProgressModal)
+  if (!gifSrc.includes('floydSteinbergIndex') || !gifSrc.includes('GIFEncoder')) {
+    return { status: 'error', detail: 'GIF 인코더에 gifenc 또는 Floyd-Steinberg가 없습니다.' }
+  }
+  if (!String(applyDefringeToContext).includes('defringeAlphaEdge')) {
+    return { status: 'error', detail: '인코더 경로의 디프린지 헬퍼가 없습니다.' }
+  }
+  if (!String(composeSequenceCanvases).includes('paintParticleOverlay')) {
+    return { status: 'error', detail: '인코더 파티클 오버레이가 연결되어 있지 않습니다.' }
+  }
+  if (!String(composeStillMotionCanvases).includes('paintMotionFrame') || !String(composeSequenceCanvases).includes('stillLoop')) {
+    return { status: 'error', detail: '단일 이미지 모션 프리셋 인코딩이 연결되어 있지 않습니다.' }
+  }
+  if (!panelSrc.includes('MotionExportPanel') || !exportSrc.includes('data-encode-fmt') || !exportSrc.includes('data-clip-save')) {
+    return { status: 'error', detail: '시퀀서 내보내기 또는 클립 저장 버튼이 없습니다.' }
+  }
+  const seqClip = createSequenceClip({ frames: [{ url: 'thumb' }], fps: 8, effect: 'bounce' }, 0)
+  if (seqClip.fileName !== '클립 1' || seqClip.blob || !seqClip.sharedUrl || seqClip.frames.length !== 1 || seqClip.isPermanent !== true) {
+    return { status: 'error', detail: '현재 모션 클립 저장 슬롯이 실패했습니다.' }
+  }
+  if (exportSrc.includes('addPackedClip') || !exportSrc.includes('purgeTempClips')) {
+    return { status: 'error', detail: '내보내기가 임시 클립을 라인에 남기거나 완료 후 정리하지 않습니다.' }
+  }
+  if (!progressSrc.includes('checkerboard-bg') || progressSrc.includes('bg-white')) {
+    return { status: 'error', detail: '인코딩 진행 창에 checkerboard-bg가 없거나 bg-white가 있습니다.' }
+  }
+  if (!progressSrc.includes('data-encode-gauge') || !exportSrc.includes('변환 중') || !exportSrc.includes('yieldToMain')) {
+    return { status: 'error', detail: '인코딩 진행률 게이지 또는 메인스레드 양보가 없습니다.' }
+  }
+  if (typeof yieldToMain !== 'function' || !frameProgressCopy('gif', 8, 16).includes('8 / 16')) {
+    return { status: 'error', detail: '프레임 진행률 문구 헬퍼가 없습니다.' }
+  }
+  if (motionClipFileName(0, 'gif') !== 'motion-01.gif' || motionClipFileName(1, 'webp') !== 'motion-02.webp') {
+    return { status: 'error', detail: 'ZIP 파일명이 motion-01.gif 규격이 아닙니다.' }
+  }
+  const clipSrc = String(MotionClipManager)
+  const zipBtnSrc = String(MotionZipToolbarButton)
+  if (!clipSrc.includes('checkerboard-bg') || clipSrc.includes('bg-white')) {
+    return { status: 'error', detail: '클립 갤러리에 checkerboard-bg가 없거나 bg-white가 있습니다.' }
+  }
+  if (!clipSrc.includes('data-clip-del') || !clipSrc.includes('stopPropagation') || !clipSrc.includes('전체 비우기')) {
+    return { status: 'error', detail: '클립 개별 삭제 또는 전체 비우기가 없습니다.' }
+  }
+  if (!panelSrc.includes('fallbackSeq') || !clipSrc.includes('clearClips')) {
+    return { status: 'error', detail: '클립 삭제 후 시퀀서 폴백이 없습니다.' }
+  }
+  if (!zipBtnSrc.includes('data-batch-zip') || !panelSrc.includes('data-play-speed') || !panelSrc.includes('MotionClipManager')) {
+    return { status: 'error', detail: '클립 보관함, 배속 토글 또는 ZIP 일괄 버튼이 없습니다.' }
+  }
+  return {
+    status: 'ok',
+    detail: `PASS · 타임라인 · 핑퐁 · 파티클 · 채팅 시뮬 · 심사 HUD · GIF/WebP · ZIP motion-01 · ${SEQUENCE_FPS_DEFAULT}FPS · ${GOLDEN_BASELINE.version}`,
   }
 }

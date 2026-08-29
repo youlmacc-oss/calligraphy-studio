@@ -119,7 +119,7 @@ export default function SelfDiagnosticModal({
       <div className="studio-modal-card diag-hud">
         <header className="studio-modal-head">
           <div>
-            <p className="studio-modal-kicker">Live Diagnostic HUD · HUD1~{total} 파이프라인 동기화</p>
+            <p className="studio-modal-kicker">Live Diagnostic HUD · HUD1~{total} · 3단 텍스트 엔진 · Golden Baseline {report?.baselineVersion || '대기'}</p>
             <h2 id="diag-title">🩺 {total}단계 시스템 정밀 자가진단</h2>
           </div>
           <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" {...magnify('닫기', '모니터링 창을 닫습니다')}>
@@ -164,10 +164,12 @@ export default function SelfDiagnosticModal({
             <p className="diag-health">
               시스템 건강 지수 배지 · 정상 {report.score.ok} / 주의 {report.score.warn} / 오류 {report.score.error}
               {' '}· 종합 건강 지수: {report.health}% · 평균 지연시간 {report.avg}ms
+              {report.baselineVersion ? ` · ${report.baselineVersion}` : ''}
+              {report.baseline && !report.baseline.ok ? ' · BASELINE DRIFT' : ''}
               {finished ? ' · 전체 단계 완료' : ''}
             </p>
           ) : (
-            <p className="diag-health is-idle">레지스트리 {total}항목이 대기 중입니다. 시작하면 카드가 PASS/FAIL 애니메이션으로 바뀌고 콘솔에 로그가 흐릅니다.</p>
+            <p className="diag-health is-idle">레지스트리 {total}항목이 대기 중입니다. ORIGINAL/벡터/스마트 엔진 · 확대 팝업 체커보드 · Flood T=18을 순서대로 스캔합니다.</p>
           )}
         </div>
 
@@ -204,7 +206,7 @@ export default function SelfDiagnosticModal({
           <pre ref={logBoxRef} className="diag-terminal-body">
             {logs.length
               ? logs.map((line) => `[${line.at}] [${line.level}] ${line.message}`).join('\n')
-              : `[READY] HUD standby. Press 🚀 to start the ${total}-step registry scan.`}
+              : `[READY] HUD standby. ${total}-step scan · 3-engine text · lightbox checkerboard. Press 🚀 to start.`}
           </pre>
         </section>
       </div>

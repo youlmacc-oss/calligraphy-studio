@@ -1,0 +1,673 @@
+.ms-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-height: 360px;
+  min-height: 0;
+  flex: 1 1 0;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  margin-top: 0.08rem;
+  padding: 0.24rem 0.32rem 0.2rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(8, 12, 22, 0.78);
+}
+
+.ms-root::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.ms-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.28rem;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.ms-head h3 {
+  margin: 0;
+  color: #ecfeff;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ms-speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16rem;
+  flex: 0 0 auto;
+}
+
+.ms-transport {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.22rem;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ms-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.ms-toolbar-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ms-fx {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.16rem;
+  padding: 0.15rem 0;
+}
+
+.ms-fx-btn {
+  min-width: 0;
+}
+
+.ms-toolbar .ms-btn,
+.ms-toolbar-row .ms-btn {
+  padding: 0.15rem 0.4rem;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.ms-btn {
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  background: rgba(15, 23, 42, 0.88);
+  color: #ecfeff;
+  border-radius: 0.5rem;
+  padding: 0.18rem 0.5rem;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ms-btn.is-on {
+  border-color: rgba(250, 204, 21, 0.7);
+  background: rgba(250, 204, 21, 0.16);
+  color: #fef9c3;
+}
+
+.ms-fps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #a5f3fc;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ms-fps input {
+  width: 88px;
+  accent-color: #22d3ee;
+}
+
+.ms-body {
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1fr);
+  gap: 0.32rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.ms-caption {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-x: auto;
+  position: static;
+  z-index: auto;
+  padding: 0.15rem 0;
+}
+
+.ms-caption-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  background: rgba(15, 23, 42, 0.88);
+  color: #ecfeff;
+  border-radius: 0.5rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ms-caption-input:disabled {
+  opacity: 0.42;
+}
+
+.ms-caption-input::placeholder {
+  color: #67e8f9;
+  opacity: 0.72;
+}
+
+.ms-preview-stage {
+  width: 105px;
+  height: 105px;
+  border-radius: 0.55rem;
+  overflow: hidden;
+  flex: 0 0 105px;
+}
+
+.ms-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ms-dock {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 0.25rem;
+  align-items: stretch;
+  flex: 0 0 75px;
+  height: 75px;
+  max-height: 75px;
+  overflow: hidden;
+}
+
+.ms-chat {
+  padding: 0.16rem 0.35rem;
+  border-radius: 0.55rem;
+  min-height: 0;
+  height: 75px;
+  max-height: 75px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.ms-chat.is-light {
+  background: #b2c7d9;
+  color: #191919;
+}
+
+.ms-chat.is-light .ms-kicker {
+  color: #334155;
+}
+
+.ms-chat.is-dark {
+  background: #1c1c1e;
+  color: #f4f4f5;
+}
+
+.ms-chat-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.12rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ms-chat-row {
+  display: flex;
+  margin-top: 0;
+}
+
+.ms-chat-row.is-in {
+  display: none;
+}
+
+.ms-chat-row.is-out {
+  justify-content: flex-end;
+}
+
+.ms-chat-bubble.is-in {
+  max-width: 78%;
+  padding: 0.28rem 0.5rem;
+  border-radius: 0.9rem 0.9rem 0.9rem 0.2rem;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ms-chat.is-dark .ms-chat-bubble.is-in {
+  background: #3f3f46;
+  color: #f4f4f5;
+}
+
+.ms-chat-sticker {
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  background: transparent;
+  flex: 0 0 56px;
+}
+
+.ms-chat-sticker canvas,
+.ms-chat-mirror {
+  display: block;
+  width: 56px;
+  height: 56px;
+  background: transparent;
+}
+
+.ms-spec {
+  padding: 0.12rem 0.35rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: rgba(15, 23, 42, 0.88);
+  height: 75px;
+  max-height: 75px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.04rem;
+}
+
+.ms-spec-row {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.ms-spec-badge {
+  display: inline-block;
+  margin-top: 0.06rem;
+  padding: 0.06rem 0.32rem;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ms-spec-badge.is-ok {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+.ms-spec-badge.is-warn {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fdba74;
+}
+
+.ms-tracks {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.ms-cut-bank,
+.ms-timeline {
+  display: flex;
+  gap: 0.32rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0;
+  min-height: 105px;
+  min-height: 64px;
+  max-height: 105px;
+  height: 105px;
+  flex: 0 1 105px;
+}
+
+.ms-timeline {
+  list-style: none;
+  margin: 0;
+}
+
+.ms-cut,
+.ms-clip {
+  position: relative;
+  flex: 0 0 105px;
+  width: 105px;
+  height: 105px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.45rem;
+  overflow: hidden;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ms-cut img,
+.ms-clip img {
+  display: block;
+  width: 105px;
+  height: 105px;
+  object-fit: contain;
+  border-radius: 0.45rem 0.45rem 0 0;
+}
+
+.ms-kicker {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.ms-cut span,
+.ms-clip-no {
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  color: #ecfeff;
+  font-size: 10px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px #020617;
+}
+
+.ms-clip-ops {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.ms-clip-ops button {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 2px;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  background: rgba(15, 23, 42, 0.88);
+  color: #ecfeff;
+  font-size: 9px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.ms-empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.ms-export {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  margin-top: auto;
+  padding-top: 0.18rem;
+  border-top: 1px solid rgba(34, 211, 238, 0.16);
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  background: rgba(8, 12, 22, 0.96);
+}
+
+.ms-export-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+.ms-export-btn {
+  box-sizing: border-box;
+  height: 48px;
+  min-height: 48px;
+  padding: 0.75rem 1.5rem;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 0.65rem;
+  flex-shrink: 0;
+}
+
+.ms-export-save {
+  border-color: rgba(52, 211, 153, 0.75);
+  background: rgba(16, 185, 129, 0.22);
+  color: #d1fae5;
+}
+
+.ms-toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 4;
+  margin: 0;
+  transform: translateX(-50%);
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  background: rgba(6, 24, 18, 0.94);
+  color: #a7f3d0;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.ms-enc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.ms-enc-card {
+  width: min(360px, 92vw);
+  padding: 0.85rem 0.9rem 0.8rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: rgba(8, 12, 22, 0.94);
+}
+
+.ms-enc-msg,
+.ms-enc-pct,
+.ms-enc-gauge {
+  margin: 0;
+  color: #ecfeff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ms-enc-gauge {
+  margin-top: 0.35rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: #67e8f9;
+}
+
+.ms-enc-pct {
+  margin-top: 0.22rem;
+  color: #a5f3fc;
+}
+
+.ms-enc-track {
+  margin-top: 0.45rem;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+}
+
+.ms-enc-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #22d3ee, #a78bfa);
+}
+
+.ms-enc-preview {
+  width: 72px;
+  height: 72px;
+  margin: 0.55rem auto 0;
+  overflow: hidden;
+  border-radius: 0.45rem;
+}
+
+.ms-enc-preview:empty {
+  display: none;
+}
+
+.ms-enc-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ms-enc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-top: 0.65rem;
+}
+
+.ms-clips {
+  margin-top: 0.04rem;
+  flex: 0 0 auto;
+  max-height: 56px;
+  overflow: hidden;
+}
+
+.ms-clips-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ms-clip-clear {
+  padding: 0.12rem 0.4rem;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.ms-clip-gallery {
+  list-style: none;
+  display: flex;
+  gap: 0.32rem;
+  margin: 0.12rem 0 0;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.ms-clip-card {
+  position: relative;
+  flex: 0 0 56px;
+  width: 56px;
+}
+
+.ms-clip-thumb {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 0.4rem;
+  background: transparent;
+}
+
+.ms-clip-thumb img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.ms-clip-thumb span {
+  position: absolute;
+  left: 3px;
+  bottom: 2px;
+  color: #ecfeff;
+  font-size: 9px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px #020617;
+}
+
+.ms-clip-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ms-clip-card:hover .ms-clip-del,
+.ms-clip-del:hover,
+.ms-clip-del:focus-visible {
+  background: #ef4444;
+  color: #f8fafc;
+  border-color: #ef4444;
+}
+
+.ms-clip-card-ops {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.ms-clip-card-ops button {
+  flex: 1;
+  min-width: 0;
+  min-height: 18px;
+  padding: 1px 2px;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 211, 238, 0.32);
+  background: rgba(15, 23, 42, 0.88);
+  color: #ecfeff;
+  font-size: 9px;
+  line-height: 1.2;
+  font-weight: 800;
+}

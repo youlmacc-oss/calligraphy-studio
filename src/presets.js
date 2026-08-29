@@ -1,13 +1,39 @@
 export const ESTIMATED_DURATION_MS = 5000
 
-export const FONT_GROUPS = [
-  { id: 'kr-calli', label: '한글 캘리그라피 & 서예/붓글씨', tag: '🇰🇷 인기 1위', hint: '붓글씨 · 흘림 · 손맛' },
-  { id: 'kr-title', label: '한글 제목/유튜브 볼드 & 키치', tag: '🇰🇷 헤드라인', hint: '썸네일 · 간판 · 스티커' },
-  { id: 'kr-myeongjo', label: '한글 감성 명조 & 전통 활자', tag: '🇰🇷 명조', hint: '본문 · 한지 · 활판' },
-  { id: 'woodcut', label: '동양/서양 목각 & 판화체', tag: '🪵 전통 4종', hint: '목판 · 우드타입' },
-  { id: 'en-script', label: '영문 시그니처 필기체 & 스크립트', tag: '🇺🇸 스크립트', hint: '딥펜 · 사인' },
-  { id: 'en-text', label: '영문 모던 산스 / 볼드 & 블랙레터', tag: '🇺🇸 모던', hint: '산스 · 고딕' },
+export const FONT_TAB_LABELS = {
+  'kr-title': '🇰🇷 헤드라인',
+  'kr-calli': '🇰🇷 본문·고딕',
+  'kr-myeongjo': '🇰🇷 명조·서예',
+  'en-text': '🇺🇸 영문 헤드라인',
+  'en-script': '🇺🇸 스크립트',
+  woodcut: '🎨 디스플레이/아트',
+}
+
+export const FONT_TAB_TOOLTIPS = {
+  'kr-title': '한글 헤드라인·고딕 폰트 모음',
+  'kr-calli': '한글 본문·가독성 폰트 모음',
+  'kr-myeongjo': '한글 명조 및 전통 서예체 모음',
+  'en-text': '영문 볼드 헤드라인 폰트 모음',
+  'en-script': '영문 필기체·스크립트 폰트 모음',
+  woodcut: '개성 있는 디스플레이·키치 폰트 모음',
+}
+
+export const FONT_CATEGORIES = [
+  { id: 'kr-title', label: FONT_TAB_LABELS['kr-title'], tooltip: FONT_TAB_TOOLTIPS['kr-title'] },
+  { id: 'kr-calli', label: FONT_TAB_LABELS['kr-calli'], tooltip: FONT_TAB_TOOLTIPS['kr-calli'] },
+  { id: 'kr-myeongjo', label: FONT_TAB_LABELS['kr-myeongjo'], tooltip: FONT_TAB_TOOLTIPS['kr-myeongjo'] },
+  { id: 'en-text', label: FONT_TAB_LABELS['en-text'], tooltip: FONT_TAB_TOOLTIPS['en-text'] },
+  { id: 'en-script', label: FONT_TAB_LABELS['en-script'], tooltip: FONT_TAB_TOOLTIPS['en-script'] },
+  { id: 'woodcut', label: FONT_TAB_LABELS.woodcut, tooltip: FONT_TAB_TOOLTIPS.woodcut },
 ]
+
+export const FONT_GROUPS = FONT_CATEGORIES.map((item) => ({
+  id: item.id,
+  label: item.label,
+  tag: item.label,
+  hint: item.tooltip,
+  tooltip: item.tooltip,
+}))
 
 export const FONTS = [
   { id: 'shin-gwajang', group: 'kr-calli', label: '상상토끼 신과장체', family: 'SangSangShin, "Nanum Pen Script", cursive', weights: [400] },
@@ -135,10 +161,10 @@ export function getFontMeta(font) {
   const groupGuide = GROUP_GUIDES[font.group] ?? { mood: '개성 있는 웹폰트 스타일', use: '타이포 디자인 추천' }
   const blurb = FONT_BLURBS[font.id] ?? groupGuide.mood
   return {
-    tag: group?.tag ?? '🔤 타이포',
+    tag: group?.tag ?? group?.label ?? '🔤 타이포',
     groupId: group?.id ?? font.group,
     groupLabel: group?.label ?? '',
-    groupHint: group?.hint ?? '',
+    groupHint: group?.tooltip ?? group?.hint ?? '',
     blurb,
     mood: groupGuide.mood,
     use: groupGuide.use,

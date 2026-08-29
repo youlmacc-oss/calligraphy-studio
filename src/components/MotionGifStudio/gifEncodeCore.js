@@ -1,6 +1,6 @@
 import { GIFEncoder, quantize, applyPalette } from 'gifenc'
 
-export const ALPHA_CUT = 24
+export const ALPHA_CUT = 16
 export const GIF_HEADER = 'GIF89a'
 const NETSCAPE = [78, 69, 84, 83, 67, 65, 80, 69, 50, 46, 48]
 
@@ -46,10 +46,11 @@ export function assertValidGif(uint8) {
 }
 
 export function isGifTransparentPixel(r, g, b, a, cut = ALPHA_CUT) {
+  if (a === 0) return true
   if (a < cut) return true
-  if (a < 96) {
+  if (a < 180) {
     const luma = r * 0.299 + g * 0.587 + b * 0.114
-    if (luma > 248 || luma < 8) return true
+    if (luma > 242 || luma < 12) return true
   }
   return false
 }
@@ -69,8 +70,8 @@ export function maskRgbaTransparency(rgba, cut = ALPHA_CUT) {
   return copy
 }
 
-function encodeTransparentFrame(rgba) {
-  const masked = maskRgbaTransparency(rgba)
+function encodeTransparentFrame(rgba, cut = ALPHA_CUT) {
+  const masked = maskRgbaTransparency(rgba, cut)
   const palette = quantize(masked, 255, { format: 'rgb565' })
   const table = (palette || []).map((color) => color.slice(0, 3))
   if (!table.length) table.push([0, 0, 0])
@@ -90,6 +91,7 @@ export function encodeRgbaFrames(frames, options = {}) {
   const height = Math.max(1, Math.round(Number(options.height) || list[0].height || 1))
   const delay = delayMsFromOptions(options)
   const transparent = options.transparent !== false
+  const alphaCut = Math.min(20, Math.max(10, Number(options.alphaThreshold) || ALPHA_CUT))
   const gif = GIFEncoder()
 
   for (let i = 0; i < list.length; i += 1) {
@@ -99,7 +101,7 @@ export function encodeRgbaFrames(frames, options = {}) {
       throw new Error('모든 GIF 프레임 크기가 같아야 합니다.')
     }
     const mapped = transparent
-      ? encodeTransparentFrame(pixels.data)
+      ? encodeTransparentFrame(pixels.data, alphaCut)
       : (() => {
         const palette = quantize(pixels.data, 256, { format: 'rgb565' })
         return {

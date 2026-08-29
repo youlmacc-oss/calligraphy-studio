@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm: dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "npm: build",
+      "type": "shell",
+      "command": "npm run build",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "npm: preview",
+      "type": "shell",
+      "command": "npm run preview",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm: lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm: test",
+      "type": "shell",
+      "command": "npm run test",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "npm: diagnose",
+      "type": "shell",
+      "command": "npm run diagnose",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "npm: test:loop",
+      "type": "shell",
+      "command": "npm run test:loop",
+      "problemMatcher": []
+    }
+  ]
+}

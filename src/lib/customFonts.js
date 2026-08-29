@@ -1,8 +1,9 @@
 export const CUSTOM_FONT_GROUP = {
   id: 'custom',
-  tag: '📂 내 폰트',
-  label: '업로드한 TTF/OTF/WOFF',
-  hint: 'FontFace로 이 브라우저에 즉시 등록',
+  tag: '📂 내 글꼴',
+  label: '📂 내 글꼴',
+  hint: '이 브라우저에 올린 TTF/OTF/WOFF 모음',
+  tooltip: '이 브라우저에 올린 TTF/OTF/WOFF 모음',
 }
 
 const faces = new Map()

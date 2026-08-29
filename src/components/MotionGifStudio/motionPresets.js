@@ -1,9 +1,23 @@
+import { primeHqContext } from '../../utils/hqRender.js'
+
+export const MOTION_NONE = 'none'
+
+export function isMotionNone(presetId) {
+  const id = String(presetId ?? '').trim().toLowerCase()
+  return !id || id === MOTION_NONE || id === 'null' || id === 'off'
+}
+
 export const MOTION_PRESETS = [
-  { id: 'jellyBounce', label: '① Jelly Bounce', hint: '쫀득한 젤리 탄성' },
-  { id: 'neonPulse', label: '② Neon Pulse', hint: '네온 맥동 발광' },
-  { id: 'cuteWiggle', label: '③ Cute Wiggle', hint: '리듬 갸우뚱 틸트' },
-  { id: 'cinematicGlitch', label: '④ Cinematic Glitch', hint: 'RGB 채널 분리 노이즈' },
-  { id: 'softFloating', label: '⑤ Soft Floating', hint: '무중력 부유 루프' },
+  { id: 'jellyBounce', label: '① Jelly Bounce', hint: '수직 점프 + 착지 Squash & Stretch' },
+  { id: 'neonPulse', label: '② Neon Pulse', hint: '사인파 발광 · 알파 블렌딩' },
+  { id: 'cuteWiggle', label: '③ Cute Wiggle', hint: '좌우 ±8° 갸우뚱 + 리듬 틸트' },
+  { id: 'cinematicGlitch', label: '④ Cinematic Glitch', hint: '순간 RGB 분리 수평 시프트' },
+  { id: 'softFloating', label: '⑤ Soft Floating', hint: '무중력 상하 사인파 부유' },
+  { id: 'angryShake', label: '⑥ Angry Shake', hint: '고주파 X/Y 진동 + 분노 지터' },
+  { id: 'rollingTilt', label: '⑦ Rolling Tilt', hint: '좌우 진자 -12°~+12° 보간' },
+  { id: 'squashStretch', label: '⑧ Squash Stretch', hint: '착지 납작 · 도약 길쭉 탄성' },
+  { id: 'heartbeat', label: '⑨ Heartbeat', hint: '쿵-쾅 2박자 심장 펄스' },
+  { id: 'zoomPunch', label: '⑩ Zoom Punch', hint: '화면 앞으로 튀는 팝업 줌' },
 ]
 
 const TAU = Math.PI * 2
@@ -24,16 +38,41 @@ export function clamp01(value) {
   return Math.min(1, Math.max(0, n))
 }
 
+export const LOOP_MIN = 0.5
+export const LOOP_MAX = 4
+export const INTENSITY_MIN = 10
+export const INTENSITY_MAX = 100
+export const ZOOM_MIN = 50
+export const ZOOM_MAX = 200
+
 export function clampLoopSeconds(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return 2
-  return Math.min(3, Math.max(0.5, n))
+  return Math.min(LOOP_MAX, Math.max(LOOP_MIN, n))
 }
 
 export function clampIntensity(value) {
   const n = Math.round(Number(value))
   if (!Number.isFinite(n)) return 70
-  return Math.min(100, Math.max(1, n))
+  return Math.min(INTENSITY_MAX, Math.max(INTENSITY_MIN, n))
+}
+
+export function clampZoom(value) {
+  const n = Math.round(Number(value) / 10) * 10
+  if (!Number.isFinite(n)) return 100
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n))
+}
+
+export function clampFps(value) {
+  return Number(value) >= 24 ? 24 : 12
+}
+
+export function quantizeLoopTime(time01, fps, loopSeconds) {
+  const seconds = clampLoopSeconds(loopSeconds)
+  const rate = clampFps(fps)
+  const steps = Math.max(2, Math.round(rate * seconds))
+  const u = wrap01(time01)
+  return Math.floor(u * steps) / steps
 }
 
 function identityPose() {
@@ -57,25 +96,25 @@ function inWindow(t, start, end) {
 export function jellyBounce(t, intensity) {
   const u = wrap01(t)
   const i = clamp01(intensity)
-  const hop = Math.sin(u * TAU)
-  const land = (1 + Math.cos(u * TAU * 2)) / 2
-  const k = 0.22 * i
+  const air = Math.sin(u * Math.PI)
+  const land = (1 - air) ** 2
+  const k = 0.2 * i
   return {
     ...identityPose(),
-    dy: hop * -22 * i,
-    scaleX: 1 + land * k,
-    scaleY: 1 - land * k,
+    dy: air * -28 * i,
+    scaleX: 1 + land * k - air * 0.07 * i,
+    scaleY: 1 - land * k + air * 0.12 * i,
   }
 }
 
 export function neonPulse(t, intensity) {
   const u = wrap01(t)
   const i = clamp01(intensity)
-  const wave = Math.sin(u * TAU)
+  const wave = 0.5 + 0.5 * Math.sin(u * TAU)
   return {
     ...identityPose(),
-    alpha: 0.7 + 0.3 * wave,
-    glowRadius: 8 + (10 + 18 * i) * (0.5 + 0.5 * wave),
+    alpha: 1 - 0.18 * i * (1 - wave),
+    glowRadius: (6 + 28 * i) * wave,
   }
 }
 
@@ -97,20 +136,86 @@ export function cinematicGlitch(t, intensity) {
   if (!burst) return pose
   return {
     ...pose,
-    rgbShift: (10 + 14 * i),
-    sliceShift: (16 + 10 * i),
-    dx: 2 * i,
+    rgbShift: 24 * i,
+    sliceShift: 26 * i,
   }
 }
 
 export function softFloating(t, intensity) {
   const u = wrap01(t)
   const i = clamp01(intensity)
-  const wave = Math.sin(u * TAU)
   return {
     ...identityPose(),
-    dy: wave * 15 * i,
-    rotateDeg: wave * 2 * i,
+    dy: Math.sin(u * TAU) * 16 * i,
+  }
+}
+
+export function angryShake(t, intensity) {
+  const u = wrap01(t)
+  const i = clamp01(intensity)
+  const buzzX = Math.sin(u * TAU * 16)
+  const buzzY = Math.cos(u * TAU * 21)
+  return {
+    ...identityPose(),
+    dx: buzzX * 7 * i,
+    dy: buzzY * 6 * i,
+    rotateDeg: Math.sin(u * TAU * 14) * 3.2 * i,
+    scaleX: 1 + Math.abs(buzzX) * 0.045 * i,
+    scaleY: 1 + Math.abs(buzzY) * 0.045 * i,
+  }
+}
+
+export function rollingTilt(t, intensity) {
+  const u = wrap01(t)
+  const i = clamp01(intensity)
+  return {
+    ...identityPose(),
+    rotateDeg: Math.sin(u * TAU) * 12 * i,
+    dx: Math.sin(u * TAU) * 4 * i,
+  }
+}
+
+export function squashStretch(t, intensity) {
+  const u = wrap01(t)
+  const i = clamp01(intensity)
+  const hop = Math.sin(u * TAU)
+  const squash = Math.max(0, -hop)
+  const stretch = Math.max(0, hop)
+  return {
+    ...identityPose(),
+    dy: hop * -18 * i,
+    scaleX: 1 + squash * 0.32 * i - stretch * 0.14 * i,
+    scaleY: 1 - squash * 0.32 * i + stretch * 0.26 * i,
+  }
+}
+
+function heartPulse(u, center, sharpness) {
+  const d = (u - center) * sharpness
+  return Math.exp(-(d * d))
+}
+
+export function heartbeat(t, intensity) {
+  const u = wrap01(t)
+  const i = clamp01(intensity)
+  const beat = heartPulse(u, 0.18, 18) + heartPulse(u, 0.38, 16) * 0.72
+  const pop = beat * 0.22 * i
+  return {
+    ...identityPose(),
+    scaleX: 1 + pop,
+    scaleY: 1 + pop,
+  }
+}
+
+export function zoomPunch(t, intensity) {
+  const u = wrap01(t)
+  const i = clamp01(intensity)
+  const punch = Math.sin(u * Math.PI) ** 1.35
+  const k = punch * 0.42 * i
+  return {
+    ...identityPose(),
+    scaleX: 1 + k,
+    scaleY: 1 + k,
+    dy: punch * -8 * i,
   }
 }
 
@@ -121,9 +226,15 @@ const PRESET_FNS = {
   cinematicGlitch,
   rgbGlitch: cinematicGlitch,
   softFloating,
+  angryShake,
+  rollingTilt,
+  squashStretch,
+  heartbeat,
+  zoomPunch,
 }
 
 export function sampleMotion(presetId, t, intensity) {
+  if (isMotionNone(presetId)) return identityPose()
   const fn = PRESET_FNS[presetId] || jellyBounce
   return fn(t, intensity)
 }
@@ -147,14 +258,26 @@ export function paintMotionFrame(ctx, source, {
   width,
   height,
   time01,
-  preset = 'jellyBounce',
+  preset = MOTION_NONE,
   intensity = 70,
 } = {}) {
   const w = width || ctx.canvas.width
   const h = height || ctx.canvas.height
+
+  if (isMotionNone(preset)) {
+    primeHqContext(ctx)
+    ctx.save()
+    ctx.clearRect(0, 0, w, h)
+    ctx.translate(w / 2, h / 2)
+    drawContained(ctx, source, 0, 0, w, h)
+    ctx.restore()
+    return
+  }
+
   const amp = typeof intensity === 'number' && intensity > 1 ? intensity / 100 : clamp01(intensity)
   const motion = sampleMotion(preset, time01, amp)
 
+  primeHqContext(ctx)
   ctx.save()
   ctx.clearRect(0, 0, w, h)
   ctx.translate(w / 2 + motion.dx, h / 2)
@@ -169,14 +292,21 @@ export function paintMotionFrame(ctx, source, {
   if (motion.rgbShift > 0) {
     const shift = motion.rgbShift
     ctx.save()
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.globalAlpha = 0.55 * motion.alpha
-    drawContained(ctx, source, -shift, motion.dy, w, h)
-    ctx.globalAlpha = 0.4 * motion.alpha
-    drawContained(ctx, source, shift, motion.dy, w, h)
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.globalAlpha = 0.42 * motion.alpha
+    ctx.shadowColor = 'rgba(255, 56, 88, 0.95)'
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetX = -shift
+    ctx.shadowOffsetY = 0
+    drawContained(ctx, source, 0, motion.dy, w, h)
+    ctx.shadowColor = 'rgba(40, 210, 255, 0.95)'
+    ctx.shadowOffsetX = shift
+    drawContained(ctx, source, 0, motion.dy, w, h)
     ctx.restore()
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = motion.alpha
+    ctx.shadowColor = 'transparent'
+    ctx.shadowOffsetX = 0
     drawContained(ctx, source, 0, motion.dy, w, h)
     const bandH = Math.max(8, h * 0.1)
     const bandY = h * 0.38 + motion.dy

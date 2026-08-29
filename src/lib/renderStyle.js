@@ -3,6 +3,7 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN } from './fontSize.js'
 import { curveExtraPad } from './proTools.js'
 import { paintStickers } from './stickers.js'
 import { applyViewEdit } from './viewEdit.js'
+import { hqPixelRatio, primeHqContext } from '../utils/hqRender.js'
 
 const EXPORT_SIZE = 1024
 const FONTS_BY_ID = Object.fromEntries(FONTS.map((item) => [item.id, item]))
@@ -1591,10 +1592,11 @@ export async function drawLivePreview(canvas, options) {
   const rect = typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : { width: 0, height: 0 }
   const cssW = Math.max(1, Math.round(canvas.clientWidth || rect.width || 512))
   const cssH = Math.max(1, Math.round(canvas.clientHeight || rect.height || 512))
-  const dpr = Math.min(2, window.devicePixelRatio || 1)
+  const dpr = hqPixelRatio()
   canvas.width = cssW * dpr
   canvas.height = cssH * dpr
   const ctx = canvas.getContext('2d', { alpha: true })
+  primeHqContext(ctx)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   const scale = Math.min(cssW, cssH) / 512
 
@@ -1647,7 +1649,9 @@ export async function renderStyledText(options) {
     const transparent = document.createElement('canvas')
     transparent.width = exportW
     transparent.height = exportH
-    await drawStudioScene(transparent.getContext('2d'), {
+    const transparentCtx = transparent.getContext('2d')
+    primeHqContext(transparentCtx)
+    await drawStudioScene(transparentCtx, {
       ...options,
       width: exportW,
       height: exportH,
@@ -1663,12 +1667,16 @@ export async function renderStyledText(options) {
     if (graphic !== transparent) {
       transparent.width = graphic.width
       transparent.height = graphic.height
-      transparent.getContext('2d').drawImage(graphic, 0, 0)
+      const copyCtx = transparent.getContext('2d')
+      primeHqContext(copyCtx)
+      copyCtx.drawImage(graphic, 0, 0)
     }
     const mask = document.createElement('canvas')
     mask.width = exportW
     mask.height = exportH
-    await drawStudioScene(mask.getContext('2d'), {
+    const maskCtx = mask.getContext('2d')
+    primeHqContext(maskCtx)
+    await drawStudioScene(maskCtx, {
       ...options,
       width: exportW,
       height: exportH,
@@ -1691,7 +1699,9 @@ export async function renderStyledText(options) {
       if (processedMask !== mask) {
         mask.width = processedMask.width
         mask.height = processedMask.height
-        mask.getContext('2d').drawImage(processedMask, 0, 0)
+        const maskCopy = mask.getContext('2d')
+        primeHqContext(maskCopy)
+        maskCopy.drawImage(processedMask, 0, 0)
       }
     }
     const [transparentUrl, maskUrl] = await Promise.all([
@@ -1710,7 +1720,9 @@ export async function renderStyledText(options) {
   const transparent = document.createElement('canvas')
   transparent.width = exportW
   transparent.height = exportH
-  drawStyled(transparent.getContext('2d'), {
+  const plainCtx = transparent.getContext('2d')
+  primeHqContext(plainCtx)
+  drawStyled(plainCtx, {
     ...exportOptions,
     transparent: true,
     width: exportW,
@@ -1719,7 +1731,9 @@ export async function renderStyledText(options) {
   const mask = document.createElement('canvas')
   mask.width = exportW
   mask.height = exportH
-  drawMask(mask.getContext('2d'), {
+  const plainMask = mask.getContext('2d')
+  primeHqContext(plainMask)
+  drawMask(plainMask, {
     ...exportOptions,
     width: exportW,
     height: exportH,

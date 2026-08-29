@@ -13,14 +13,21 @@ import {
   checkLiveStatusHud,
   checkGifEngine,
   checkEmoticonSlicer,
+  checkTextEngine,
   checkProEngine,
   checkFpsPipeline,
+  checkMotionSequencer,
   checkTypography,
   checkZStack,
+  checkSheetPipeline,
 } from './diagnosticChecks.js'
 import { GUIDE_SAMPLES } from './guideSamples.js'
+import { GUIDEBOOK_SECTIONS, guidebookWorkflow } from './guidebookSections.js'
+
+export { GUIDEBOOK_SECTIONS }
 
 export const GUIDE_CHAPTERS = [
+  { id: 'pipeline', no: '00', label: '시트 3단계 워크플로', depth: 'summary' },
   { id: 'basics', no: '01', label: '간단 설정 요약', depth: 'summary' },
   { id: 'canvas', no: '02', label: '캔버스·레이어 실전', depth: 'deep' },
   { id: 'crop', no: '03', label: '크롭·회전·필터', depth: 'deep' },
@@ -38,6 +45,30 @@ function feature(entry) {
 
 export const APP_FEATURES_REGISTRY = [
   feature({
+    id: 'sheet-pipeline',
+    name: '시트 3단계 워크플로',
+    description: '4×5 투명 PNG 생성 · 무손실 바이패스 분할 · 360 모션 ZIP · 3대 모듈 진단',
+    diagnosticFunction: checkSheetPipeline,
+    guideContent: {
+      chapterId: 'pipeline',
+      order: 1,
+      sectionId: 'pipeline',
+      sectionLabel: '3단계 워크플로',
+      title: '🧩 시트 생성 → 분할 → 모션 3단계',
+      kicker: '4행 × 5열 (20개) 투명 PNG를 기본으로, 무손실 바이패스와 360 제출까지 한 줄로 이었습니다.',
+      workflow: guidebookWorkflow(),
+      play: GUIDEBOOK_SECTIONS.map((section) => ({
+        title: section.title,
+        body: `${section.quote} ${section.lines.join(' ')}`,
+        params: [section.badge],
+        tip: section.lines[0],
+        fail: section.id === 'diagnostics-guide'
+          ? '로그가 비어 있으면 분할기 상단 [📋 진단 로그 복사]를 다시 누르세요.'
+          : '규격이 다르면 좌측 프리셋 5×4·6×4·7×4·4×4로 바꾸세요.',
+      })),
+    },
+  }),
+  feature({
     id: 'gpu',
     name: 'HUD1 16인치 노스크롤 뷰포트 (100vh)',
     description: '16인치 한 화면 100vh overflow hidden · Canvas 2D/WebGL GPU 컨텍스트',
@@ -46,13 +77,13 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'buffer',
     name: 'HUD2 92vw×86vh 반응형 분할기 레이아웃',
-    description: '이모티콘 분할기 92vw×86vh 상대단위 · 1:1/16:9/9:16 픽셀 버퍼',
+    description: '이모티콘 분할기 92vw×86vh 상대단위 · 개발 뷰 1600 스케일 · 1:1/16:9/9:16 픽셀 버퍼',
     diagnosticFunction: checkBuffers,
   }),
   feature({
     id: 'fonts',
     name: 'HUD3 기본 줌 35% · 5% 증감 제어',
-    description: '미리보기 기본 줌 35%, 휠/버튼 5% 스텝(10~200%) · 웹폰트 캐시',
+    description: '미리보기 기본 줌 35%, 휠/버튼 5% 스텝(10~200%) · 웹폰트 캐시 · 폰트 탭 label/tooltip 분리 · 라벨 스캐너는 호스트별로 allow-long-text 면제 · autoRepair 테스트 락',
     diagnosticFunction: checkFonts,
   }),
   feature({
@@ -63,8 +94,8 @@ export const APP_FEATURES_REGISTRY = [
   }),
   feature({
     id: 'drag',
-    name: 'HUD5 뷰포트 배경 모드 (체커보드/다크/라이트)',
-    description: '🏁 체커보드 → ⬛ 다크 → ⬜ 라이트 순환 · 히트박스/드래그 좌표',
+    name: 'HUD5 뷰포트 체커보드 · 확대 팝업 격자',
+    description: '🏁 체커보드 → ⬛ 다크 → ⬜ 라이트 순환 · 확대 팝업은 라이트 모드와 무관하게 checkerboard-bg 고정 · bg-white 금지',
     diagnosticFunction: checkDragEngine,
   }),
   feature({
@@ -100,19 +131,19 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'export',
     name: 'HUD11 Flood-Fill T=18 · 하이라이트 보호',
-    description: '코너 플러드필 허용오차 18 · 이마/눈동자 하이라이트 비관통 · PNG/JPEG/GIF/ICO',
+    description: '코너 플러드필 T=18 · 1.5px 알파 페더 · 흰 엣지 1px 디프린지 · 이마/눈동자 하이라이트 비관통',
     diagnosticFunction: checkEncoders,
   }),
   feature({
     id: 'ai',
     name: 'HUD12 내부 고립 구멍 투명화 토글',
-    description: '팔/다리/원형 링 안쪽 선택적 Alpha=0 · 기본 OFF로 하이라이트 보호 · AI 마스크',
+    description: '팔/다리/원형 링 안쪽 선택적 Alpha=0 · 기본 OFF · 글자 바운딩 박스 내부 보호 · 텍스트 original 비절단',
     diagnosticFunction: checkAiMask,
   }),
   feature({
     id: 'favorites',
-    name: 'HUD13 텍스트 존 슬라이더 · 상/하단 스위치',
-    description: '감지 높이 5~50%(기본 20%) · [하단]/[상단] 말풍선 위치 · 즐겨찾기 스토리지',
+    name: 'HUD13 3단 텍스트 엔진 · 존 슬라이더',
+    description: '원본 유지 | 벡터 오버레이 | 스마트 리컬러 · 기본 ORIGINAL · 스마트 모드만 하단/상단 존 · 라벨≤16자',
     diagnosticFunction: checkFavorites,
     guideContent: {
       chapterId: 'basics',
@@ -127,8 +158,8 @@ export const APP_FEATURES_REGISTRY = [
   }),
   feature({
     id: 'live-hud',
-    name: 'HUD14 흰 사각 패치 제거 · 1:1 픽셀 치환',
-    description: 'fillRect 흰 판 없음 · 어두운 획 RGB만 직접 치환 · 하단 슬림 인포 바 16인치 도킹',
+    name: 'HUD14 ORIGINAL 기본 · 15번 어리둥절',
+    description: '기본 엔진은 비트맵 무변 · 벡터 모드만 Canvas 2D 3중 외곽선 · 15번 컷=어리둥절 · 하단 슬림 인포 바',
     diagnosticFunction: checkLiveStatusHud,
     guideContent: {
       chapterId: 'canvas',
@@ -139,14 +170,14 @@ export const APP_FEATURES_REGISTRY = [
       play: [
         {
           title: '캔버스 아래 슬림 인포 바를 본다',
-          body: '미리보기 바로 아래에 36~42px 슬림 바가 도킹됩니다. [👑 메인] / [✨ 서브] 배지, 글자 수/줄 수, 폰트명·크기·자간·행간, 좌표·회전·투명도, 프리셋, FPS가 가로 1줄에 들어갑니다. 16인치 1080p·100% 배율에서는 페이지 스크롤 없이 한 화면에 보입니다. 상단 [🩺 시스템 정밀 자가진단]은 HUD1~5 뷰포트(100vh·92vw×86vh·줌 35%·리사이저·배경 모드), HUD6~10 슬라이서(모드 A/B·결합 분할·Zero-Click), HUD11~15 투명·텍스트(T=18·구멍 토글·상/하단·1:1 치환·Outline ON), HUD16~18 규격·Inspector·ZIP을 순서대로 점검합니다.',
-          params: ['슬림 바 36~42px', 'HUD1~5 뷰포트', 'HUD6~10 슬라이서', 'HUD11~15 투명·텍스트', 'HUD16~18 Inspector·ZIP'],
+          body: '미리보기 바로 아래에 36~42px 슬림 바가 도킹됩니다. [👑 메인] / [✨ 서브] 배지, 글자 수/줄 수, 폰트명·크기·자간·행간, 좌표·회전·투명도, 프리셋, FPS가 가로 1줄에 들어갑니다. 16인치 1080p·100% 배율에서는 페이지 스크롤 없이 한 화면에 보입니다. 상단 [🩺 시스템 정밀 자가진단]은 HUD1부터 마지막 단계까지 뷰포트·슬라이서·투명·Inspector·ZIP을 순서대로 점검하고, 모든 지표를 Golden Baseline(2026.08-PRO-OPTIMIZED: 28컷 4×7 · T=18 · 360×360 · 24fps · 16px 플로팅 툴팁)과 대조합니다.',
+          params: ['슬림 바 36~42px', 'HUD1~5 뷰포트', 'HUD6~10 슬라이서', 'HUD11~15 투명·텍스트', 'Golden Baseline 대조'],
           tip: '레이어 카드를 바꾸거나 캔버스에서 글자를 클릭하면 HUD가 그 레이어로 바뀝니다. 폰트 목록에 호버하면 미리보기 폰트명도 따라갑니다.',
           fail: '바가 화면 아래로 잘리면 브라우저 확대가 100%인지 확인하세요. 캔버스는 상단 툴바·하단 바를 뺀 높이에 맞춰 줄어듭니다.',
         },
         {
           title: '해상도가 달라도 캔버스는 가운데',
-          body: '스튜디오는 100vh 안에 3단 레이아웃을 고정합니다. 이모티콘 분할기는 92vw×86vh 상대단위입니다. 중앙 열은 툴바와 하단 인포 바를 뺀 나머지 높이에 캔버스를 aspect-fit으로 맞춥니다. #main-canvas-area가 좌표 기준점이라, 모니터 배율이나 창 크기가 달라도 글자가 좌상단으로 쏠리지 않습니다.',
+          body: '스튜디오는 100vh 안에 3단 레이아웃을 고정합니다. 이모티콘 분할기는 92vw×86vh 상대단위이며, 좁은 개발 뷰에서는 1600 레이아웃을 축소해 브라우저 100%와 같이 보입니다. 크롬처럼 가로는 넓고 세로가 짧아도 1000px 높이 기준으로 같이 축소되어 타임라인 아래 3버튼이 잘리지 않습니다. 중앙 열은 툴바와 하단 인포 바를 뺀 나머지 높이에 캔버스를 aspect-fit으로 맞춥니다. #main-canvas-area가 좌표 기준점이라, 모니터 배율이나 창 크기가 달라도 글자가 좌상단으로 쏠리지 않습니다.',
           params: ['100vh / overflow hidden', '분할기 92vw×86vh', '#main-canvas-area = 상대 좌표 원점'],
           tip: '다른 PC에서 글자가 한쪽으로 붙거나 인포 바가 잘리면 자가진단의 인포 바/뷰포트 항목을 먼저 돌려 보세요.',
           fail: '브라우저 확대만 과도하면 칩이 가로로 스크롤됩니다. 인포 바 높이는 유지되고, 좁은 화면에서도 2~3열로 쌓이지 않습니다.',
@@ -157,7 +188,7 @@ export const APP_FEATURES_REGISTRY = [
   feature({
     id: 'gif-engine',
     name: 'HUD15 Outline 기본 ON',
-    description: '글자 알파 엣지 1px 스트로크 기본 활성 · GIF 모션 프리셋/인코더',
+    description: '글자 알파 엣지 1px 스트로크 기본 활성 · GIF 모션 프리셋 10종/인코더',
     diagnosticFunction: checkGifEngine,
     guideContent: {
       chapterId: 'ai',
@@ -169,8 +200,8 @@ export const APP_FEATURES_REGISTRY = [
       play: [
         {
           title: '모션 프리셋을 고른 뒤 GIF를 받는다',
-          body: '중앙 툴바와 우측 [🎬 모션 GIF 스튜디오]에서 5대 모션(Jelly Bounce · Neon Pulse · Cute Wiggle · Cinematic Glitch · Soft Floating)을 60fps로 미리보고 투명 GIF로 받습니다. 좌측 [이모티콘 컷 픽업]은 분할기 28컷 DataURL을 격자로 불러오고, 칸을 누르면 즉시 뷰포트 소스가 됩니다. [전체 28컷 일괄 변환]은 같은 모션을 ZIP으로 묶습니다. 규격은 카카오 360(여백 센터링)·라인 320×270·슬랙/디스코드 128·HD 500·원본 유지입니다.',
-          params: ['Jelly Bounce', 'Neon Pulse', 'Cute Wiggle', 'Cinematic Glitch', 'Soft Floating'],
+          body: '중앙 툴바와 우측 [🎬 모션 GIF 스튜디오]에서 10종 모션(코어 5: Jelly Bounce · Neon Pulse · Cute Wiggle · Cinematic Glitch · Soft Floating + 확장: Angry Shake · Rolling Tilt · Squash Stretch · Heartbeat · Zoom Punch)을 60fps로 미리보고 투명 GIF로 받습니다. 실시간 프리뷰는 devicePixelRatio HiDPI 버퍼와 imageSmoothingQuality=high 네이티브 보간만 써서 50~60Hz를 유지합니다. 알파 프리멀티플라이 리샘플과 에지 보존 Bilateral은 GIF 인코딩 프레임에만 적용되며, 카카오 규격은 360×360 그대로입니다. 인코드 기준은 Golden Baseline 24fps · 실측 ≥20Hz · 루프 이음 ≤3.5 · 예상 용량 ≤3500KB입니다. UI 라벨 검사는 툴바·내비·모션 스튜디오의 짧은 크롬 버튼만 보며, 폰트 트리거처럼 allow-long-text인 선택기는 면제합니다. 좌측 [이모티콘 컷 픽업]은 분할기 28컷 DataURL을 격자로 불러오고, 칸을 누르면 즉시 뷰포트 소스가 됩니다. [전체 28컷 일괄 변환]은 같은 모션을 ZIP으로 묶습니다. 규격은 카카오 360(여백 센터링)·라인 320×270·슬랙/디스코드 128·HD 500·원본 유지입니다.',
+          params: ['Jelly Bounce', 'Neon Pulse', 'Cute Wiggle', 'Cinematic Glitch', 'Soft Floating', 'Angry Shake', 'Rolling Tilt', 'Squash Stretch', 'Heartbeat', 'Zoom Punch'],
           tip: '쇼츠 썸네일은 네온 펄스, 채널 배너는 소프트 플로팅, 릴스 인트로는 시네마틱 페이드가 잘 맞습니다.',
           fail: '진행 바가 멈추면 글자가 너무 크거나 해상도가 높을 수 있습니다. 화면 맞춤으로 줄인 뒤 다시 시도하세요.',
         },
@@ -186,30 +217,30 @@ export const APP_FEATURES_REGISTRY = [
   }),
   feature({
     id: 'emoticon-slicer',
-    name: 'HUD16 360×360 Safe Margin · Inspector',
-    description: '카카오 360 중앙 정렬·슈퍼샘플 · 4대 픽셀 지표 Inspector · Crop→Flood T=18→획치환',
+    name: 'HUD16 360×360 · destination-in · T=18',
+    description: '투영 프로파일 모드 A · 투명 무손실 · 권장 안내',
     diagnosticFunction: checkEmoticonSlicer,
     guideContent: {
       chapterId: 'ai',
       order: 12,
       sectionId: 'emoticon',
       sectionLabel: '이모티콘 시트',
-      title: '🧩 AI 이모티콘 30종 시트 생성 및 원클릭 분할 가이드',
+      title: '🧩 AI 이모티콘 20종 시트 생성 및 원클릭 분할 가이드',
       sample: GUIDE_SAMPLES['kakao-sticker'],
       play: [
         {
-          title: 'AI에서 균일한 30종 시트를 뽑는다',
-          body: 'Grok / Midjourney / DALL·E에 흰 배경 그리드 시트를 요청합니다. 추천 영문: white background, sticker sheet, kawaii emoticons, even spacing, 5x6 grid array of 30 unique stickers, no text, no watermark, square cells. 행과 열이 흔들리면 모드 B에서 절단선을 드래그해 칸을 맞추는 편이 정확합니다.',
-          params: ['white background', 'sticker sheet', '5x6 grid array', '30 unique stickers'],
-          tip: '셀 사이 여백이 충분해야 스마트 자동 감지가 잘 됩니다. 붙어 있거나 칸이 들쭉날쭉한 시트는 모드 B에서 절단선을 드래그해 맞추세요.',
-          fail: '복잡한 사진 배경 시트는 객체가 한 덩어리로 잡힙니다. 반드시 흰 배경 또는 투명 배경 시트를 쓰세요.',
+          title: 'AI에서 균일한 20종 시트를 뽑는다',
+          body: '최상의 품질을 위해 배경이 투명한 4행 × 5열 (총 20개) PNG 시트를 기본 규격으로 생성하세요. 프롬프트에 Transparent background, PNG format, clean grid 4 rows by 5 columns를 넣습니다. 분할기는 PNG·JPG·WebP를 모두 받고, 올리면 4×5=20칸으로 스냅됩니다. 28·24·16칸은 좌측 규격 프리셋으로 바꿉니다.',
+          params: ['4×5 투명 PNG', '생성 프롬프트', '전 포맷 업로드', '프리셋 전환'],
+          tip: '캐릭터와 하단 글자 사이에 간격을 두면 분할이 정확합니다.',
+          fail: '복잡한 사진 배경 시트는 객체가 한 덩어리로 잡힙니다. 투명 PNG 또는 흰 배경 그리드 시트를 쓰세요.',
         },
         {
-          title: '모드 A로 28칸을 1초에 뽑고, 결합 덩어리는 자동 분리한다',
-          body: '시트를 올리면 줌 35% → 모드 A 스마트 감지 → 모드 B 절단선 세팅이 한 번 실행됩니다(Zero-Click). 모드 A 감지 알고리즘은 그대로 두고, 평균 높이·너비의 1.7배를 넘는 세로·가로 결합 덩어리만 반으로 나눕니다. 정상 크기 박스는 수정하지 않습니다.',
-          params: ['모드 A 세로 1.7배 반분할', '모드 A 가로 1.7배 반분할', 'Zero-Click 업로드', '기본 줌 35%'],
-          tip: '세로로 두 칸이 붙거나 가로로 두 객체가 한 상자로 잡히면 후처리가 자동으로 갈라 줍니다. 감지가 어긋나면 모드 B로 전환하세요.',
-          fail: '여백이 거의 없는 시트는 한 덩어리로 잡힐 수 있습니다. 모드 B에서 0.5mm 가이드선으로 칸을 맞추세요.',
+          title: '무손실 바이패스와 4×5 스냅으로 나눈다',
+          body: '투명 시트 업로드 시 픽셀 손실 없는 무손실 바이패스(Lossless Bypass)로 즉시 자동 스냅되며, 비투명 시트도 텍스트 보호 마스킹으로 글자 파임 없이 분할됩니다. 프리셋은 5×4(20)·6×4(24)·7×4(28)·4×4(16)입니다. 옵션은 [자동 배경 투명화]와 [안쪽 구멍 투명화]입니다.',
+          params: ['Bypass-First', '4×5 기본 스냅', '원클릭 프리셋', '글자 파임 방지'],
+          tip: '자동이 어긋나면 5×4 · 20을 누르세요. 절단선과 좌측 썸네일이 20칸으로 맞춰집니다.',
+          fail: '여백이 거의 없는 시트는 한 덩어리로 잡힐 수 있습니다. 모드 B에서 가이드선으로 칸을 맞추세요.',
         },
         {
           title: '모드 B에서 인접 칸 침범 없이 칼같이 자른다',
@@ -220,31 +251,37 @@ export const APP_FEATURES_REGISTRY = [
         },
         {
           title: '배경 투명 PNG와 하이라이트 보호를 이해한다',
-          body: '기본은 코너 Flood-Fill(T=18)만 써서 바깥 흰/미색을 Alpha=0으로 바꿉니다. 윈도우 탐색기·일부 뷰어는 투명 픽셀을 검정/흰색으로 보여 줄 수 있으나, 브라우저와 카카오는 체커보드/투명으로 봅니다. 정밀 허용치 T=18은 코알라 이마·귀처럼 닫힌 밝은 하이라이트를 뚫지 않습니다. [내부 고립 구멍 투명화]는 기본 OFF입니다. 켜면 팔/다리 사이·원형 테두리 안 닫힌 배경 구멍까지 지우며, 끄면 캐릭터 내부 밝은 픽셀을 보호합니다.',
-          params: ['Flood-Fill T=18', '하이라이트 보호', '구멍 투명화 기본 OFF', '탐색기≠브라우저 표시'],
+          body: '기본은 코너 Flood-Fill(T=18)만 써서 바깥 흰/미색을 Alpha=0으로 바꿉니다. 1-Pass는 4모서리 BFS에 1px 브릿지 실링을 더해 ㅇ·눈동자 같은 폐곡선 내부로 새지 않게 하고, 2-Pass는 경계 8방향 배경 비율과 1.2~1.5px 거리 페더로 톱니를 깎습니다. 3-Pass는 흰 후광만 스마트 디프린지한 뒤 프리멀티플라이 리샘플로 360 중앙에 올립니다. [내부 고립 구멍 투명화]는 기본 OFF이며, 켜도 하단 글자 바운딩 박스 안은 보호합니다.',
+          params: ['1-Pass 폐곡선 실링', '2-Pass 1.35px 페더', '구멍 투명화 기본 OFF', '글자 내부 보호'],
           tip: '카카오톡 라이트/다크 테마에서 흰·검은 Outline이 보이는지 줌 옆 [배경 모드]로 바로 확인하세요. 탐색기에서 투명이 검게 보이는 것은 뷰어 특성입니다.',
           fail: '구멍 투명화를 켠 채 크림색 하이라이트가 많은 캐릭터를 돌리면 일부 밝은 점이 같이 지워질 수 있습니다. 기본 OFF로 두세요.',
         },
         {
-          title: '텍스트는 15~20% 구간만 바꾸고 Outline으로 선명도를 확보한다',
-          body: '렌더는 Crop → 360 모서리 Flood-Fill(T=18) → 어두운 획 1:1 치환입니다. fillRect 흰 사각을 쓰지 않고 미색 판 픽셀만 투명으로 펀치합니다. [↕ 텍스트 감지 높이]는 5~50%(기본 20%)이며 [하단]/[상단] 스위치로 말풍선 위치를 고릅니다. 몸통이 걸리면 15~20%로 낮추세요. Outline은 기본 ON이라 고대비 가장자리가 바로 붙습니다.',
-          params: ['하단/상단 토글', '감지 높이 15~20%', '1:1 픽셀 치환', 'Outline 기본 ON'],
-          tip: '상단 말풍선 시트는 [상단]을 누르고 높이를 맞추면 발밑 캐릭터 색은 그대로입니다.',
-          fail: '높이를 50%까지 올리면 몸통 어두운 픽셀까지 색이 바뀝니다. 글자만 들어오게 낮추세요.',
+          title: '하단 문구는 Canvas 2D로 다시 그린다',
+          body: '모서리 알파가 비어 있으면 픽셀 변조 없이 원본 알파를 360 중앙에 올립니다. 불투명 시트만 T=18 4모서리 마스크를 destination-in으로 입힙니다. 상단 [원본 유지 | 벡터 오버레이 | 스마트 리컬러]로 텍스트 엔진을 고릅니다. 기본은 원본 유지입니다. 벡터 오버레이는 Canvas 2D 3중 외곽선+흰 채움이고 ㅇ 같은 닫힌 내부를 투명으로 뚫지 않습니다. 스마트 리컬러는 하단 ROI만 픽셀 치환하며 Y_threshold 위 캐릭터는 읽기 전용입니다. 15번 컷 벡터 문구는 어리둥절입니다. 결과 칸을 누르면 640px 확대 팝업이 열리며, 팝업 배경은 체커보드입니다.',
+          params: ['투명 무손실 우회', 'destination-in 합성', 'ㅇ 내부 보존', '확대 팝업 체커보드'],
+          tip: '픽셀 리컬러는 꺼져 있습니다. F12에 [Splitter Live] 컷 로그가 뜹니다.',
+          fail: '자소가 톱니처럼 깨지면 비트맵 추출이 다시 켜진 것입니다. 자가진단을 돌리세요.',
         },
         {
-          title: '[🐞 진단 로그]와 배경 모드로 한 번에 점검한다',
-          body: '문제가 있으면 모달 상단 [🐞 진단 로그]를 한 번 누릅니다. 칸마다 모서리 알파(PASS/FAIL)·흰 사각 패치·인접 행 침범·하이라이트 보존의 4대 픽셀 지표가 JSON으로 클립보드에 복사되고 F12 콘솔 테이블이 뜹니다. 줌 옆 [배경 모드]는 🏁 체커보드 → ⬛ 다크 → ⬜ 라이트로 순환해 360 썸네일과 메인 뷰포트 대비를 즉시 봅니다. 결함이 있으면 하단 Live HUD에 슬라이스 경고가 뜨며, 자가진단 HUD16~18이 Inspector·ZIP을 재확인합니다.',
-          params: ['🐞 원클릭 JSON', '배경 모드 순환', '360×360 ZIP', '18단계 HUD'],
+          title: '[📋 진단 로그 복사]로 3대 모듈을 점검한다',
+          body: '상단 [📋 진단 로그 복사]를 누르면 메인 스튜디오(Canvas 2D·ROI 격리·체커보드), 시트 분할기(무손실 바이패스·4×5 스냅·텍스트 보호·360 중앙), AI 시트 생성기(투명 알파·4×5 프롬프트) 상태가 JSON으로 클립보드에 복사되고 토스트가 뜹니다. 칸이 있으면 모서리 알파·흰 패치·인접 행 침범 지표도 같이 들어갑니다.',
+          params: ['3대 모듈 리포트', '📋 원클릭 복사', '360×360 ZIP', '체커보드 점검'],
           tip: '카카오에는 이 분할기가 만든 360 정사각 투명 PNG만 올리세요. JPG·직사각형 원본은 거절될 수 있습니다.',
-          fail: 'HUD 슬라이스 경고가 뜨면 진단 로그를 복사해 어느 칸의 cornerAlpha/흰 패치/침범인지 먼저 확인하세요.',
+          fail: 'HUD 슬라이스 경고가 뜨면 진단 로그를 복사해 어느 모듈/칸이 실패인지 먼저 확인하세요.',
         },
       ],
     },
   }),
   feature({
+    id: 'text-engine',
+    name: 'HUD17 3단 텍스트 엔진 · 팝업 체커보드',
+    description: 'ORIGINAL 무변 · VECTOR 3중 외곽선 · SMART Y_threshold 읽기전용 · 확대 팝업 checkerboard-bg · bg-white 금지',
+    diagnosticFunction: checkTextEngine,
+  }),
+  feature({
     id: 'pro-engine',
-    name: 'HUD17 🐞 진단 로그 JSON 원클릭 복사',
+    name: 'HUD18 🐞 진단 로그 JSON 원클릭 복사',
     description: '모서리 알파·흰 사각·인접 행 침범·하이라이트 보존을 클립보드 JSON으로 복사 · 전문가 단축키',
     diagnosticFunction: checkProEngine,
     guideContent: {
@@ -280,8 +317,8 @@ export const APP_FEATURES_REGISTRY = [
   }),
   feature({
     id: 'fps-pipeline',
-    name: 'HUD18 ZIP 무손실 · PNG 즉시 다운로드',
-    description: '360 PNG ZIP 패키징 · 칸별 즉시 저장 · rAF FPS/파이프라인 레이턴시',
+    name: 'HUD19 ZIP 무손실 · PNG 즉시 다운로드',
+    description: '360 PNG ZIP 패키징 · 칸별 즉시 저장 · rAF FPS/파이프라인 레이턴시 · Golden Baseline 동결 대조',
     diagnosticFunction: checkFpsPipeline,
     guideContent: {
       chapterId: 'canvas',
@@ -315,11 +352,62 @@ export const APP_FEATURES_REGISTRY = [
       ],
       summary: [
         { title: '3단 레이아웃', body: '왼쪽↔캔버스 사이 세로선을 드래그하면 폭이 바뀌고, 더블클릭하면 360px로 돌아갑니다. 패널 모서리 [◀]/[▶]로 좌·우 패널을 접으면 캔버스가 넓어집니다. 상단 [❓ 빠른 시작 투어]는 핵심 버튼 4곳을 짚어 줍니다. 버튼 위에 마우스를 올리면 22px 돋보기 HUD가 뜹니다. 상단 1:1 / 16:9 / 9:16으로 미리보기 화면비를 바꿉니다. 스튜디오는 100vh에 맞춰 스크롤 없이 한 화면에 두고, 캔버스는 하단 슬림 인포 바(36~42px)를 밀어내지 않게 세로로 줄어듭니다. 16인치 1080p·100% 배율에서 인포 바가 잘리지 않아야 합니다. 캔버스 모서리 [투명]/[다크]/[라이트]는 미리보기 플레이트를 즉시 바꿉니다. 투명은 체커보드, 다크는 #0f1117, 라이트는 흰색이며 투명 PNG 내보내기는 그대로입니다.' },
-        { title: '폰트 선택', body: '레이어 카드의 폰트 버튼을 열고 카테고리 탭을 고른 뒤 항목에 호버하면 캔버스가 미리봅니다. 클릭하면 그 레이어에만 적용됩니다. 메인과 서브는 서로 간섭하지 않습니다.' },
+        { title: '폰트 선택', body: '레이어 카드의 폰트 버튼을 열고 [🇰🇷 헤드라인] [🇰🇷 본문·고딕] [🇰🇷 명조·서예] [🇺🇸 영문 헤드라인] [🇺🇸 스크립트] [🎨 디스플레이/아트] 짧은 탭만 고릅니다. 긴 설명은 탭 위 16px 플로팅 툴팁에만 있고 탭 글자에는 넣지 않습니다. 닫힌 폰트 버튼은 카테고리+글꼴명+샘플을 보여 주므로 16자 크롬 라벨 검사에서 제외됩니다. 항목에 호버하면 캔버스가 미리보고, 클릭하면 그 레이어에만 적용됩니다. 메인과 서브는 서로 간섭하지 않습니다.' },
         { title: '컬러 픽커', body: '카드 하단 [텍스트 / 외곽선 / 그림자] 색 칸을 누릅니다. 외곽선 두께 0이면 테두리가 없고, 2~6이 포스터에 무난합니다. 그림자 블러는 8~18이 읽기 좋습니다.' },
         { title: '슬라이더', body: '크기·자간·줄간격·회전·투명도·가로/세로 위치는 드래그만으로 반영됩니다. 크기 슬라이더는 10~130px이며 앱 기본 70px가 정중앙입니다. 손을 떼면 히스토리에 남으므로 Ctrl+Z로 되돌릴 수 있습니다. 줄간격 권장 구간은 챕터 2를 보세요.' },
         { title: '프리셋 원클릭', body: '🎨 올인원 / ✍️ 캘리그라피 / 🪵 목각 탭에서 카드를 누르면 그 레이어 스타일만 바뀝니다. 키치 스티커는 올인원에서 해당 프리셋을 고른 뒤 하단에 나타납니다.' },
         { title: '내보내기·단축키', body: '우측에서 투명 PNG, JPEG, 모션 GIF, ICO를 고릅니다. PNG는 1x/2x/4x 배율을 고른 뒤 받습니다. GIF는 네온 펄스·소프트 플로팅·시네마틱 페이드 중 하나를 고른 뒤 [🎬 GIF 다운로드]로 받습니다. AI 이모티콘 시트는 상단 [🧩 이모티콘 시트 분할기]에서 모드 A(가로·세로 결합 자동 분할) 또는 모드 B 그리드로 나눈 뒤, 투명 배경 360×360 PNG ZIP으로 받습니다. [하단/상단] 텍스트 스위치·[내부 고립 구멍 투명화]·[배경 모드]는 분할기 안에서 켭니다. 방향키 1px, Shift+방향키 10px, Ctrl+Z 실행 취소, Ctrl+Y 다시 실행, Delete는 추가 레이어만 지웁니다(메인/서브 잠금).' },
+      ],
+    },
+  }),
+  feature({
+    id: 'motion-seq',
+    name: 'HUD20 프레임 시퀀서 · 텍스트 모션',
+    description: '와이드 95vw×92vh · 개발 뷰 1600 스케일 · 모션 없음 기본 · 인코딩 진행률 · 단일 이미지 RAF 루프 · 파티클 4종 · 핑퐁 루프 · 채팅 시뮬 · 심사 스펙 HUD · 클립 저장 · 360 GIF/WebP · ZIP motion-01 · checkerboard-bg · bg-white 금지',
+    diagnosticFunction: checkMotionSequencer,
+    guideContent: {
+      chapterId: 'ai',
+      order: 9,
+      sectionId: 'motion-studio',
+      sectionLabel: '모션 스튜디오',
+      title: '🎬 모션 스튜디오 4단계 워크플로',
+      kicker: '시트 분할부터 스토어 제출 ZIP까지, 시퀀서와 클립 보관함만 따라가면 됩니다.',
+      play: [
+        {
+          title: 'STEP 1. 시트 업로드와 28구 분할',
+          body: '상단 [이모티콘 시트 분할기]에서 시트를 올리면 기본은 4행 × 5열 (20개)로 스냅됩니다. 7×4(28)는 프리셋이나 [자동 28구 분할]로 바꿉니다. 투명 시트는 무손실 바이패스, 불투명 시트는 T=18 텍스트 보호 마스킹입니다. 결과는 360×360 투명 PNG입니다.',
+          params: ['4×5 기본 20컷', '28컷 프리셋', '360×360'],
+          tip: '썸네일 체커보드로 알파를 확인한 뒤 분할기를 닫고 [모션 GIF 스튜디오]로 넘어가세요.',
+          fail: '내부 흰 구멍까지 지워지면 스마트 리컬러/펀치 홀이 켜진 것입니다. 원본 유지로 되돌리세요.',
+        },
+        {
+          title: 'STEP 2. 시퀀서 컷과 10종 프리셋',
+          body: '본체 그래픽이나 이미지 1장만 있어도 중앙 프리뷰가 가상 1프레임으로 바로 루프됩니다. 상단 프리뷰는 약 270px로 줄고 시퀀서가 나머지 높이를 차지합니다. 분할 컷이 들어와도 중앙 열은 넘치지 않고, 하단 [클립 저장]·GIF·WebP 3버튼이 항상 보입니다. 좁은 개발 뷰에서는 1600 레이아웃을 축소해 브라우저 100%와 같은 3열로 보입니다. 툴바는 2줄(모션·파티클 / 자막 ON/OFF·입력·크기·색)이며, 자막 ON과 입력은 중앙 최상단 메인 프리뷰에도 같은 프레임에 합성됩니다. 끄거나 입력창이 비면 메인 캔버스와 GIF/WebP에 기본 예시 문구가 합성되지 않습니다. 우측 기본은 [모션 없음]이며, 선택한 10종 프리셋을 다시 누르면 선택이 해제됩니다. 파티클은 모션과 따로 움직입니다. 28컷을 쓸 때는 하단 시퀀서에서 컷을 타임라인에 쌓고 앞/뒤·삭제로 순서를 맞춥니다. 텍스트 모션(없음·바운스·쉐이크·펄스·타이핑)도 같은 프리뷰에 겹칩니다.',
+          params: ['자막 ON/OFF', '모션 없음', '모션 프리셋 10'],
+          tip: 'FPS는 4~24, 기본 8입니다. 배속 0.5x~2.0x는 미리보기와 인코딩에 같이 들어갑니다. 일시정지는 현재 포즈를 유지합니다.',
+          fail: '모션을 껐는데 그래픽이 흔들리면 프리셋이 아직 켜진 것입니다. [모션 없음]을 누르거나 활성 버튼을 한 번 더 클릭하세요.',
+        },
+        {
+          title: 'STEP 3. 클립 저장으로 보관함 수집',
+          body: 'GIF/WebP 내보내기를 누르면 중앙에 진행률 팝업이 뜨고, 프레임마다 메인 스레드를 양보해 화면이 멈추지 않습니다. 끝나면 파일이 바로 저장되고 임시 렌더 큐는 비워져 클립 라인에 복제본이 남지 않습니다. 마음에 들면 [클립 저장]으로 보관함 슬롯을 쌓고, 각 카드 [❌]로 개별 삭제하거나 [전체 비우기]로 초기화합니다. 작업 중이던 클립을 지우면 시퀀서는 기본 상태로 돌아갑니다.',
+          params: ['클립 저장', '개별 삭제', '전체 비우기'],
+          tip: '변환 중에는 내보내기 버튼이 꺼집니다. 중복 클릭하지 마세요.',
+          fail: '진행 창이 안 뜨면 타임라인이나 본체 그래픽 소스가 없는 상태입니다. 먼저 이미지를 고르세요.',
+        },
+        {
+          title: 'STEP 4. 전체 ZIP 일괄 다운로드',
+          body: '헤더 [전체 ZIP]으로 [클립 저장]으로 남긴 보관본만 묶습니다. GIF/WebP 내보내기는 파일을 바로 받고, 임시 렌더 큐는 완료 즉시 비워 클립 라인에 복제본이 쌓이지 않습니다. 파일명은 motion-01.gif 규격이라 카카오/라인 스토어 제출 패키지로 바로 쓸 수 있습니다. 심사 스펙 HUD에서 2MB·2초 내외 뱃지를 확인하세요.',
+          params: ['전체 ZIP', 'motion-01.gif', '2048KB'],
+          tip: '내보내기 완료 토스트 뒤에 클립 카운트는 수동 저장분만 남습니다. ZIP은 영구 보관 클립의 Blob만 넣습니다.',
+          fail: 'ZIP 버튼이 꺼져 있으면 인코딩된 보관 클립이 없는 상태입니다. 먼저 [클립 저장]으로 남기세요.',
+        },
+        {
+          title: 'PRO TIP. 핑퐁·파티클·채팅 시뮬',
+          body: '[핑퐁]은 1-2-3-4-3-2로 왕복해 루프 이음을 숨깁니다. 반짝이·하트·땀방울·눈물 파티클은 프리뷰와 내보내기에 같이 겹칩니다. 채팅 미리보기는 메인 캔버스를 매 프레임 복사해 같은 모션이 말풍선 배경 위에서 움직입니다.',
+          params: ['핑퐁', '파티클 4종', '채팅 실시간'],
+          tip: '하트 비트+하트 파티클, 앵그리 셰이크+땀방울처럼 감정 프리셋과 오버레이를 짝지으면 메신저에서 읽힙니다.',
+          fail: '채팅 칸이 멈춰 있으면 미리보기 재생이 꺼진 상태입니다. [재생]을 켜 주세요.',
+        },
       ],
     },
   }),

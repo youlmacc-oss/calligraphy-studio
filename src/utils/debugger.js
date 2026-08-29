@@ -1,3 +1,5 @@
+import { GOLDEN_BASELINE } from './diagnosticsBaseline.js'
+
 const PAPER_LUMA = 226
 const PAPER_CHROMA = 28
 
@@ -19,13 +21,16 @@ function readCornerAlpha(imageData) {
   const tr = sampleAlpha(data, width, width - 1, 0)
   const bl = sampleAlpha(data, width, 0, height - 1)
   const br = sampleAlpha(data, width, width - 1, height - 1)
+  const max = GOLDEN_BASELINE.splitter.allowedCornerAlphaMax
+  const ok = tl <= max && tr <= max && bl <= max && br <= max
   return {
     tl,
     tr,
     bl,
     br,
-    status: tl <= 12 && tr <= 12 && bl <= 12 && br <= 12 ? 'PASS' : 'FAIL',
-    ok: tl <= 12 && tr <= 12 && bl <= 12 && br <= 12,
+    max,
+    status: ok ? 'PASS' : 'FAIL',
+    ok,
   }
 }
 
@@ -177,6 +182,9 @@ export function inspectRenderedSlice({
   const suspects = []
   if (transparent && cornerAlpha.status !== 'PASS') suspects.push('corner-alpha')
   if (plate.hasBoundingBoxArtifact) suspects.push('text-bounding-box')
+  if (transparent && plate.platePixels > GOLDEN_BASELINE.splitter.platePixelTolerance) {
+    suspects.push('plate-pixels')
+  }
   if (overlap.adjacentRowOverlap) suspects.push('adjacent-row-overlap')
   if (!highlight.characterHighlightProtected) suspects.push('highlight-clipped')
   return {
@@ -216,7 +224,8 @@ export function buildDiagnosticReport(slices = [], context = {}) {
   const suspectCount = rows.filter((row) => row.suspects?.length).length
   return {
     generatedAt: new Date().toISOString(),
-    pipeline: 'crop → flood-fill-alpha(T=18) → pixel-text-recolor',
+    pipeline: `crop → 4-corner flood-fill-alpha(T=${GOLDEN_BASELINE.splitter.alphaThreshold})`,
+    baselineVersion: GOLDEN_BASELINE.version,
     context: {
       mode: context.mode ?? null,
       textMode: context.textMode ?? null,
@@ -261,8 +270,10 @@ export function printDiagnosticTable(report) {
 }
 
 export async function copyDiagnosticLog(report) {
-  const text = JSON.stringify(report, null, 2)
-  printDiagnosticTable(report)
+  const text = typeof report === 'string'
+    ? report
+    : (report?.plainText || JSON.stringify(report, null, 2))
+  if (report && typeof report === 'object') printDiagnosticTable(report)
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
     return text

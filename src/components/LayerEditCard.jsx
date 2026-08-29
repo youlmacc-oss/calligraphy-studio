@@ -76,7 +76,7 @@ export default function LayerEditCard({
         type="button"
         onClick={() => onSelectPreset(layer.id, item)}
         className={clsx(
-          'preset-card rounded-xl border text-left transition',
+          'preset-card allow-long-text rounded-xl border text-left transition',
           woodcut && 'woodcut-card',
           selected
             ? woodcut
@@ -213,8 +213,8 @@ export default function LayerEditCard({
 
           <div className="size-fit-block mt-3">
             <div className="size-fit-head">
-              <label className="ui-label" {...magnify('폰트 크기', `${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px. 기본 70px가 슬라이더 정중앙입니다. 긴 문장은 화면 맞춤으로 한 번에 줄입니다`)}>
-                🔠 크기
+              <label className="ui-label slider-control" {...magnify('폰트 크기', `${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px. 기본 70px가 슬라이더 정중앙입니다. 긴 문장은 화면 맞춤으로 한 번에 줄입니다`)}>
+                크기
               </label>
               <input
                 type="number"
@@ -247,20 +247,20 @@ export default function LayerEditCard({
               min={range.min}
               max={range.max}
               step={1}
-              className="ctrl-slider mt-1.5"
+              className="ctrl-slider slider-control mt-1.5"
               value={clampFontSize(layer.fontSize)}
               onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
               onPointerUp={onCommit}
               {...magnify('폰트 크기 슬라이더', `${FONT_SIZE_MIN}px부터 ${FONT_SIZE_MAX}px까지 1px 단위입니다. 기본 70px가 정중앙입니다`)}
             />
           </div>
-          <label className="ui-label mt-2" {...magnify('자간', '글자 사이 간격을 조절합니다')}>
-            ↔️ 자간 {layer.letterSpacing}px
+          <label className="ui-label slider-control mt-2" {...magnify('자간', '글자 사이 간격을 조절합니다')}>
+            자간 {layer.letterSpacing}
             <input type="range" min="-8" max="28" className="ctrl-slider mt-1" value={layer.letterSpacing} onChange={(event) => onPatch(layer.id, { letterSpacing: Number(event.target.value) }, false)} />
           </label>
           {layer.type !== 'seal' ? (
-            <label className="ui-label mt-2" {...magnify('줄간격', '여러 줄 사이 세로 간격을 조절합니다')}>
-              ↕️ 줄간격 {(layer.lineHeight ?? 1.2).toFixed(2)}배
+            <label className="ui-label slider-control mt-2" {...magnify('줄간격', '여러 줄 사이 세로 간격을 조절합니다')}>
+              줄간격
               <input
                 type="range"
                 min="80"
@@ -271,13 +271,13 @@ export default function LayerEditCard({
               />
             </label>
           ) : null}
-          <label className="ui-label mt-2" {...magnify('레이어 회전', '이 텍스트만 각도를 돌립니다')}>
-            🔄 회전 {layer.rotation}°
+          <label className="ui-label slider-control mt-2" {...magnify('레이어 회전', '이 텍스트만 각도를 돌립니다')}>
+            회전 {layer.rotation}°
             <input type="range" min="-180" max="180" className="ctrl-slider mt-1" value={layer.rotation} onChange={(event) => onPatch(layer.id, { rotation: Number(event.target.value) }, false)} />
           </label>
           {layer.type !== 'seal' ? (
-            <label className="ui-label mt-2" {...magnify('곡선 텍스트', '글자를 원형·반원 아치로 휘게 합니다')}>
-              🌙 곡선 텍스트 {layer.curveAmount ?? 0}°
+            <label className="ui-label slider-control mt-2" {...magnify('곡선 텍스트', '글자를 원형·반원 아치로 휘게 합니다')}>
+              곡선 텍스트 {layer.curveAmount ?? 0}°
               <input
                 type="range"
                 min="-180"
@@ -288,16 +288,16 @@ export default function LayerEditCard({
               />
             </label>
           ) : null}
-          <label className="ui-label mt-2" {...magnify('투명도', '글자가 배경과 얼마나 겹쳐 보일지 조절합니다')}>
-            💧 투명도 {Math.round((layer.opacity ?? 1) * 100)}%
+          <label className="ui-label slider-control mt-2" {...magnify('투명도', '글자가 배경과 얼마나 겹쳐 보일지 조절합니다')}>
+            투명도 {Math.round((layer.opacity ?? 1) * 100)}%
             <input type="range" min="0" max="100" className="ctrl-slider mt-1" value={Math.round((layer.opacity ?? 1) * 100)} onChange={(event) => onPatch(layer.id, { opacity: Number(event.target.value) / 100 }, false)} />
           </label>
-          <label className="ui-label mt-2" {...magnify('가로 위치', '텍스트를 좌우로 옮깁니다')}>
-            ↔️ 가로 위치 {Math.round((layer.ox ?? 0) * 100)}
+          <label className="ui-label slider-control mt-2" {...magnify('가로 위치', '텍스트를 좌우로 옮깁니다')}>
+            가로 위치 {Math.round((layer.ox ?? 0) * 100)}
             <input type="range" min="-45" max="45" className="ctrl-slider mt-1" value={Math.round((layer.ox ?? 0) * 100)} onChange={(event) => onPatch(layer.id, { ox: Number(event.target.value) / 100 }, false)} />
           </label>
-          <label className="ui-label mt-2" {...magnify('세로 위치', '텍스트를 위아래로 옮깁니다')}>
-            ↕️ 세로 위치 {Math.round((layer.oy ?? 0) * 100)}
+          <label className="ui-label slider-control mt-2" {...magnify('세로 위치', '텍스트를 위아래로 옮깁니다')}>
+            세로 위치 {Math.round((layer.oy ?? 0) * 100)}
             <input type="range" min="-45" max="45" className="ctrl-slider mt-1" value={Math.round((layer.oy ?? 0) * 100)} onChange={(event) => onPatch(layer.id, { oy: Number(event.target.value) / 100 }, false)} />
           </label>
 
@@ -405,7 +405,12 @@ export default function LayerEditCard({
             <div className="sticker-panel mt-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="ui-label">🎭 스티커 데코</span>
-                <button type="button" className={clsx('sticker-toggle', studio.stickerOn && 'is-on')} onClick={() => onPatchStudio({ stickerOn: !studio.stickerOn })}>
+                <button
+                  type="button"
+                  className={clsx('sticker-toggle', studio.stickerOn && 'is-on')}
+                  onClick={() => onPatchStudio({ stickerOn: !studio.stickerOn })}
+                  data-tooltip="키치 스티커 데코를 켜거나 끕니다"
+                >
                   {studio.stickerOn ? '켜기' : '끄기'}
                 </button>
               </div>
@@ -416,6 +421,7 @@ export default function LayerEditCard({
                     type="button"
                     onClick={() => onPatchStudio({ stickerTheme: theme.id })}
                     className={clsx('sticker-chip', studio.stickerTheme === theme.id && 'is-on')}
+                    data-tooltip={`${theme.label} 스티커 테마`}
                   >
                     {theme.label}
                   </button>

@@ -1,3 +1,5 @@
+import { primeHqContext } from '../utils/hqRender.js'
+
 export function defaultViewEdit() {
   return {
     rotation90: 0,
@@ -73,6 +75,7 @@ export function applyViewEdit(source, edit, { letterbox = true, skipCrop = false
   stage.width = w
   stage.height = h
   const ctx = stage.getContext('2d')
+  primeHqContext(ctx)
   ctx.filter = `brightness(${edit.brightness ?? 100}%) contrast(${edit.contrast ?? 100}%) saturate(${edit.saturation ?? 100}%) grayscale(${edit.ink ?? 0}%)`
   ctx.translate(w / 2, h / 2)
   ctx.scale(edit.flipH ? -1 : 1, edit.flipV ? -1 : 1)
@@ -106,7 +109,7 @@ export function applyViewEdit(source, edit, { letterbox = true, skipCrop = false
   const cut = document.createElement('canvas')
   cut.width = sw
   cut.height = sh
-  cut.getContext('2d').drawImage(stage, sx, sy, sw, sh, 0, 0, sw, sh)
+  primeHqContext(cut.getContext('2d')).drawImage(stage, sx, sy, sw, sh, 0, 0, sw, sh)
   if (!letterbox) return cut
 
   ctx.setTransform(1, 0, 0, 1, 0, 0)

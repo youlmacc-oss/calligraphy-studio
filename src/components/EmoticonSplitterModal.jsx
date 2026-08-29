@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { Download, Maximize2, Minus, Plus, RotateCcw, Upload, X, Bug } from 'lucide-react'
+import { Download, Maximize2, Minus, Plus, RotateCcw, Upload } from 'lucide-react'
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { magnify } from './MenuMagnifierHUD.jsx'
+import PreviewLightboxModal from './PreviewLightboxModal.jsx'
 import { canvasToPngBlob } from '../lib/exportFormats.js'
 import {
   DEFAULT_CROP_BOUNDS,
@@ -36,17 +37,44 @@ import {
   PREVIEW_ZOOM_STEP,
   removeGuide,
   sliceSheet,
+  SPLITTER_LIVE_REV,
+  TEXT_ENGINE_DEFAULT,
+  TEXT_ENGINE_MODES,
+  TEXT_ENGINE_SMART_RECOLOR,
   stepPreviewZoomPercent,
   cycleViewBgMode,
+  normalizeTextEngineMode,
+  hidePngGuideToday,
+  isPngGuideHiddenToday,
+  PNG_GUIDE_BODY,
+  PNG_GUIDE_FOOT,
+  PNG_GUIDE_HIDE_LABEL,
+  PNG_GUIDE_OK_LABEL,
+  PNG_GUIDE_TITLE,
+  sniffCanvasHasAlpha,
+  formatSmartGridLabel,
+  handleDefaultSheetUpload,
+  isAcceptedSheetFile,
+  DEFAULT_SHEET_COLS,
+  DEFAULT_SHEET_ROWS,
+  SHEET_ACCEPT,
+  SHEET_GRID_PRESETS,
 } from '../lib/emoticonSplit.js'
+
+const liveSheetMemory = {
+  canvas: null,
+  url: '',
+  fileName: '',
+}
 import { buildDiagnosticReport, copyDiagnosticLog, publishInspectorHud } from '../utils/debugger.js'
+import { evaluateSystemDiagnostics, mergeDiagnosticReport } from '../lib/systemDiagnostics.js'
 import { publishEmoticonCuts } from './MotionGifStudio/cutSnapshot.js'
+import { blitToHiDpiCanvas } from '../utils/hqRender.js'
 
 const TEXT_MODES = [
-  { id: 'original', label: '원본 유지', hint: '텍스트 감지 영역과 캐릭터 색을 모두 그대로 둡니다' },
-  { id: 'black', label: '고대비 블랙 강화', hint: '텍스트 감지 영역 안의 글자만 검게 살리고 캐릭터 본체는 건드리지 않습니다' },
-  { id: 'white', label: '선명한 화이트', hint: '텍스트 감지 영역 안의 글자만 흰색으로 바꾸고 캐릭터 본체는 보존합니다' },
-  { id: 'custom', label: '커스텀 색상', hint: '텍스트 감지 영역 안의 글자 클러스터만 고른 색으로 치환합니다' },
+  { id: 'black', label: '블랙', hint: '하단 ROI 글자만 검게 바꿉니다. 캐릭터는 읽기 전용입니다' },
+  { id: 'white', label: '화이트', hint: '하단 ROI 글자만 흰색으로 바꿉니다. 캐릭터는 읽기 전용입니다' },
+  { id: 'custom', label: '커스텀', hint: '하단 ROI 글자만 고른 색으로 바꿉니다. 캐릭터는 읽기 전용입니다' },
 ]
 
 const VIEW_BG_LABELS = {
@@ -61,6 +89,84 @@ function clampZoom(value) {
 
 function defaultZoomRatio() {
   return clampZoom(PREVIEW_ZOOM_DEFAULT / 100)
+}
+
+function HqCutThumb({ canvas, alt }) {
+  const viewRef = useRef(null)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !canvas) return undefined
+    const paint = () => {
+      const css = Math.max(1, Math.round(view.parentElement?.clientWidth || view.clientWidth || 72))
+      blitToHiDpiCanvas(view, canvas, { cssWidth: css, cssHeight: css, zoomPercent: 100, live: true, edgePreserve: false })
+    }
+    paint()
+    const host = view.parentElement
+    if (!host || typeof ResizeObserver === 'undefined') return undefined
+    const observer = new ResizeObserver(paint)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [canvas])
+  return <canvas ref={viewRef} className="emo-thumb-canvas" role="img" aria-label={alt} />
+}
+
+function SplitEmptyState() {
+  return (
+    <div
+      className="emo-thumbs-empty"
+      data-split-empty="1"
+      {...magnify('시트 분할 대기 중', '시트 이미지를 업로드하면 개별 컷 썸네일이 이곳에 정렬됩니다.')}
+    >
+      <div className="emo-empty-icon" aria-hidden="true">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+        </svg>
+      </div>
+      <strong className="emo-empty-title">시트 분할 대기 중</strong>
+      <p className="emo-empty-sub">시트 이미지를 업로드하면 개별 컷 썸네일이 이곳에 정렬됩니다.</p>
+    </div>
+  )
+}
+
+function TransparencyGuideModal({ open, onContinue, onHideToday }) {
+  if (!open) return null
+  return (
+    <div className="emo-png-guide-root" data-png-guide="1" role="dialog" aria-modal="true" aria-labelledby="emo-png-guide-title">
+      <div className="emo-png-guide-backdrop" />
+      <div className="emo-png-guide-card">
+        <h3 id="emo-png-guide-title">💡 {PNG_GUIDE_TITLE}</h3>
+        <div className="emo-png-guide-preview checkerboard-bg" aria-hidden="true">
+          <span className="emo-png-guide-sample">안녕!</span>
+        </div>
+        <p className="emo-png-guide-body">
+          💡
+          {' '}
+          <strong>4행 × 5열 (20개) 투명 PNG 시트</strong>
+          를 기본 규격으로 권장합니다.
+        </p>
+        <p className="emo-png-guide-foot">{PNG_GUIDE_BODY}</p>
+        <p className="emo-png-guide-foot">{PNG_GUIDE_FOOT}</p>
+        <div className="emo-png-guide-actions">
+          <button
+            type="button"
+            data-png-guide-ok="1"
+            onClick={onContinue}
+            {...magnify(PNG_GUIDE_OK_LABEL, PNG_GUIDE_BODY)}
+          >
+            {PNG_GUIDE_OK_LABEL}
+          </button>
+          <button
+            type="button"
+            data-png-guide-hide="1"
+            onClick={onHideToday}
+            {...magnify(PNG_GUIDE_HIDE_LABEL, PNG_GUIDE_FOOT)}
+          >
+            {PNG_GUIDE_HIDE_LABEL}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function EmoticonSplitterModal({ open, onClose }) {
@@ -81,6 +187,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [activeGuide, setActiveGuide] = useState(null)
   const [transparent, setTransparent] = useState(true)
   const [textMode, setTextMode] = useState('original')
+  const [textEngineMode, setTextEngineMode] = useState(TEXT_ENGINE_DEFAULT)
   const [customColor, setCustomColor] = useState('#111111')
   const [outline, setOutline] = useState(OUTLINE_DEFAULT)
   const [fileName, setFileName] = useState('')
@@ -100,6 +207,9 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [sideWidth, setSideWidth] = useState(EMO_SIDE_DEFAULT)
   const [sideResizing, setSideResizing] = useState(false)
   const [logCopied, setLogCopied] = useState(false)
+  const [lightboxIndex, setLightboxIndex] = useState(-1)
+  const [showTransparencyGuideModal, setShowTransparencyGuideModal] = useState(false)
+  const [gridDetect, setGridDetect] = useState(null)
   const vGuidesRef = useRef(verticalGuides)
   const hGuidesRef = useRef(horizontalGuides)
   const boundsRef = useRef(bounds)
@@ -108,6 +218,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const modeRef = useRef(mode)
   const transparentRef = useRef(transparent)
   const textModeRef = useRef(textMode)
+  const textEngineModeRef = useRef(textEngineMode)
   const customColorRef = useRef(customColor)
   const outlineRef = useRef(outline)
   const zoomRef = useRef(zoom)
@@ -126,6 +237,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   modeRef.current = mode
   transparentRef.current = transparent
   textModeRef.current = textMode
+  textEngineModeRef.current = textEngineMode
   customColorRef.current = customColor
   outlineRef.current = outline
   zoomRef.current = zoom
@@ -165,6 +277,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     punchHolesRef.current = PUNCH_HOLES_DEFAULT
     setTextZoneAnchor(TEXT_ZONE_ANCHOR_DEFAULT)
     textZoneAnchorRef.current = TEXT_ZONE_ANCHOR_DEFAULT
+    setTextEngineMode(TEXT_ENGINE_DEFAULT)
+    textEngineModeRef.current = TEXT_ENGINE_DEFAULT
     setViewBg(VIEW_BG_DEFAULT)
     viewBgRef.current = VIEW_BG_DEFAULT
     return undefined
@@ -196,11 +310,15 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   }
 
   const reset = () => {
+    setLightboxIndex(-1)
     setSlices([])
     publishEmoticonCuts([])
     setSheetUrl('')
     setFileName('')
     sheetRef.current = null
+    liveSheetMemory.canvas = null
+    liveSheetMemory.url = ''
+    liveSheetMemory.fileName = ''
     setBounds(DEFAULT_CROP_BOUNDS)
     boundsRef.current = DEFAULT_CROP_BOUNDS
     setVerticalGuides(equalSplitGuides(colsRef.current))
@@ -213,11 +331,24 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     punchHolesRef.current = PUNCH_HOLES_DEFAULT
     setTextZoneAnchor(TEXT_ZONE_ANCHOR_DEFAULT)
     textZoneAnchorRef.current = TEXT_ZONE_ANCHOR_DEFAULT
+    setTextEngineMode(TEXT_ENGINE_DEFAULT)
+    textEngineModeRef.current = TEXT_ENGINE_DEFAULT
     setViewBg(VIEW_BG_DEFAULT)
     viewBgRef.current = VIEW_BG_DEFAULT
     publishInspectorHud({ status: 'idle', suspectCount: 0, sliceCount: 0 })
     setNote('AI가 만든 스티커 시트(흰 배경 그리드)를 올리면 360×360 PNG로 나눕니다.')
+    setGridDetect(null)
   }
+
+  useEffect(() => {
+    if (!open) {
+      setShowTransparencyGuideModal(false)
+      return undefined
+    }
+    if (isPngGuideHiddenToday()) return undefined
+    setShowTransparencyGuideModal(true)
+    return undefined
+  }, [open])
 
   const runSlice = useCallback(async (patch = {}) => {
     const source = patch.source ?? sheetRef.current
@@ -237,6 +368,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         horizontalGuides: patch.nextHorizontal ?? hGuidesRef.current,
         bounds: patch.nextBounds ?? boundsRef.current,
         textMode: patch.nextTextMode ?? textModeRef.current,
+        textEngineMode: patch.nextTextEngineMode ?? textEngineModeRef.current,
         customColor: patch.nextCustomColor ?? customColorRef.current,
         outline: patch.nextOutline ?? outlineRef.current,
         customScale: patch.nextCustomScale ?? customScaleRef.current,
@@ -245,27 +377,70 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         punchHoles: patch.nextPunchHoles ?? punchHolesRef.current,
       })
       if (gen !== sliceGen.current) return
-      setSlices(next)
-      publishEmoticonCuts(next)
-      const suspects = next.filter((item) => item.diagnostics?.suspects?.length).length
+      const bound = Array.from(next)
+      bound.gridMeta = next.gridMeta
+      setSlices(bound)
+      publishEmoticonCuts(bound)
+      const meta = {
+        ...(next.gridMeta || next[0]?.gridMeta || {}),
+        count: bound.length,
+        rows: next.gridMeta?.rows || next[0]?.gridMeta?.rows,
+        cols: next.gridMeta?.cols || next[0]?.gridMeta?.cols,
+      }
+      const usedSmart = (patch.nextMode ?? modeRef.current) === 'smart'
+      if (usedSmart && meta?.cols && meta?.rows) {
+        setCols(meta.cols)
+        setRows(meta.rows)
+        colsRef.current = meta.cols
+        rowsRef.current = meta.rows
+        if (Array.isArray(meta.verticalGuides)) {
+          setVerticalGuides(meta.verticalGuides)
+          vGuidesRef.current = meta.verticalGuides
+        }
+        if (Array.isArray(meta.horizontalGuides)) {
+          setHorizontalGuides(meta.horizontalGuides)
+          hGuidesRef.current = meta.horizontalGuides
+        }
+      }
+      setGridDetect({ ...meta, count: bound.length })
+      const suspects = bound.filter((item) => item.diagnostics?.suspects?.length).length
       publishInspectorHud({
-        status: next.length ? (suspects ? 'warn' : 'ok') : 'idle',
+        status: bound.length ? (suspects ? 'warn' : 'ok') : 'idle',
         suspectCount: suspects,
-        sliceCount: next.length,
+        sliceCount: bound.length,
       })
-      setNote(next.length
-        ? `${next.length}개로 나눴습니다. 카카오 규격 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · Crop→Flood T18→획치환${suspects ? ` · 진단 의심 ${suspects}칸` : ''}.`
+      const lossless = Boolean(bound[0]?.lossless)
+      const gridLabel = formatSmartGridLabel({ ...meta, count: bound.length })
+      setNote(bound.length
+        ? `💡 ${gridLabel || `${bound.length}개`} 감지 완료 (카카오 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} 규격)`
         : '객체를 찾지 못했습니다. 외곽 재단선과 모드 B 절단선을 맞춰 보세요.')
     } catch (error) {
       if (gen !== sliceGen.current) return
       setNote(error.message || '분할에 실패했습니다.')
+      setLightboxIndex(-1)
       setSlices([])
+      setGridDetect(null)
       publishEmoticonCuts([])
       publishInspectorHud({ status: 'idle', suspectCount: 0, sliceCount: 0 })
     } finally {
       if (gen === sliceGen.current) setBusy(false)
     }
   }, [])
+
+  const processSplit = runSlice
+
+  useEffect(() => {
+    if (!open) return undefined
+    const source = sheetRef.current || liveSheetMemory.canvas
+    if (!source) return undefined
+    sheetRef.current = source
+    if (liveSheetMemory.url) {
+      setSheetUrl(liveSheetMemory.url)
+      setFileName(liveSheetMemory.fileName)
+    }
+    processSplit({ source, nextMode: modeRef.current || 'smart' })
+    return undefined
+  }, [open, SPLITTER_LIVE_REV, processSplit])
 
   const applyPreviewZoomPercent = (percent = PREVIEW_ZOOM_DEFAULT) => {
     const next = clampZoom(Number(percent) / 100)
@@ -285,6 +460,41 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     return { nextVertical, nextHorizontal }
   }
 
+  const bindDetectedGrid = (detected, source) => {
+    if (!detected?.cells?.length) return
+    const width = source?.width || 1
+    const height = source?.height || 1
+    const rows = detected.rows || 0
+    const cols = detected.cols || 0
+    if (cols) {
+      setCols(cols)
+      colsRef.current = cols
+    }
+    if (rows) {
+      setRows(rows)
+      rowsRef.current = rows
+    }
+    if (Array.isArray(detected.verticalGuides) && detected.verticalGuides.length) {
+      setVerticalGuides(detected.verticalGuides)
+      vGuidesRef.current = detected.verticalGuides
+    }
+    if (Array.isArray(detected.horizontalGuides) && detected.horizontalGuides.length) {
+      setHorizontalGuides(detected.horizontalGuides)
+      hGuidesRef.current = detected.horizontalGuides
+    }
+    setGridDetect({
+      rows,
+      cols,
+      count: detected.cells.length,
+      engine: detected.engine,
+      cells: detected.cells,
+      verticalGuides: detected.verticalGuides || [],
+      horizontalGuides: detected.horizontalGuides || [],
+      width,
+      height,
+    })
+  }
+
   const runModeASmartDetection = (source, patch = {}) => {
     setMode('smart')
     modeRef.current = 'smart'
@@ -295,22 +505,58 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     })
   }
 
+  const onSheetPreviewLoad = useCallback(() => {
+    fitZoom()
+  }, [fitZoom])
+
   const triggerAfterSheetLoad = async (canvas) => {
     applyPreviewZoomPercent(35)
     const nextBounds = DEFAULT_CROP_BOUNDS
     setBounds(nextBounds)
     boundsRef.current = nextBounds
-    const { nextVertical, nextHorizontal } = initModeBGuides()
-    await runModeASmartDetection(canvas, {
-      nextBounds,
+    setSlices([])
+    const detected = handleDefaultSheetUpload(
+      canvas,
+      (cells) => {
+        setGridDetect((prev) => ({
+          ...(prev || {}),
+          cells,
+          count: cells.length,
+          rows: DEFAULT_SHEET_ROWS,
+          cols: DEFAULT_SHEET_COLS,
+        }))
+      },
+      (text) => {
+        setNote(`💡 ${text} 감지 완료 (카카오 ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} 규격)`)
+      },
+    )
+    bindDetectedGrid(detected, canvas)
+    const nextVertical = equalSplitGuides(DEFAULT_SHEET_COLS, nextBounds.left, nextBounds.right)
+    const nextHorizontal = equalSplitGuides(DEFAULT_SHEET_ROWS, nextBounds.top, nextBounds.bottom)
+    setMode('grid')
+    modeRef.current = 'grid'
+    setCols(DEFAULT_SHEET_COLS)
+    setRows(DEFAULT_SHEET_ROWS)
+    colsRef.current = DEFAULT_SHEET_COLS
+    rowsRef.current = DEFAULT_SHEET_ROWS
+    setVerticalGuides(nextVertical)
+    setHorizontalGuides(nextHorizontal)
+    vGuidesRef.current = nextVertical
+    hGuidesRef.current = nextHorizontal
+    await runSlice({
+      source: canvas,
+      nextMode: 'grid',
+      nextCols: DEFAULT_SHEET_COLS,
+      nextRows: DEFAULT_SHEET_ROWS,
       nextVertical,
       nextHorizontal,
+      nextBounds,
     })
   }
 
   const handleFile = async (file) => {
-    if (!file || !file.type.startsWith('image/')) {
-      setNote('이미지 파일만 올릴 수 있습니다.')
+    if (!isAcceptedSheetFile(file)) {
+      setNote('이미지 파일만 올릴 수 있습니다. PNG·JPG·WebP 모두 가능합니다.')
       return
     }
     setBusy(true)
@@ -318,8 +564,12 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     try {
       const canvas = await fileToSheetCanvas(file)
       sheetRef.current = canvas
+      liveSheetMemory.canvas = canvas
+      liveSheetMemory.fileName = file.name
+      liveSheetMemory.url = canvas.toDataURL('image/png')
       setFileName(file.name)
-      setSheetUrl(canvas.toDataURL('image/png'))
+      setSheetUrl(liveSheetMemory.url)
+      setLightboxIndex(-1)
       await triggerAfterSheetLoad(canvas)
     } catch (error) {
       setNote(error.message || '시트를 읽지 못했습니다.')
@@ -348,6 +598,17 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     }
     if (patch.transparent != null) setTransparent(patch.transparent)
     if (patch.textMode) setTextMode(patch.textMode)
+    if (patch.textEngineMode) {
+      const nextEngine = normalizeTextEngineMode(patch.textEngineMode)
+      setTextEngineMode(nextEngine)
+      textEngineModeRef.current = nextEngine
+      patch.nextTextEngineMode = nextEngine
+      if (nextEngine === TEXT_ENGINE_SMART_RECOLOR && textModeRef.current === 'original') {
+        setTextMode('custom')
+        textModeRef.current = 'custom'
+        patch.nextTextMode = 'custom'
+      }
+    }
     if (patch.customColor) setCustomColor(patch.customColor)
     if (patch.outline != null) setOutline(patch.outline)
     if (patch.customScale != null) {
@@ -374,6 +635,16 @@ export default function EmoticonSplitterModal({ open, onClose }) {
       patch.nextPunchHoles = Boolean(patch.punchHoles)
     }
     if (sheetRef.current) runSlice(patch)
+  }
+
+  const applySheetGridPreset = (preset) => {
+    if (!preset || !sheetRef.current) return
+    reSlice({
+      mode: 'grid',
+      nextMode: 'grid',
+      cols: preset.cols,
+      rows: preset.rows,
+    })
   }
 
   const applyScale = (value, immediate = false) => {
@@ -604,9 +875,8 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   }
 
   const copySliceDiagnostics = async () => {
-    if (!slices.length) return
     try {
-      const report = buildDiagnosticReport(slices, {
+      const sliceReport = buildDiagnosticReport(slices, {
         mode: modeRef.current,
         textMode: textModeRef.current,
         outline: outlineRef.current,
@@ -617,28 +887,64 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         transparent: transparentRef.current,
         previewZoomPercent: Math.round(zoomRef.current * 100),
       })
+      const lossless = Boolean(slices[0]?.lossless)
+      const report = mergeDiagnosticReport(sliceReport, evaluateSystemDiagnostics('ALL', {
+        sheet: sheetRef.current,
+        isTransparent: sheetRef.current ? sniffCanvasHasAlpha(sheetRef.current) : (lossless || null),
+        lossless,
+        cellCount: slices.length,
+        hasZip: typeof JSZip === 'function',
+      }))
       await copyDiagnosticLog(report)
       setLogCopied(true)
       window.setTimeout(() => setLogCopied(false), 2200)
-      setNote('진단 로그가 클립보드에 복사되었습니다!')
+      setNote('전사 진단 리포트가 복사되었습니다')
     } catch (error) {
       setNote(error.message || '진단 로그를 복사하지 못했습니다.')
     }
   }
 
+  const dismissPngGuide = (hideToday = false) => {
+    if (hideToday) hidePngGuideToday()
+    setShowTransparencyGuideModal(false)
+  }
+
+  const requestSheetPick = () => {
+    if (showTransparencyGuideModal && !isPngGuideHiddenToday()) return
+    inputRef.current?.click()
+  }
+
   if (!open) return null
 
+  const smartOn = textEngineMode === TEXT_ENGINE_SMART_RECOLOR
+
   return (
-    <div className="studio-modal-root" role="dialog" aria-modal="true" aria-labelledby="emo-split-title">
+    <div className="studio-modal-root emo-split-root" role="dialog" aria-modal="true" aria-labelledby="emo-split-title">
       <div className="studio-modal-backdrop" onClick={onClose} />
       <div className="studio-modal-card emo-split-card">
         {logCopied ? (
-          <div className="emo-debug-toast" role="status">진단 로그가 클립보드에 복사되었습니다!</div>
+          <div className="emo-debug-toast" role="status">전사 진단 리포트가 복사되었습니다</div>
         ) : null}
         <header className="emo-split-head">
           <h2 id="emo-split-title">🧩 이모티콘 시트 분할기</h2>
           <div className="emo-enhance-bar">
-            <p className="emo-enhance-kicker">텍스트 가독성 보정</p>
+            <div className="emo-engine-toggle" role="group" aria-label="텍스트 엔진">
+              {TEXT_ENGINE_MODES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-text-engine={item.id}
+                  className={clsx('emo-enhance-btn', textEngineMode === item.id && 'is-on')}
+                  disabled={busy && !slices.length}
+                  onClick={() => reSlice({ textEngineMode: item.id, nextTextEngineMode: item.id })}
+                  {...magnify(item.label, item.tooltip)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {smartOn ? (
+              <>
             <label
               className="emo-zone-ctrl"
               {...magnify('텍스트 감지 높이', '하단이면 이미지 아래쪽부터, 상단이면 위쪽부터의 높이입니다. 이 영역 안의 글자만 색을 바꿉니다. 캐릭터 몸통이 걸리면 값을 낮추세요.')}
@@ -686,7 +992,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 </button>
               ))}
               {textMode === 'custom' ? (
-                <label className="emo-color-pick" {...magnify('커스텀 텍스트 색', '감지 영역 글자 클러스터만 이 색으로 바꿉니다')}>
+                <label className="emo-color-pick" {...magnify('커스텀 텍스트 색', '하단 ROI 글자만 이 색으로 바꿉니다')}>
                   <input
                     type="color"
                     value={customColor}
@@ -703,18 +1009,20 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               />
               Outline
             </label>
-            <label className="emo-check emo-check-inline" {...magnify('내부 고립 구멍 투명화', '꺼 두면 외곽 Flood-Fill만 적용합니다. 켜면 닫힌 배경 구멍까지 Alpha=0으로 확장합니다')}>
+              </>
+            ) : null}
+            <label className="emo-check emo-check-inline" {...magnify('안쪽 구멍 투명화', '글자/도형 안쪽 구멍까지 투명화합니다. 꺼 두면 외곽만 지워 하이라이트를 보호합니다.')}>
               <input
                 type="checkbox"
                 checked={punchHoles}
                 disabled={!transparent}
                 onChange={(event) => reSlice({ punchHoles: event.target.checked })}
               />
-              내부 고립 구멍 투명화
+              안쪽 구멍 투명화
             </label>
           </div>
-          <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" {...magnify('닫기', '분할기 창을 닫습니다')}>
-            <X className="h-4 w-4" />
+          <button type="button" className="studio-modal-close" onClick={onClose} aria-label="닫기" data-tooltip="분할기 창을 닫습니다">
+            ✕ 닫기
           </button>
         </header>
 
@@ -763,11 +1071,11 @@ export default function EmoticonSplitterModal({ open, onClose }) {
           <button
             type="button"
             className="emo-debug-btn"
-            disabled={!slices.length || busy}
+            disabled={busy}
             onClick={copySliceDiagnostics}
-            {...magnify('진단 로그', '슬라이스 좌표·알파·흰 패치·인접 행 침범을 JSON으로 복사하고 콘솔 테이블을 출력합니다')}
+            {...magnify('진단 로그 복사', '3대 모듈 Pass/Info/Warn 리포트를 클립보드에 복사합니다')}
           >
-            <Bug className="h-3.5 w-3.5" /> {logCopied ? '복사됨' : '🐞 진단 로그'}
+            {logCopied ? '복사됨' : '📋 진단 로그 복사'}
           </button>
         </div>
 
@@ -781,7 +1089,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               className={clsx('emo-drop', dragOver && 'is-over')}
               onClick={(event) => {
                 if (event.target.closest('button, input')) return
-                inputRef.current?.click()
+                requestSheetPick()
               }}
               onDragOver={(event) => {
                 event.preventDefault()
@@ -793,29 +1101,32 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 setDragOver(false)
                 handleFile(event.dataTransfer.files?.[0])
               }}
-              {...magnify('시트 업로드', 'AI가 만든 이모티콘 시트 PNG/JPEG를 올립니다')}
+              {...magnify('시트 올리기', PNG_GUIDE_BODY)}
             >
               <Upload className="h-4 w-4" />
               <div>
                 <strong>시트 올리기</strong>
-                <p>{fileName || '흰 배경 5×6 / 6×5 그리드'}</p>
+                <p>{fileName || 'PNG·JPG·WebP'}</p>
               </div>
               <button
                 type="button"
                 className="mini-btn"
-                onClick={() => inputRef.current?.click()}
-                {...magnify('시트 이미지 선택', 'AI가 만든 이모티콘 시트 PNG/JPEG를 고릅니다')}
+                onClick={requestSheetPick}
+                {...magnify('파일 선택', PNG_GUIDE_FOOT)}
               >
                 파일
               </button>
               <input
                 ref={inputRef}
                 type="file"
-                accept="image/*"
+                accept={SHEET_ACCEPT}
                 hidden
                 onChange={(event) => handleFile(event.target.files?.[0])}
               />
             </div>
+            <p className="emo-drop-guide" data-sheet-guide="1">
+              💡 4행 × 5열 (20개) 투명 PNG 시트를 기본 규격으로 권장합니다. 흰색 배경과 다른 비율도 제한 없이 올릴 수 있습니다.
+            </p>
 
             <div className="emo-modes">
               <button
@@ -823,20 +1134,56 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 className={clsx('emo-mode', mode === 'smart' && 'is-on')}
                 disabled={busy}
                 onClick={() => reSlice({ mode: 'smart', nextMode: 'smart' })}
-                {...magnify('스마트 자동 감지', '배경을 빼고 각 이모티콘 외곽 상자를 찾아 자릅니다')}
+                {...magnify('스마트 자동 감지', '행·열 투영 프로파일로 시트 칸을 자동으로 나눕니다. 캐릭터와 하단 글자는 한 컷으로 묶습니다.')}
               >
-                모드 A
+                자동 28구 분할
               </button>
               <button
                 type="button"
                 className={clsx('emo-mode', mode === 'grid' && 'is-on')}
                 disabled={busy}
-                onClick={() => reSlice({ mode: 'grid', nextMode: 'grid' })}
-                {...magnify('그리드 분할', '1px 절단선과 외곽 재단선을 드래그해 칸을 맞춥니다')}
+                onClick={() => reSlice({
+                  mode: 'grid',
+                  nextMode: 'grid',
+                  nextCols: colsRef.current,
+                  nextRows: rowsRef.current,
+                  nextVertical: vGuidesRef.current,
+                  nextHorizontal: hGuidesRef.current,
+                })}
+                {...magnify('그리드 분할', '모드 A가 잡은 행·열 선을 드래그해 미세 조정합니다.')}
               >
                 모드 B
               </button>
             </div>
+            <div className="emo-presets" data-sheet-presets="1">
+              {SHEET_GRID_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={clsx(
+                    'emo-preset',
+                    gridDetect?.rows === preset.rows && gridDetect?.cols === preset.cols && 'is-on',
+                  )}
+                  disabled={busy || !sheetUrl}
+                  onClick={() => applySheetGridPreset(preset)}
+                  {...magnify(preset.label, preset.hint)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {gridDetect?.count ? (
+              <p
+                className="emo-grid-detect"
+                data-grid-detect={`${gridDetect.rows}x${gridDetect.cols}`}
+                {...magnify(
+                  formatSmartGridLabel(gridDetect) || '그리드 감지',
+                  '투영 프로파일로 행과 열을 나눴습니다. 모드 B에서 절단선을 미세 조정할 수 있습니다.',
+                )}
+              >
+                💡 {formatSmartGridLabel(gridDetect)} 감지 완료
+              </p>
+            ) : null}
 
             {mode === 'grid' ? (
               <>
@@ -857,30 +1204,30 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 </div>
               </>
             ) : (
-              <p className="emo-guide-hint">금색 외곽 재단선으로 여백을 자른 뒤 객체를 감지합니다.</p>
+              <p className="emo-guide-hint">💡 시트 여백을 자동 정돈하여 개별 이모티콘 컷을 추출합니다.</p>
             )}
 
-            <label className="emo-check" {...magnify('배경 투명화', '360 모서리에서 플러드필로 바깥 흰/미색만 지웁니다. 눈·옷 안쪽 흰색은 남습니다')}>
+            <label className="emo-check" {...magnify('자동 배경 투명화', '단색/흰색 배경을 자동으로 제거합니다. 눈·옷 안쪽 흰색은 남습니다.')}>
               <input
                 type="checkbox"
                 checked={transparent}
                 onChange={(event) => reSlice({ transparent: event.target.checked, nextTransparent: event.target.checked })}
               />
-              배경 투명화 (Alpha PNG)
+              자동 배경 투명화
             </label>
-            <label className="emo-check" {...magnify('내부 고립 구멍 투명화', '꺼 두면 외곽만 지워 이마·눈 하이라이트를 보호합니다. 켜면 팔/다리 사이·원형 테두리 안 닫힌 배경 구멍까지 Alpha=0으로 확장합니다')}>
+            <label className="emo-check" {...magnify('안쪽 구멍 투명화', '글자/도형 안쪽 구멍까지 투명화합니다. 꺼 두면 외곽만 지워 하이라이트를 보호합니다.')}>
               <input
                 type="checkbox"
                 checked={punchHoles}
                 disabled={!transparent}
                 onChange={(event) => reSlice({ punchHoles: event.target.checked })}
               />
-              내부 고립 구멍 투명화
+              안쪽 구멍 투명화
             </label>
 
             <div className="emo-actions">
-              <button type="button" className="export-btn export-btn-png" disabled={busy || !slices.length} onClick={downloadZip} {...magnify('전체 ZIP 다운로드', '360×360 PNG를 한 개의 ZIP으로 받습니다')}>
-                <Download className="h-4 w-4" /> 📦 전체 ZIP 다운로드
+              <button type="button" className="export-btn export-btn-png allow-long-text" disabled={busy || !slices.length} onClick={downloadZip} {...magnify(`${slices.length}종 ZIP`, `감지된 ${slices.length}컷을 360×360 PNG ZIP으로 받습니다`)}>
+                <Download className="h-4 w-4" /> 📦 {slices.length}종 ZIP
               </button>
               <button type="button" className="mini-btn" disabled={busy} onClick={reset} {...magnify('시트 비우기', '올린 시트와 분할 결과를 지웁니다')}>비우기</button>
             </div>
@@ -889,13 +1236,21 @@ export default function EmoticonSplitterModal({ open, onClose }) {
               <ul className={clsx('emo-thumbs', `is-bg-${viewBg}`)}>
                 {slices.map((item) => (
                   <li key={item.id}>
-                    <img src={item.preview} alt={item.name} />
-                    <button type="button" onClick={() => downloadOne(item)} {...magnify(`${item.index + 1}번 PNG`, '이 칸만 360×360 PNG로 저장합니다')}>{item.index + 1}</button>
+                    <button
+                      type="button"
+                      className="emo-thumb-open"
+                      onClick={() => setLightboxIndex(item.index)}
+                      aria-label="확대"
+                      {...magnify('확대', `${item.index + 1}번 컷을 크게 봅니다`)}
+                    >
+                      <HqCutThumb canvas={item.canvas} alt={item.name} />
+                    </button>
+                    <button type="button" className="emo-thumb-dl" onClick={() => downloadOne(item)} {...magnify(`${item.index + 1}번 PNG`, '이 칸만 360×360 PNG로 저장합니다')}>{item.index + 1}</button>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="emo-thumbs-empty">분할 결과가 여기에 30칸 그리드로 쌓입니다.</p>
+              <SplitEmptyState />
             )}
           </aside>
 
@@ -962,8 +1317,26 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                       alt="업로드한 이모티콘 시트"
                       className="emo-sheet-preview"
                       draggable={false}
-                      onLoad={fitZoom}
+                      onLoad={onSheetPreviewLoad}
                     />
+                    {mode === 'smart' && sheetRef.current && slices.map((item) => {
+                      const box = item.box
+                      const sw = sheetRef.current.width || 1
+                      const sh = sheetRef.current.height || 1
+                      if (!box) return null
+                      return (
+                        <div
+                          key={`smart-box-${item.id}`}
+                          className="emo-smart-box"
+                          style={{
+                            left: `${(box.x / sw) * 100}%`,
+                            top: `${(box.y / sh) * 100}%`,
+                            width: `${(box.w / sw) * 100}%`,
+                            height: `${(box.h / sh) * 100}%`,
+                          }}
+                        />
+                      )
+                    })}
                     {['left', 'right', 'top', 'bottom'].map((edge) => (
                       <div
                         key={edge}
@@ -1020,6 +1393,18 @@ export default function EmoticonSplitterModal({ open, onClose }) {
           </section>
         </div>
       </div>
+      <PreviewLightboxModal
+        open={lightboxIndex >= 0}
+        slices={slices}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(-1)}
+        onIndexChange={setLightboxIndex}
+      />
+      <TransparencyGuideModal
+        open={showTransparencyGuideModal}
+        onContinue={() => dismissPngGuide(false)}
+        onHideToday={() => dismissPngGuide(true)}
+      />
     </div>
   )
 }
