@@ -1,4 +1,45 @@
 export const GUIDE_SAMPLES = {
+  'pungjeong-kitsch': {
+    id: 'pungjeong-kitsch',
+    label: '龍 Dragon 풍정 키치',
+    presetId: 'kitsch-sticker',
+    studioTab: 'allinone',
+    stickerOn: true,
+    stickerTheme: 'fnb',
+    previewBg: 'checker',
+    layers: {
+      main: {
+        text: '龍 Dragon 풍정',
+        fontId: 'jalnan',
+        presetId: 'kitsch-sticker',
+        fontSize: 70,
+        fontWeight: 400,
+        color: '#F6E7C1',
+        strokeWidth: 0,
+        strokeWidth2: 0,
+        curveAmount: 0,
+        ox: 0,
+        oy: 0,
+        rotation: 0,
+        letterSpacing: 0,
+        lineHeight: 1.2,
+        align: 'center',
+      },
+      sub: {
+        text: 'AI Text Styler',
+        fontId: 'great-vibes',
+        presetId: '',
+        fontSize: 40,
+        color: '#e0f2fe',
+        strokeWidth: 0,
+        strokeWidth2: 0,
+        curveAmount: 0,
+        ox: 0,
+        oy: 0.24,
+        rotation: 0,
+      },
+    },
+  },
   'gold-dragon': {
     id: 'gold-dragon',
     label: '황금 용 캘리그라피',
@@ -120,6 +161,9 @@ export function applyGuideSample(studio, sample) {
     presetId: sample.presetId ?? studio.presetId,
     studioTab: sample.studioTab ?? studio.studioTab,
     gifMotion: sample.gifMotion ?? studio.gifMotion,
+    stickerOn: sample.stickerOn ?? studio.stickerOn,
+    stickerTheme: sample.stickerTheme ?? studio.stickerTheme,
+    previewBg: sample.previewBg ?? studio.previewBg,
     layers: (studio.layers || []).map((layer) => {
       const patch = sample.layers?.[layer.role]
       if (!patch) return layer

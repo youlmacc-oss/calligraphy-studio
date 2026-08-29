@@ -65,7 +65,7 @@ import { subscribeInspectorHud } from './utils/debugger.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
 import { registerCustomFontFile } from './lib/customFonts.js'
-import { applyGuideSample } from './lib/guideSamples.js'
+import { applyGuideSample, GUIDE_SAMPLES } from './lib/guideSamples.js'
 import {
   loadOnboardDone,
   saveOnboardDone,
@@ -1413,6 +1413,15 @@ export default function App() {
             <button type="button" className="tool-btn" onClick={resetActive} data-tooltip="텍스트를 캔버스 정중앙에 배치"><RotateCcw className="h-3.5 w-3.5" /> 정중앙 정렬</button>
             <button type="button" className={clsx('tool-btn', studio.gridOn && 'is-on')} onClick={() => patchStudio({ gridOn: !studio.gridOn }, false)} data-grid-on={studio.gridOn ? '1' : '0'} data-tooltip="편집 가이드 격자선 표시 토글">
               <Grid3x3 className="h-3.5 w-3.5" /> 격자/눈금
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
+              data-default-kitsch="1"
+              onClick={() => applySample(GUIDE_SAMPLES['pungjeong-kitsch'])}
+              data-tooltip="크림 글자·갈색 외곽·F&B 스티커가 붙은 기본 키치 룩을 다시 불러옵니다"
+            >
+              <WandSparkles className="h-3.5 w-3.5" /> 기본 키치
             </button>
             <button type="button" className={clsx('tool-btn', studio.layerLocked && 'is-on')} onClick={() => patchStudio({ layerLocked: !studio.layerLocked }, false)} data-tooltip="캔버스 요소 위치 고정 및 잠금 해제">
               {studio.layerLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}

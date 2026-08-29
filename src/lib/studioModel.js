@@ -1,14 +1,15 @@
 import { DEFAULT_TEXT, FONTS, PRESETS } from '../presets.js'
 import {
   FONT_SIZE_EXTRA_DEFAULT,
+  FONT_SIZE_MAIN_DEFAULT,
   FONT_SIZE_SUB_DEFAULT,
 } from './fontSize.js'
 import { defaultViewEdit } from './viewEdit.js'
 
-export const STORAGE_KEY = 'styler-studio-pro-v2'
-export const DEFAULT_STUDIO_MAIN_SIZE = 39
-export const DEFAULT_STUDIO_PRESET_ID = 'hunmin-woodcut'
-export const DEFAULT_STUDIO_FONT_ID = 'hunmin'
+export const STORAGE_KEY = 'styler-studio-pro-v3'
+export const DEFAULT_STUDIO_MAIN_SIZE = FONT_SIZE_MAIN_DEFAULT
+export const DEFAULT_STUDIO_PRESET_ID = 'kitsch-sticker'
+export const DEFAULT_STUDIO_FONT_ID = 'jalnan'
 export const API_STORAGE_KEY = 'styler-api-keys-v1'
 
 let layerSeq = 1
@@ -57,7 +58,7 @@ export function createDefaultLayers() {
       fontWeight: 400,
       opacity: 1,
       oy: 0,
-      color: '#f8fafc',
+      color: '#F6E7C1',
     }),
     createLayer({
       name: '서브 타이틀',
@@ -78,10 +79,10 @@ export function defaultStudioState() {
     layers,
     activeLayerId: layers[0].id,
     presetId: DEFAULT_STUDIO_PRESET_ID,
-    studioTab: 'woodcut',
+    studioTab: 'allinone',
     viewMode: 'graphic',
     aspectId: '1:1',
-    stickerOn: false,
+    stickerOn: true,
     stickerTheme: 'fnb',
     chiselDepth: 6,
     roughness: 48,
@@ -99,7 +100,7 @@ export function defaultStudioState() {
     },
     viewEdit: defaultViewEdit(),
     gifMotion: 'pulse',
-    previewBg: 'dark',
+    previewBg: 'checker',
     exportScale: 1,
   }
 }
