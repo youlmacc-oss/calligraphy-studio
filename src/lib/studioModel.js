@@ -6,11 +6,19 @@ import {
 } from './fontSize.js'
 import { defaultViewEdit } from './viewEdit.js'
 
-export const STORAGE_KEY = 'styler-studio-pro-v4'
+export const STORAGE_KEY = 'styler-studio-pro-v5'
+export const FACTORY_REV_KEY = 'styler-factory-rev'
+export const FACTORY_REV = '2026.08.29-woodcut-lock'
 export const DEFAULT_STUDIO_MAIN_SIZE = FONT_SIZE_MAIN_DEFAULT
 export const DEFAULT_STUDIO_PRESET_ID = 'hunmin-woodcut'
 export const DEFAULT_STUDIO_FONT_ID = 'hunmin'
 export const API_STORAGE_KEY = 'styler-api-keys-v1'
+const LEGACY_STUDIO_KEYS = [
+  'styler-studio-pro-v1',
+  'styler-studio-pro-v2',
+  'styler-studio-pro-v3',
+  'styler-studio-pro-v4',
+]
 
 let layerSeq = 1
 
@@ -126,7 +134,7 @@ export function studioFromParsed(parsed) {
   const layers = Array.isArray(parsed.layers) && parsed.layers.length
     ? parsed.layers.map((layer) => createLayer({
       ...layer,
-      presetId: layer.presetId ?? (layer.role === 'main' ? (parsed.presetId || PRESETS[0].id) : ''),
+      presetId: layer.presetId ?? (layer.role === 'main' ? (parsed.presetId || DEFAULT_STUDIO_PRESET_ID) : ''),
       opacity: layer.opacity ?? 1,
       lineHeight: layer.lineHeight ?? 1.2,
       align: layer.align ?? 'center',
@@ -156,8 +164,27 @@ export function studioFromParsed(parsed) {
   }
 }
 
+function wipeLegacyStudioKeys() {
+  LEGACY_STUDIO_KEYS.forEach((key) => {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      /* ignore */
+    }
+  })
+}
+
 export function loadStudioState() {
   try {
+    const rev = localStorage.getItem(FACTORY_REV_KEY)
+    if (rev !== FACTORY_REV) {
+      wipeLegacyStudioKeys()
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.setItem(FACTORY_REV_KEY, FACTORY_REV)
+      const next = defaultStudioState()
+      saveStudioState(next)
+      return next
+    }
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultStudioState()
     return studioFromParsed(JSON.parse(raw))

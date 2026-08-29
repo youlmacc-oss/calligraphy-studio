@@ -51,6 +51,7 @@ import {
 } from './lib/renderStyle.js'
 import {
   createLayer,
+  defaultStudioState,
   loadApiKeys,
   loadStudioState,
   saveApiKeys,
@@ -65,7 +66,7 @@ import { subscribeInspectorHud } from './utils/debugger.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
 import { registerCustomFontFile } from './lib/customFonts.js'
-import { applyGuideSample, GUIDE_SAMPLES } from './lib/guideSamples.js'
+import { applyGuideSample } from './lib/guideSamples.js'
 import {
   loadOnboardDone,
   saveOnboardDone,
@@ -244,7 +245,7 @@ export default function App() {
   const mainLayer = studio.layers.find((layer) => layer.role === 'main') ?? studio.layers[0]
   const subLayer = studio.layers.find((layer) => layer.role === 'sub')
   const extraLayers = studio.layers.filter((layer) => layer.role !== 'main' && layer.role !== 'sub')
-  const preset = PRESETS_BY_ID[mainLayer?.presetId] ?? PRESETS_BY_ID[studio.presetId] ?? PRESETS[0]
+  const preset = PRESETS_BY_ID[mainLayer?.presetId] ?? PRESETS_BY_ID[studio.presetId] ?? PRESETS_BY_ID['hunmin-woodcut'] ?? PRESETS[0]
   const aspect = getAspect(studio.aspectId)
   const activeLayer = studio.layers.find((item) => item.id === studio.activeLayerId) ?? studio.layers[0]
   const font = fontsById[activeLayer?.fontId] ?? FONTS[0]
@@ -298,6 +299,7 @@ export default function App() {
         blend: studio.background.blend === 'source-over' ? 'source-over' : studio.background.blend,
       },
       gridOn: studio.gridOn,
+      centerGuides: true,
       selectedId: studio.activeLayerId,
       showOverlay: false,
       exportW: aspect.w,
@@ -1418,8 +1420,12 @@ export default function App() {
               type="button"
               className="tool-btn"
               data-default-sample="1"
-              onClick={() => applySample(GUIDE_SAMPLES['pungjeong-woodcut'])}
-              data-tooltip="훈민정음 언해 목각 · 다크 캔버스 · 중앙 십자 가이드 기본 샘플을 다시 불러옵니다"
+              onClick={() => {
+                capture()
+                setStudio(defaultStudioState())
+                setGuideOpen(false)
+              }}
+              data-tooltip="훈민정음 언해 목각 · 다크 캔버스 · 중앙 십자 가이드 기본 화면을 통째로 다시 불러옵니다"
             >
               <WandSparkles className="h-3.5 w-3.5" /> 기본 샘플
             </button>

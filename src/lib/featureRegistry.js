@@ -346,7 +346,7 @@ export const APP_FEATURES_REGISTRY = [
       order: 10,
       title: '📖 챕터 1. 간단 설정 요약 — 폰트·컬러·슬라이더',
       sample: GUIDE_SAMPLES['pungjeong-woodcut'],
-      kicker: '첫 화면 기본은 龍 Dragon 풍정 + 훈민정음 언해 목각입니다. 다크 1:1 캔버스, 중앙 청록 십자 가이드, 격자 ON입니다.',
+      kicker: '실행 시 공장 리비전이 예전 키치 세션을 지우고 龍 Dragon 풍정 목각 화면을 다시 심습니다. 다크 1:1, 중앙 청록 십자, 격자 ON입니다.',
       visuals: [
         { tone: 'layout', chips: ['왼쪽 설정', '|', '중앙 캔버스', '우측 익스포트'], split: true },
       ],

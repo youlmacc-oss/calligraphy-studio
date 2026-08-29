@@ -8,7 +8,7 @@ import { inspectFavoriteStore } from './fontFavorites.js'
 import { inspectStudioFonts } from './fontPreload.js'
 import { DEFAULT_TEXT, FONT_CATEGORIES } from '../presets.js'
 import { GUIDE_SAMPLES } from './guideSamples.js'
-import { DEFAULT_STUDIO_FONT_ID, DEFAULT_STUDIO_MAIN_SIZE, DEFAULT_STUDIO_PRESET_ID, defaultStudioState } from './studioModel.js'
+import { DEFAULT_STUDIO_FONT_ID, DEFAULT_STUDIO_MAIN_SIZE, DEFAULT_STUDIO_PRESET_ID, FACTORY_REV, defaultStudioState } from './studioModel.js'
 import { liveStatusFromLayer } from './liveStatus.js'
 import {
   clampFontSize,
@@ -610,6 +610,9 @@ export async function checkDragEngine() {
   if (DEFAULT_TEXT !== '龍 Dragon 풍정') {
     return { status: 'error', detail: '기본 문구가 龍 Dragon 풍정과 다릅니다.' }
   }
+  if (!FACTORY_REV || !String(FACTORY_REV).includes('woodcut-lock')) {
+    return { status: 'error', detail: '공장 목각 리비전이 없습니다.' }
+  }
   const factory = defaultStudioState()
   const main = factory.layers.find((layer) => layer.role === 'main')
   if (!factory.gridOn) {
@@ -652,7 +655,7 @@ export async function checkDragEngine() {
   if (typeof PreviewLightboxModal !== 'function' || !lightboxSrc.includes('checkerboard-bg') || lightboxSrc.includes('bg-white')) {
     return { status: 'error', detail: '확대 팝업 체커보드가 없거나 흰 배경이 남아 있습니다.' }
   }
-  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 기본 龍 Dragon 풍정 목각 · 다크·십자 가이드 · 확대 팝업 checkerboard-bg 고정.' }
+  return { status: 'ok', detail: '2D 앵커·회전 히트박스 · 공장 리비전 목각 강제 · 다크·십자 가이드 · 확대 팝업 checkerboard-bg 고정.' }
 }
 
 export async function checkTypography() {

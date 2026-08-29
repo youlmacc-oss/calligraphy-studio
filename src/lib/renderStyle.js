@@ -1340,8 +1340,14 @@ function drawGrid(ctx, viewW, viewH, previewBg = 'dark') {
     ctx.lineTo(viewW, i)
     ctx.stroke()
   }
-  ctx.strokeStyle = light ? 'rgba(8, 145, 178, 0.5)' : 'rgba(34, 211, 238, 0.62)'
-  ctx.lineWidth = 1.25
+  ctx.restore()
+}
+
+function drawCenterCross(ctx, viewW, viewH, previewBg = 'dark') {
+  const light = previewBg === 'light'
+  ctx.save()
+  ctx.strokeStyle = light ? 'rgba(14, 116, 144, 0.7)' : 'rgba(34, 211, 238, 0.82)'
+  ctx.lineWidth = 1.5
   ctx.beginPath()
   ctx.moveTo(viewW / 2, 0)
   ctx.lineTo(viewW / 2, viewH)
@@ -1558,6 +1564,7 @@ async function drawStudioScene(ctx, options) {
   } else {
     drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background, options.previewBg || 'dark')
     if (gridOn) drawGrid(ctx, viewW, viewH, options.previewBg || 'dark')
+    if (options.centerGuides !== false) drawCenterCross(ctx, viewW, viewH, options.previewBg || 'dark')
   }
   for (const { layer } of layersInPaintOrder(layers)) {
     if (layer.visible === false) continue
@@ -1610,6 +1617,7 @@ export async function drawLivePreview(canvas, options) {
       scale,
       transparent: options.transparent === true,
       showOverlay: options.showOverlay !== false,
+      centerGuides: options.centerGuides !== false,
     })
     if (options.viewEdit) {
       const processed = applyViewEdit(canvas, options.viewEdit, {
@@ -1661,6 +1669,7 @@ export async function renderStyledText(options) {
       transparent: true,
       showOverlay: false,
       gridOn: false,
+      centerGuides: false,
       viewMode: 'graphic',
     })
     const graphic = options.viewEdit
@@ -1685,6 +1694,7 @@ export async function renderStyledText(options) {
       scale,
       showOverlay: false,
       gridOn: false,
+      centerGuides: false,
       viewMode: 'mask',
       bgImage: null,
     })
