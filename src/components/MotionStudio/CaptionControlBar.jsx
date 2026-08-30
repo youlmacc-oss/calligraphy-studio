@@ -19,6 +19,10 @@ export default function CaptionControlBar({
   const selectedFont = normalizeEmoticonFontId(fontId)
 
   useEffect(() => {
+    ensureEmoticonFontsReady()
+  }, [])
+
+  useEffect(() => {
     ensureEmoticonFontsReady(selectedFont)
   }, [selectedFont])
 

@@ -33,13 +33,15 @@ export async function ensureEmoticonFontsReady(fontId) {
   if (typeof document === 'undefined' || !document.fonts?.load) {
     return resolveEmoticonFont(fontId)
   }
-  const font = resolveEmoticonFont(fontId)
   try {
     await document.fonts.ready
   } catch {
     /* ignore */
   }
-  const quoted = /\s/.test(font.loadFamily) ? `"${font.loadFamily}"` : font.loadFamily
-  await document.fonts.load(`${font.weight} 48px ${quoted}`).catch(() => null)
-  return font
+  const list = fontId ? [resolveEmoticonFont(fontId)] : EMOTICON_FONTS
+  await Promise.all(list.map((font) => {
+    const quoted = /\s/.test(font.loadFamily) ? `"${font.loadFamily}"` : font.loadFamily
+    return document.fonts.load(`${font.weight} 48px ${quoted}`).catch(() => null)
+  }))
+  return resolveEmoticonFont(fontId)
 }

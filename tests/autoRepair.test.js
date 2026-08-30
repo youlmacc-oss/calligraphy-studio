@@ -748,6 +748,8 @@ describe('자율 루프 자동 리페어 검증기', () => {
     expect(renderer).toContain('captionCanvasFont')
     expect(encoder).toContain('ensureEmoticonFontsReady')
     expect(encoder).toContain('captionFont')
+    expect(readSrc('src/lib/emoticonFonts.js')).toContain('fontId ? [resolveEmoticonFont(fontId)] : EMOTICON_FONTS')
+    expect(caption).toContain('ensureEmoticonFontsReady()')
 
     const refresh = readSrc('scripts/refresh-dev.js')
     const loop = readSrc('scripts/loop-test.js')
