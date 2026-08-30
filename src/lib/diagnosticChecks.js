@@ -158,6 +158,7 @@ import { drawSpeechBubbleWithTail, hitTestTailHandle, defaultBubbleTail } from '
 import { PARTICLE_LAYERS } from '../components/MotionStudio/particleOverlayEngine.js'
 import { estimateStoreSpec } from '../components/MotionStudio/storeSpecHud.js'
 import { STUDIO_HUD_STEPS } from './studioHudChecks.js'
+import { SESSION_KEY, isFreshSession, loadSavedSession, saveCurrentSession } from './sessionManager.js'
 import MotionGifStudioModal from '../components/MotionGifStudio/MotionGifStudioModal.jsx'
 import { isPcImageFile, listPcImageFiles } from '../components/MotionGifStudio/motionPcUpload.js'
 import { NumberSliderControl, bumpSliderValue } from '../components/NumberSliderControl.jsx'
@@ -2469,6 +2470,18 @@ export async function checkMotionSequencer() {
   }
   if (!zipBtnSrc.includes('data-batch-zip') || !panelSrc.includes('data-play-speed') || !panelSrc.includes('MotionClipManager')) {
     return { status: 'error', detail: '클립 보관함, 배속 토글 또는 ZIP 일괄 버튼이 없습니다.' }
+  }
+  if (SESSION_KEY !== 'MOTION_STUDIO_ACTIVE_SESSION' || typeof saveCurrentSession !== 'function' || typeof loadSavedSession !== 'function') {
+    return { status: 'error', detail: '작업 세션 자동 저장 매니저가 없습니다.' }
+  }
+  if (!isFreshSession({ timestamp: Date.now() }) || isFreshSession({ timestamp: Date.now() - 25 * 60 * 60 * 1000 })) {
+    return { status: 'error', detail: '세션 24시간 유효 판정이 실패했습니다.' }
+  }
+  if (!uploadSrc.includes('data-session-save') || !uploadSrc.includes('data-session-load') || !uploadSrc.includes('data-session-ind') || !uploadSrc.includes('data-session-resume')) {
+    return { status: 'error', detail: '작업 저장/불러오기 또는 이어하기 배너가 없습니다.' }
+  }
+  if (!panelSrc.includes('sessionSnapRef')) {
+    return { status: 'error', detail: '시퀀서 세션 스냅샷 ref가 없습니다.' }
   }
   return {
     status: 'ok',

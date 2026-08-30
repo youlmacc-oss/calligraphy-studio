@@ -26,6 +26,13 @@ import {
 } from '../src/lib/emoticonSplit.js'
 import { FONT_CATEGORIES, FONT_TAB_LABELS, FONT_TAB_TOOLTIPS } from '../src/presets.js'
 import { DEFAULT_EMOTICON_FONT_ID, EMOTICON_FONTS, captionCanvasFont } from '../src/lib/emoticonFonts.js'
+import {
+  SESSION_KEY,
+  isFreshSession,
+  loadSavedSession,
+  saveCurrentSession,
+  clearSavedSession,
+} from '../src/lib/sessionManager.js'
 import { GOLDEN_BASELINE } from '../src/utils/diagnosticsBaseline.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -782,5 +789,30 @@ describe('자율 루프 자동 리페어 검증기', () => {
     expect(drag).toContain('TAIL_HANDLE_RADIUS')
     expect(caption).toContain('data-caption-tail')
     expect(guide).toContain('꼬리 ON')
+    expect(guide).toContain('이어하기')
+    const session = readSrc('src/lib/sessionManager.js')
+    expect(session).toContain("SESSION_KEY = 'MOTION_STUDIO_ACTIVE_SESSION'")
+    expect(session).toContain('export function saveCurrentSession')
+    expect(session).toContain('indexedDB')
+    expect(studio).toContain('data-session-save')
+    expect(studio).toContain('data-session-load')
+    expect(studio).toContain('data-session-ind')
+    expect(studio).toContain('data-session-resume')
+    expect(readSrc('src/components/MotionStudio/MotionSequencerPanel.jsx')).toContain('sessionSnapRef')
+    const mem = new Map()
+    const fake = {
+      getItem: (key) => mem.get(key) ?? null,
+      setItem: (key, value) => { mem.set(key, String(value)) },
+      removeItem: (key) => { mem.delete(key) },
+    }
+    expect(SESSION_KEY).toBe('MOTION_STUDIO_ACTIVE_SESSION')
+    expect(isFreshSession({ timestamp: Date.now() })).toBe(true)
+    expect(isFreshSession({ timestamp: Date.now() - 25 * 60 * 60 * 1000 })).toBe(false)
+    expect(saveCurrentSession({ selectedPreset: 'jellyBounce', subtitleConfig: { text: '안녕', tail: { enabled: true, tip: { x: 3, y: 4 } } } }, fake)).toBe(true)
+    expect(loadSavedSession(fake)?.selectedPreset).toBe('jellyBounce')
+    expect(loadSavedSession(fake)?.subtitleConfig?.text).toBe('안녕')
+    expect(loadSavedSession(fake)?.subtitleConfig?.tail?.tip?.x).toBe(3)
+    clearSavedSession(fake)
+    expect(loadSavedSession(fake)).toBeNull()
   })
 })

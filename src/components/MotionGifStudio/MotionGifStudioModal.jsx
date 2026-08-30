@@ -36,7 +36,14 @@ import {
 } from './motionPcUpload.js'
 import { blitToHiDpiCanvas, primeHqContext } from '../../utils/hqRender.js'
 import { MotionSequencerPanel } from '../MotionStudio/index.js'
-import { MotionStudioProvider } from '../MotionStudio/motionStudioContext.jsx'
+import { MotionStudioProvider, useMotionStudio } from '../MotionStudio/motionStudioContext.jsx'
+import {
+  canvasToPngDataUrl,
+  hydrateSavedSession,
+  peekFreshSession,
+  persistMotionStudioSession,
+  urlToDataUrl,
+} from '../../lib/sessionManager.js'
 import MotionZipToolbarButton from '../MotionStudio/MotionZipToolbarButton.jsx'
 import { paintParticleOverlay, normalizeParticleLayers } from '../MotionStudio/particleOverlayEngine.js'
 import { paintLiveCaptionLayer } from '../MotionStudio/DynamicTextMotionRenderer.js'
@@ -162,6 +169,12 @@ function cutKey(cut, index = 0) {
   return cut?.id || `cut-${index}`
 }
 
+function StudioSessionBridge({ apiRef, children }) {
+  const studio = useMotionStudio()
+  apiRef.current = studio
+  return children
+}
+
 function snapshotCanvas(canvas) {
   if (!canvas || !canvas.width || !canvas.height) return null
   const copy = document.createElement('canvas')
@@ -246,6 +259,14 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const [sourceMeta, setSourceMeta] = useState({ width: 360, height: 360 })
   const [diagOpen, setDiagOpen] = useState(false)
   const [diagReport, setDiagReport] = useState(() => idleMotionDiagnostics())
+  const [sessionSaved, setSessionSaved] = useState(false)
+  const [sessionBusy, setSessionBusy] = useState(false)
+  const [resumeAsk, setResumeAsk] = useState(false)
+  const sessionSnapRef = useRef(null)
+  const studioApiRef = useRef(null)
+  const skipSourceSyncRef = useRef(false)
+  const saveTimerRef = useRef(0)
+  const persistBusyRef = useRef(false)
 
   const loop = clampLoopSeconds(loopSeconds)
 
@@ -428,6 +449,145 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     }
   }, [applyImage])
 
+  const collectSessionPayload = useCallback(async () => {
+    const live = captionLiveRef.current || {}
+    const seq = sessionSnapRef.current || {}
+    const sourceCanvas = imageRef.current
+    const pixelCanvas = pixelSpriteRef.current
+    const seqItems = Array.isArray(seq.sequence) ? seq.sequence : []
+    const customFrames = []
+    const sequenceMeta = []
+    for (const item of seqItems.slice(0, 12)) {
+      const dataUrl = await urlToDataUrl(item.url)
+      if (!dataUrl) continue
+      customFrames.push(dataUrl)
+      sequenceMeta.push({
+        cutId: item.cutId,
+        cutIndex: item.cutIndex,
+        label: item.label,
+      })
+    }
+    return {
+      version: '1.0',
+      sourceImage: canvasToPngDataUrl(sourceCanvas),
+      pixelSprite: pixelCanvas && pixelCanvas !== sourceCanvas ? canvasToPngDataUrl(pixelCanvas) : null,
+      activeSourceTab: sourceTab,
+      selectedPreset: preset,
+      motionParams: {
+        loopDuration: loop,
+        motionIntensity: intensity,
+        fps,
+        canvasSpec: sizeId,
+      },
+      subtitleConfig: {
+        text: live.captionText || live.text || '',
+        fontFamily: live.captionFont || live.fontId || 'Jua',
+        fontSize: live.captionSize || live.sizeId || 'md',
+        color: live.captionStroke || live.strokeId || 'black',
+        bubbleEnabled: Boolean(live.captionOn || live.enabled),
+        posX: live.posX || 0,
+        posY: live.posY || 0,
+        effect: live.effect || 'none',
+        tail: live.captionTail || live.tail || { enabled: false, tip: { x: -18, y: 56 }, baseStart: { x: -14, y: 20 }, baseEnd: { x: 14, y: 20 } },
+      },
+      customFrames,
+      sequenceMeta,
+      particles: Array.isArray(seq.particles) ? seq.particles : [],
+      pingPong: Boolean(seq.pingPong),
+      seqFps: seq.fps,
+      isolateOn,
+      viewBg,
+      zoom,
+    }
+  }, [sourceTab, preset, loop, intensity, fps, sizeId, isolateOn, viewBg, zoom])
+
+  const persistSessionNow = useCallback(async () => {
+    if (!isOpen || encoding || persistBusyRef.current) return false
+    persistBusyRef.current = true
+    setSessionBusy(true)
+    try {
+      const payload = await collectSessionPayload()
+      const ok = await persistMotionStudioSession(payload)
+      setSessionSaved(ok)
+      return ok
+    } finally {
+      persistBusyRef.current = false
+      setSessionBusy(false)
+    }
+  }, [collectSessionPayload, encoding, isOpen])
+
+  const applySavedSession = useCallback(async (session) => {
+    if (!session) return false
+    skipSourceSyncRef.current = Date.now() + 900
+    setSourceTab(session.activeSourceTab || 'canvas')
+    setPreset(session.selectedPreset || MOTION_NONE)
+    setLoopSeconds(session.motionParams?.loopDuration ?? 2)
+    setIntensity(session.motionParams?.motionIntensity ?? 70)
+    setFps(session.motionParams?.fps ?? 24)
+    setSizeId(session.motionParams?.canvasSpec || 'kakao')
+    setIsolateOn(session.isolateOn !== false)
+    setViewBg(session.viewBg || 'checker')
+    setZoom(session.zoom || 100)
+    if (session.sourceImage) {
+      if (session.activeSourceTab === 'drop') {
+        const item = {
+          id: `session-restore-${Date.now()}`,
+          name: '이전 작업',
+          url: session.sourceImage,
+          preview: session.sourceImage,
+        }
+        setUploadedImages([item])
+        setSelectedUpload(item.id)
+        setLocalUrl(item.url)
+      }
+      await ingestUrl(session.sourceImage)
+    }
+    if (session.pixelSprite) {
+      try {
+        const image = await loadImage(session.pixelSprite)
+        const canvas = sourceToCanvas(image)
+        if (canvas) {
+          enforceTransparencyPurge(canvas)
+          releaseCanvas(pixelSpriteRef.current)
+          pixelSpriteRef.current = canvas
+          setPixelSource(canvas)
+        }
+      } catch {
+        /* keep restored source */
+      }
+    }
+    const frames = (session.customFrames || []).map((url, index) => ({
+      id: `session-seq-${index}`,
+      url,
+      cutId: session.sequenceMeta?.[index]?.cutId || `cut-${index + 1}`,
+      cutIndex: session.sequenceMeta?.[index]?.cutIndex ?? index,
+      label: session.sequenceMeta?.[index]?.label || `${index + 1}`,
+    }))
+    const sub = session.subtitleConfig || {}
+    studioApiRef.current?.applyClip?.({
+      token: Date.now(),
+      frames,
+      fps: session.seqFps,
+      effect: sub.effect,
+      pingPong: session.pingPong,
+      particles: session.particles,
+      captionOn: sub.bubbleEnabled,
+      captionText: sub.text,
+      captionSize: sub.fontSize,
+      captionStroke: sub.color,
+      captionFont: sub.fontFamily,
+      posX: sub.posX,
+      posY: sub.posY,
+      captionTail: sub.tail,
+    })
+    setResumeAsk(false)
+    setSessionSaved(true)
+    setStatusKind('ok')
+    setStatus('이전 작업을 복원했습니다')
+    paintNow(playRef.current.pausedT || 0)
+    return true
+  }, [ingestUrl, paintNow])
+
   const ingestLocalFiles = useCallback((fileList) => {
     const files = listPcImageFiles(fileList, PC_IMAGE_MAX)
     if (!files.length) {
@@ -576,6 +736,44 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   }, [isOpen, parsed.dataUrl])
 
   useEffect(() => {
+    if (!isOpen) {
+      setResumeAsk(false)
+      return undefined
+    }
+    setResumeAsk(Boolean(peekFreshSession()))
+    return undefined
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || encoding || !hasSource) return undefined
+    window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = window.setTimeout(() => {
+      void persistSessionNow()
+    }, 1000)
+    return () => window.clearTimeout(saveTimerRef.current)
+  }, [isOpen, encoding, hasSource, sourceTab, preset, loop, intensity, fps, sizeId, isolateOn, viewBg, zoom, persistSessionNow])
+
+  useEffect(() => {
+    if (!isOpen || encoding) return undefined
+    const tick = window.setInterval(() => {
+      if (hasSource) void persistSessionNow()
+    }, 4000)
+    const flush = () => {
+      if (hasSource) void persistSessionNow()
+    }
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.clearInterval(tick)
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  }, [isOpen, encoding, hasSource, persistSessionNow])
+
+  useEffect(() => {
     if (!isOpen) return undefined
     const blockNav = (event) => {
       const types = event.dataTransfer?.types
@@ -620,6 +818,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   useEffect(() => {
     if (!isOpen) return undefined
     const timer = window.setTimeout(() => {
+      if (Number(skipSourceSyncRef.current) > Date.now()) return
       if (sourceTab === 'canvas') {
         ingestUrl(parsed.dataUrl)
         return
@@ -909,9 +1108,54 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       <div className="studio-modal-backdrop" onClick={requestClose} />
       <div className="studio-modal-card mgs-card">
         <MotionStudioProvider>
+        <StudioSessionBridge apiRef={studioApiRef}>
         <header className="mgs-head">
           <h2 id="mgs-title">🎬 AI 모션 GIF 스튜디오 PRO</h2>
           <div className="mgs-head-actions">
+            <span
+              className={clsx('mgs-session-ind', sessionSaved && 'is-ok')}
+              data-session-ind={sessionSaved ? '1' : '0'}
+              data-tooltip="이 브라우저에 작업이 자동 저장됩니다"
+              data-mgs-place="down"
+            >
+              {sessionSaved ? '💾 저장 완료' : '💾 자동 저장'}
+            </span>
+            <button
+              type="button"
+              className="mgs-icon-btn"
+              data-session-save="1"
+              disabled={encoding || sessionBusy}
+              data-tooltip="지금 작업(이미지·프리셋·자막·꼬리)을 이 브라우저에 저장합니다"
+              data-mgs-place="down"
+              onClick={() => {
+                void persistSessionNow().then((ok) => {
+                  setStatusKind(ok ? 'ok' : 'error')
+                  setStatus(ok ? '작업이 저장되었습니다' : '저장에 실패했습니다')
+                })
+              }}
+            >
+              💾 작업 저장
+            </button>
+            <button
+              type="button"
+              className="mgs-icon-btn"
+              data-session-load="1"
+              disabled={encoding || sessionBusy}
+              data-tooltip="이 브라우저에 저장된 이전 작업을 1초 만에 복원합니다"
+              data-mgs-place="down"
+              onClick={() => {
+                void hydrateSavedSession().then((session) => {
+                  if (!session) {
+                    setStatusKind('error')
+                    setStatus('저장된 작업이 없습니다')
+                    return
+                  }
+                  return applySavedSession(session)
+                })
+              }}
+            >
+              📂 작업 불러오기
+            </button>
             {VIEW_BG.map((mode) => (
               <button
                 key={mode.id}
@@ -930,6 +1174,31 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
             </button>
           </div>
         </header>
+        {resumeAsk ? (
+          <div className="mgs-session-banner" data-session-resume="1" role="status">
+            <p>이전에 작업하던 내용이 있습니다. 이어서 작업하시겠습니까?</p>
+            <div className="mgs-session-banner-actions">
+              <button
+                type="button"
+                className="mgs-icon-btn is-on"
+                data-session-resume-yes="1"
+                onClick={() => {
+                  void hydrateSavedSession().then((session) => applySavedSession(session))
+                }}
+              >
+                이어하기
+              </button>
+              <button
+                type="button"
+                className="mgs-icon-btn"
+                data-session-fresh="1"
+                onClick={() => setResumeAsk(false)}
+              >
+                새로 시작
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mgs-body">
           <aside className="mgs-pane mgs-sources" data-source-tab={sourceTab}>
@@ -1201,6 +1470,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               overlayRef={overlayRef}
               captionLiveRef={captionLiveRef}
               onCaptionLive={syncStageCaption}
+              sessionSnapRef={sessionSnapRef}
             />
           </section>
 
@@ -1451,6 +1721,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
             </button>
           </div>
         </footer>
+        </StudioSessionBridge>
         </MotionStudioProvider>
       </div>
     </div>

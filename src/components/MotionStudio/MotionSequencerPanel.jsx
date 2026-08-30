@@ -47,6 +47,7 @@ export default function MotionSequencerPanel({
   overlayRef,
   captionLiveRef,
   onCaptionLive,
+  sessionSnapRef,
 }) {
   const studio = useMotionStudio()
   const [sequence, setSequence] = useState([])
@@ -175,6 +176,30 @@ export default function MotionSequencerPanel({
   useEffect(() => {
     onCaptionLive?.()
   }, [captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, captionTail, effect, fps, speed, loopSeconds, onCaptionLive])
+
+  useEffect(() => {
+    if (!sessionSnapRef) return
+    sessionSnapRef.current = {
+      sequence: sequence.map((item) => ({
+        url: item.url,
+        cutId: item.cutId,
+        cutIndex: item.cutIndex,
+        label: item.label,
+      })),
+      captionOn,
+      captionText,
+      captionSize,
+      captionStroke,
+      captionFont,
+      captionPos,
+      captionTail,
+      effect,
+      fps,
+      pingPong,
+      particles,
+      speed,
+    }
+  }, [sessionSnapRef, sequence, captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, captionTail, effect, fps, pingPong, particles, speed])
 
   useEffect(() => {
     const onKey = (event) => {

@@ -239,6 +239,14 @@ async function runVisualCheck() {
   await page.locator('.emo-split-card .studio-modal-close').click()
   await page.locator('[data-tour="gif-export"]').click()
   await page.waitForSelector('#mgs-title', { timeout: 10000 })
+  await page.waitForSelector('[data-session-save]', { timeout: 8000 })
+  await page.waitForSelector('[data-session-load]', { timeout: 5000 })
+  await page.waitForTimeout(250)
+  const resumeFresh = page.locator('[data-session-fresh]')
+  if (await resumeFresh.count()) {
+    await resumeFresh.click()
+    await page.waitForFunction(() => !document.querySelector('[data-session-resume="1"]'), null, { timeout: 5000 })
+  }
   await page.getByRole('button', { name: '본체 그래픽' }).click()
   await page.waitForFunction(() => {
     const sources = document.querySelector('[data-source-tab="canvas"]')
