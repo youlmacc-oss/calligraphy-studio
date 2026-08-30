@@ -1,3 +1,5 @@
+import { hitTestTailHandle, resolveTailAbs, TAIL_HANDLE_RADIUS } from './speechBubbleTail.js'
+
 export function canvasEventPoint(canvas, event, logicalW, logicalH) {
   if (!canvas) return { x: 0, y: 0 }
   const rect = canvas.getBoundingClientRect()
@@ -22,12 +24,21 @@ export function hitTestSpeechBubble(bubble, x, y) {
   return x >= bX - bW / 2 && x <= bX + bW / 2 && y >= bY - bH / 2 && y <= bY + bH / 2
 }
 
-export function setupSpeechBubbleDragger(canvasRef, getBubble, updateBubblePos, logicalSize) {
+function clampPoint(x, y, w, h) {
+  return {
+    x: Math.min(w, Math.max(0, x)),
+    y: Math.min(h, Math.max(0, y)),
+  }
+}
+
+export function setupSpeechBubbleDragger(canvasRef, getBubble, updateBubblePos, logicalSize, options = {}) {
   let isDragging = false
+  let dragKind = null
   let startX = 0
   let startY = 0
   let initialBubbleX = 0
   let initialBubbleY = 0
+  let initialHandle = { x: 0, y: 0 }
 
   const sizeOf = (canvas) => {
     const logical = typeof logicalSize === 'function' ? logicalSize() : logicalSize
@@ -47,8 +58,22 @@ export function setupSpeechBubbleDragger(canvasRef, getBubble, updateBubblePos, 
     const bubble = getBubble?.()
     if (!bubble?.visible) return false
     const { x, y } = point(event)
+    const tail = options.getTail?.()
+    const abs = resolveTailAbs(bubble, tail)
+    const handle = hitTestTailHandle(abs, x, y, TAIL_HANDLE_RADIUS)
+    if (handle) {
+      isDragging = true
+      dragKind = handle
+      startX = x
+      startY = y
+      initialHandle = { x: abs[handle].x, y: abs[handle].y }
+      event.preventDefault?.()
+      event.stopPropagation?.()
+      return true
+    }
     if (!hitTestSpeechBubble(bubble, x, y)) return false
     isDragging = true
+    dragKind = 'bubble'
     startX = x
     startY = y
     initialBubbleX = Number(bubble.posX) || 0
@@ -61,15 +86,26 @@ export function setupSpeechBubbleDragger(canvasRef, getBubble, updateBubblePos, 
   const handleMouseMove = (event) => {
     const canvas = canvasRef.current
     const bubble = getBubble?.()
+    const size = sizeOf(canvas)
     if (!isDragging) {
       if (canvas && bubble?.visible) {
         const { x, y } = point(event)
-        canvas.style.cursor = hitTestSpeechBubble(bubble, x, y) ? 'grab' : ''
+        const tail = options.getTail?.()
+        const abs = resolveTailAbs(bubble, tail)
+        const handle = hitTestTailHandle(abs, x, y, TAIL_HANDLE_RADIUS)
+        canvas.style.cursor = handle ? 'pointer' : (hitTestSpeechBubble(bubble, x, y) ? 'grab' : '')
       }
       return false
     }
-    if (canvas) canvas.style.cursor = 'grabbing'
     const { x, y } = point(event)
+    if (dragKind && dragKind !== 'bubble') {
+      if (canvas) canvas.style.cursor = 'pointer'
+      const next = clampPoint(initialHandle.x + (x - startX), initialHandle.y + (y - startY), size.w, size.h)
+      options.updateTail?.(dragKind, { x: next.x - bubble.x, y: next.y - bubble.y })
+      event.preventDefault?.()
+      return true
+    }
+    if (canvas) canvas.style.cursor = 'grabbing'
     updateBubblePos?.(initialBubbleX + (x - startX), initialBubbleY + (y - startY))
     event.preventDefault?.()
     return true
@@ -78,6 +114,7 @@ export function setupSpeechBubbleDragger(canvasRef, getBubble, updateBubblePos, 
   const handleMouseUp = () => {
     const was = isDragging
     isDragging = false
+    dragKind = null
     const canvas = canvasRef.current
     if (canvas && !was) return was
     if (canvas) canvas.style.cursor = ''

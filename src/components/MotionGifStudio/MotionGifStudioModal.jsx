@@ -338,6 +338,14 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       const fitted = fittedRef.current
       return { width: fitted?.width || 360, height: fitted?.height || 360 }
     },
+    {
+      getTail: () => captionLiveRef.current?.tail || captionLiveRef.current?.captionTail,
+      updateTail: (key, rel) => {
+        const prev = captionLiveRef.current?.tail || captionLiveRef.current?.captionTail
+        captionLiveRef.current?.setTail?.({ ...prev, [key]: rel, enabled: true })
+        paintNow(playRef.current.pausedT || 0)
+      },
+    },
   ), [paintNow])
 
   const startLoop = useCallback(() => {

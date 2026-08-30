@@ -1,6 +1,7 @@
 import { captionCanvasFont } from '../../lib/emoticonFonts.js'
 import { SEQUENCE_VIEW_SIZE, captionLoopIndex } from './motionSequencer.js'
 import { buildCaptionPose } from './dynamicTextMotion.js'
+import { drawSpeechBubbleWithTail, drawTailHandles, normalizeBubbleTail, resolveTailAbs } from './speechBubbleTail.js'
 
 const BAND_RATIO = 0.32
 const FONT_AT_360 = 30
@@ -36,7 +37,7 @@ export function captionBubbleBox(pose, size = SEQUENCE_VIEW_SIZE) {
   }
 }
 
-export function paintDynamicTextMotion(ctx, { size, pose } = {}) {
+export function paintDynamicTextMotion(ctx, { size, pose, showHandles = false } = {}) {
   const label = String(pose?.text || '').trim()
   if (!ctx?.strokeText || !ctx?.fillText || !label) return
   const edge = Math.max(2, Math.round(Number(size) || SEQUENCE_VIEW_SIZE))
@@ -44,6 +45,17 @@ export function paintDynamicTextMotion(ctx, { size, pose } = {}) {
   const fontPx = Math.max(12, Math.round(Number(pose.fontPx) || FONT_AT_360 * (edge / SEQUENCE_VIEW_SIZE)))
   const strokeScale = edge / SEQUENCE_VIEW_SIZE
   const stroke = String(pose.strokeStyle || '#000000')
+  const tail = normalizeBubbleTail(pose.tail)
+  const bubble = captionBubbleBox(pose, edge)
+  if (tail.enabled && bubble.visible) {
+    drawSpeechBubbleWithTail(ctx, bubble, tail, {
+      bgColor: '#ffffff',
+      borderColor: stroke,
+      borderWidth: Math.max(2, Math.round(3 * strokeScale)),
+      radius: 12,
+    })
+    if (showHandles) drawTailHandles(ctx, resolveTailAbs(bubble, tail))
+  }
 
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -59,8 +71,8 @@ export function paintDynamicTextMotion(ctx, { size, pose } = {}) {
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
   ctx.miterLimit = 2
-  ctx.shadowColor = 'rgba(255, 236, 150, 0.92)'
-  ctx.shadowBlur = Math.max(8, Math.round(fontPx * 0.45))
+  ctx.shadowColor = tail.enabled ? 'transparent' : 'rgba(255, 236, 150, 0.92)'
+  ctx.shadowBlur = tail.enabled ? 0 : Math.max(8, Math.round(fontPx * 0.45))
   ctx.shadowOffsetX = 0
   ctx.shadowOffsetY = 0
   ctx.strokeStyle = stroke
@@ -70,7 +82,7 @@ export function paintDynamicTextMotion(ctx, { size, pose } = {}) {
   ctx.strokeText(label, 0, 0)
   ctx.lineWidth = Math.max(1, Math.round(3 * strokeScale))
   ctx.strokeText(label, 0, 0)
-  ctx.fillStyle = '#FFFFFF'
+  ctx.fillStyle = tail.enabled ? '#111111' : '#FFFFFF'
   ctx.fillText(label, 0, 0)
   ctx.restore()
 }
@@ -100,7 +112,8 @@ export function paintLiveCaptionLayer(ctx, live = {}, time01 = 0, edge = SEQUENC
     posY: live.posY,
   })
   if (!pose) return false
-  paintDynamicTextMotion(ctx, { size: sized, pose })
+  pose.tail = live.tail || live.captionTail
+  paintDynamicTextMotion(ctx, { size: sized, pose, showHandles: live.showHandles !== false })
   live.bubble = captionBubbleBox(pose, sized)
   return true
 }

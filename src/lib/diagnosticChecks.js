@@ -154,6 +154,7 @@ import {
 } from '../components/MotionStudio/dynamicTextMotion.js'
 import { paintDynamicTextMotion, paintLiveCaptionLayer } from '../components/MotionStudio/DynamicTextMotionRenderer.js'
 import { captionCanvasFont, DEFAULT_EMOTICON_FONT_ID, EMOTICON_FONTS } from './emoticonFonts.js'
+import { drawSpeechBubbleWithTail, hitTestTailHandle, defaultBubbleTail } from '../components/MotionStudio/speechBubbleTail.js'
 import { PARTICLE_LAYERS } from '../components/MotionStudio/particleOverlayEngine.js'
 import { estimateStoreSpec } from '../components/MotionStudio/storeSpecHud.js'
 import { STUDIO_HUD_STEPS } from './studioHudChecks.js'
@@ -2391,6 +2392,16 @@ export async function checkMotionSequencer() {
   }
   if (!String(PixelSelectionModal).includes('SIDEBAR_BOX') || !String(PixelSelectionModal).includes('width: 128')) {
     return { status: 'error', detail: '픽셀 에디터 좌우 128px 1:1 툴바가 없습니다.' }
+  }
+  if (!String(CaptionControlBar).includes('data-caption-tail') || !String(drawSpeechBubbleWithTail).includes('beginPath')) {
+    return { status: 'error', detail: '말풍선 꼬리 토글 또는 일체형 벡터 패스가 없습니다.' }
+  }
+  const tailHit = hitTestTailHandle({ tip: { x: 10, y: 10 }, baseStart: { x: 80, y: 80 }, baseEnd: { x: 90, y: 90 } }, 12, 11, 12)
+  if (tailHit !== 'tip' || defaultBubbleTail().enabled) {
+    return { status: 'error', detail: '꼬리 3점 히트테스트 또는 기본 OFF가 실패했습니다.' }
+  }
+  if (!previewSrc.includes('showHandles: true') || !String(paintDynamicTextMotion).includes('showHandles') || !String(composeSequenceCanvases).includes('captionTail')) {
+    return { status: 'error', detail: '미리보기 핸들과 인코더 순수 벡터 분리가 없습니다.' }
   }
   if (!panelSrc.includes('data-loop-mode') || !panelSrc.includes('ParticleOverlayBar') || !panelSrc.includes('ChatRoomSimulator') || !panelSrc.includes('StoreSpecHud')) {
     return { status: 'error', detail: '핑퐁·파티클·채팅 시뮬·심사 HUD가 없습니다.' }

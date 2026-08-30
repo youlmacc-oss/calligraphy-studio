@@ -10,6 +10,7 @@ import MotionPreviewCanvas from './MotionPreviewCanvas.jsx'
 import ParticleOverlayBar from './ParticleOverlayBar.jsx'
 import StoreSpecHud from './StoreSpecHud.jsx'
 import { DEFAULT_EMOTICON_FONT_ID, normalizeEmoticonFontId } from '../../lib/emoticonFonts.js'
+import { defaultBubbleTail, normalizeBubbleTail } from './speechBubbleTail.js'
 import { TEXT_MOTION_NONE } from './dynamicTextMotion.js'
 import CaptionControlBar from './CaptionControlBar.jsx'
 import { PLAYBACK_SPEEDS, useMotionStudio } from './motionStudioContext.jsx'
@@ -63,6 +64,7 @@ export default function MotionSequencerPanel({
   const [captionStroke, setCaptionStroke] = useState('black')
   const [captionFont, setCaptionFont] = useState(DEFAULT_EMOTICON_FONT_ID)
   const [captionPos, setCaptionPos] = useState({ posX: 0, posY: 0 })
+  const [captionTail, setCaptionTail] = useState(defaultBubbleTail)
   const [selectedSeqId, setSelectedSeqId] = useState('')
   const chatMirrorRef = useRef(null)
   const injectStampRef = useRef('')
@@ -99,6 +101,10 @@ export default function MotionSequencerPanel({
       captionFont,
       posX: captionPos.posX,
       posY: captionPos.posY,
+      tail: captionTail,
+      captionTail,
+      showHandles: true,
+      setTail: (next) => setCaptionTail(normalizeBubbleTail(typeof next === 'function' ? next(captionTail) : next)),
       setPos: (next, maybeY) => {
         if (next && typeof next === 'object') {
           setCaptionPos({ posX: Number(next.posX) || 0, posY: Number(next.posY) || 0 })
@@ -144,6 +150,7 @@ export default function MotionSequencerPanel({
     if (Number.isFinite(Number(clip.posX)) || Number.isFinite(Number(clip.posY))) {
       setCaptionPos({ posX: Number(clip.posX) || 0, posY: Number(clip.posY) || 0 })
     }
+    if (clip.captionTail) setCaptionTail(normalizeBubbleTail(clip.captionTail))
     setPlaying(true)
     studio.clearRestore?.()
   }, [studio, studio?.restore, setSpeed])
@@ -161,12 +168,13 @@ export default function MotionSequencerPanel({
     setCaptionStroke('black')
     setCaptionFont(DEFAULT_EMOTICON_FONT_ID)
     setCaptionPos({ posX: 0, posY: 0 })
+    setCaptionTail(defaultBubbleTail())
     setFps(SEQUENCE_FPS_DEFAULT)
   }, [studio?.fallbackSeq])
 
   useEffect(() => {
     onCaptionLive?.()
-  }, [captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, effect, fps, speed, loopSeconds, onCaptionLive])
+  }, [captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, captionTail, effect, fps, speed, loopSeconds, onCaptionLive])
 
   useEffect(() => {
     const onKey = (event) => {
@@ -280,6 +288,8 @@ export default function MotionSequencerPanel({
           onSize={setCaptionSize}
           onStroke={setCaptionStroke}
           onFont={setCaptionFont}
+          tailOn={captionTail.enabled}
+          onTail={(on) => setCaptionTail((prev) => ({ ...normalizeBubbleTail(prev), enabled: on }))}
         />
       </div>
 
@@ -304,7 +314,9 @@ export default function MotionSequencerPanel({
           captionStroke={captionStroke}
           captionFont={captionFont}
           captionPos={captionPos}
+          captionTail={captionTail}
           onCaptionPos={setCaptionPos}
+          onCaptionTail={setCaptionTail}
           onTick={(_index, url) => setLiveUrl(url)}
         />
         <div className="ms-tracks">
@@ -383,6 +395,7 @@ export default function MotionSequencerPanel({
         captionStroke={captionStroke}
         captionFont={captionFont}
         captionPos={captionPos}
+        captionTail={captionTail}
       />
     </section>
   )

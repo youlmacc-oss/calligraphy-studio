@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { buildCaptionPose, TEXT_MOTION_NONE, normalizeTextMotionEffect } from './dynamicTextMotion.js'
 import { captionBubbleBox, paintDynamicTextMotion } from './DynamicTextMotionRenderer.js'
 import { setupSpeechBubbleDragger } from './speechBubbleDrag.js'
+import { defaultBubbleTail, normalizeBubbleTail } from './speechBubbleTail.js'
 import { SEQUENCE_VIEW_SIZE, captionLoopIndex, clampSequenceFps, clampStillLoopSeconds, pingPongPlayIndex } from './motionSequencer.js'
 import { applyDefringeToContext } from '../../utils/imageProcessor.js'
 import { paintParticleOverlay, normalizeParticleLayers } from './particleOverlayEngine.js'
@@ -50,6 +51,7 @@ function paintOverlay(ctx, {
   captionStroke,
   captionFont,
   captionPos,
+  captionTail,
   bubbleRef,
 }) {
   const pose = buildCaptionPose({
@@ -66,7 +68,8 @@ function paintOverlay(ctx, {
     posY: captionPos?.posY,
   })
   if (pose) {
-    paintDynamicTextMotion(ctx, { size: edge, pose })
+    pose.tail = normalizeBubbleTail(captionTail)
+    paintDynamicTextMotion(ctx, { size: edge, pose, showHandles: true })
     if (bubbleRef) bubbleRef.current = captionBubbleBox(pose, edge)
   } else if (bubbleRef) {
     bubbleRef.current = { visible: false, x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 }
@@ -102,7 +105,9 @@ export default function MotionPreviewCanvas({
   captionStroke = 'black',
   captionFont,
   captionPos = { posX: 0, posY: 0 },
+  captionTail = defaultBubbleTail(),
   onCaptionPos,
+  onCaptionTail,
 }) {
   const canvasRef = useRef(null)
   const cacheRef = useRef(new Map())
@@ -123,8 +128,16 @@ export default function MotionPreviewCanvas({
       () => bubbleRef.current,
       (posX, posY) => onCaptionPos?.({ posX, posY }),
       () => ({ width: size, height: size }),
+      {
+        getTail: () => normalizeBubbleTail(captionTail),
+        updateTail: (key, rel) => {
+          const next = normalizeBubbleTail(captionTail)
+          next[key] = rel
+          onCaptionTail?.(next)
+        },
+      },
     )
-  }, [onCaptionPos, size])
+  }, [onCaptionPos, onCaptionTail, size, captionTail])
 
   useEffect(() => {
     let alive = true
@@ -191,6 +204,7 @@ export default function MotionPreviewCanvas({
         captionStroke,
         captionFont,
         captionPos,
+        captionTail,
         bubbleRef,
       })
       blit()
@@ -216,6 +230,7 @@ export default function MotionPreviewCanvas({
         captionStroke,
         captionFont,
         captionPos,
+        captionTail,
         bubbleRef,
       })
       blit()
@@ -257,7 +272,7 @@ export default function MotionPreviewCanvas({
       drawStep(stepRef.current)
     }, delay)
     return () => window.clearInterval(timer)
-  }, [frames, fps, playing, size, effect, speed, pingPong, particles, stillLoop, motionPreset, isolateSprite, intensity, loopSeconds, cacheRev, captionOn, captionText, captionSize, captionStroke, captionFont, captionPos])
+  }, [frames, fps, playing, size, effect, speed, pingPong, particles, stillLoop, motionPreset, isolateSprite, intensity, loopSeconds, cacheRev, captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, captionTail])
 
   return (
     <div className="ms-preview-stage checkerboard-bg">

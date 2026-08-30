@@ -116,6 +116,7 @@ function paintTextAndParticles(ctx, {
   captionSize,
   captionStroke,
   captionFont,
+  captionTail,
   posX = 0,
   posY = 0,
 }) {
@@ -134,7 +135,8 @@ function paintTextAndParticles(ctx, {
     posY,
   })
   if (pose) {
-    paintDynamicTextMotion(ctx, { size, pose })
+    pose.tail = captionTail
+    paintDynamicTextMotion(ctx, { size, pose, showHandles: false })
   }
   const layers = normalizeParticleLayers(particles)
   if (layers.length) {
@@ -191,6 +193,7 @@ export async function composeStillMotionCanvases(frame, options = {}) {
       captionSize: options.captionSize,
       captionStroke: options.captionStroke,
       captionFont: options.captionFont || options.fontId,
+      captionTail: options.captionTail,
       posX: options.posX,
       posY: options.posY,
     })
@@ -245,6 +248,7 @@ export async function composeSequenceCanvases(frames, options = {}) {
       captionSize: options.captionSize,
       captionStroke: options.captionStroke,
       captionFont: options.captionFont || options.fontId,
+      captionTail: options.captionTail,
       posX: options.posX,
       posY: options.posY,
     })

@@ -15,6 +15,8 @@ export default function CaptionControlBar({
   onSize,
   onStroke,
   onFont,
+  tailOn = false,
+  onTail,
 }) {
   const selectedFont = normalizeEmoticonFontId(fontId)
 
@@ -94,6 +96,16 @@ export default function CaptionControlBar({
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        className={clsx('ms-btn', tailOn && 'is-on')}
+        data-caption-tail={tailOn ? '1' : '0'}
+        disabled={!enabled}
+        onClick={() => onTail?.(!tailOn)}
+        {...magnify(tailOn ? '꼬리 ON' : '꼬리 OFF', '말풍선 꼬리를 켜고 세 점을 드래그해 방향과 곡률을 맞춥니다')}
+      >
+        {tailOn ? '💬 꼬리 ON' : '💬 꼬리 OFF'}
+      </button>
     </div>
   )
 }

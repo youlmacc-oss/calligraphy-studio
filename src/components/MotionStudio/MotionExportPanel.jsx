@@ -45,6 +45,7 @@ export default function MotionExportPanel({
   captionStroke = 'black',
   captionFont,
   captionPos = { posX: 0, posY: 0 },
+  captionTail,
 }) {
   const studio = useMotionStudio()
   const [busy, setBusy] = useState(false)
@@ -84,6 +85,7 @@ export default function MotionExportPanel({
       captionFont,
       posX: captionPos.posX,
       posY: captionPos.posY,
+      captionTail,
     })
     flashToast(`클립 ${slot} 저장됨`)
   }
@@ -126,6 +128,7 @@ export default function MotionExportPanel({
         captionFont,
         posX: captionPos.posX,
         posY: captionPos.posY,
+        captionTail,
         onProgress: (info) => {
           setPercent(info.percent || 0)
           setCurrent(info.current || 0)
