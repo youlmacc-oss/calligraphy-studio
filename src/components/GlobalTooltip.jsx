@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { shiftBoxIntoView, tooltipPlacement, tooltipTransform } from '../lib/tooltipBox.js'
 
 function hostFrom(node) {
   const el = !node ? null : node.nodeType === 1 ? node : node.parentElement
@@ -7,8 +8,9 @@ function hostFrom(node) {
 }
 
 export default function GlobalTooltip() {
-  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0, below: false })
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0, place: 'above', dx: 0, dy: 0 })
   const hostRef = useRef(null)
+  const boxRef = useRef(null)
 
   useEffect(() => {
     const hide = () => {
@@ -23,17 +25,9 @@ export default function GlobalTooltip() {
         return
       }
       const rect = host.getBoundingClientRect()
-      let x = rect.left + rect.width / 2
-      let y = rect.top - 10
-      let below = false
-      if (y < 40) {
-        y = rect.bottom + 10
-        below = true
-      }
-      const pad = 12
-      x = Math.min(window.innerWidth - pad, Math.max(pad, x))
+      const next = tooltipPlacement(rect, window.innerWidth)
       hostRef.current = host
-      setTooltip({ visible: true, text, x, y, below })
+      setTooltip({ visible: true, text, x: next.x, y: next.y, place: next.place, dx: 0, dy: 0 })
     }
 
     const handleMouseOver = (event) => {
@@ -57,29 +51,40 @@ export default function GlobalTooltip() {
 
     document.addEventListener('mouseover', handleMouseOver)
     document.addEventListener('mouseout', handleMouseOut)
+    document.addEventListener('pointerdown', hide, true)
     document.addEventListener('scroll', hide, true)
     window.addEventListener('blur', hide)
     window.addEventListener('resize', hide)
     return () => {
       document.removeEventListener('mouseover', handleMouseOver)
       document.removeEventListener('mouseout', handleMouseOut)
+      document.removeEventListener('pointerdown', hide, true)
       document.removeEventListener('scroll', hide, true)
       window.removeEventListener('blur', hide)
       window.removeEventListener('resize', hide)
     }
   }, [])
 
+  useLayoutEffect(() => {
+    const node = boxRef.current
+    if (!node || !tooltip.visible) return
+    const box = node.getBoundingClientRect()
+    const { dx, dy } = shiftBoxIntoView(box.left, box.top, box.width, box.height, window.innerWidth, window.innerHeight)
+    if (dx || dy) setTooltip((prev) => (prev.dx === dx && prev.dy === dy ? prev : { ...prev, dx, dy }))
+  }, [tooltip.visible, tooltip.text, tooltip.x, tooltip.y, tooltip.place])
+
   if (typeof document === 'undefined') return null
 
   return createPortal(
     <div
+      ref={boxRef}
       id="global-floating-tooltip"
       role="tooltip"
       style={{
         position: 'fixed',
         left: tooltip.visible ? `${tooltip.x}px` : '-9999px',
         top: tooltip.visible ? `${tooltip.y}px` : '0px',
-        transform: tooltip.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+        transform: tooltipTransform(tooltip.place, tooltip.dx, tooltip.dy),
         backgroundColor: 'rgba(10, 15, 29, 0.98)',
         color: '#ffffff',
         border: '2px solid #38bdf8',
@@ -101,6 +106,6 @@ export default function GlobalTooltip() {
     >
       {tooltip.text}
     </div>,
-    document.body,
+    document.documentElement,
   )
 }

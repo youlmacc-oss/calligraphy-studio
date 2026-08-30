@@ -25,6 +25,7 @@ import {
   normalizeTextEngineMode,
 } from '../src/lib/emoticonSplit.js'
 import { FONT_CATEGORIES, FONT_TAB_LABELS, FONT_TAB_TOOLTIPS } from '../src/presets.js'
+import { DEFAULT_EMOTICON_FONT_ID, EMOTICON_FONTS, captionCanvasFont } from '../src/lib/emoticonFonts.js'
 import { GOLDEN_BASELINE } from '../src/utils/diagnosticsBaseline.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -679,5 +680,95 @@ describe('자율 루프 자동 리페어 검증기', () => {
       paintVector: () => { emptyCaption.marked = true },
     })
     expect(emptyCaption.marked).toBe(false)
+  })
+
+  it('13. TYPO_SINGLE_PASS: 외곽선/2차외곽선 숫자 두께 · 그림자 1회 리셋', () => {
+    const src = readSrc('src/lib/renderStyle.js')
+    expect(src).toContain('clearCanvasShadow')
+    expect(src).toContain("shadowColor = 'transparent'")
+    expect(src).toContain('sliderPass')
+    expect(src).toContain('strokeMul')
+    expect(src).toContain('(s1 + s2) * strokeMul')
+    expect(src).toContain("Number(layer.strokeWidth) || 0")
+    expect(src).toContain("Number(layer.strokeWidth2) || 0")
+    expect(src).not.toContain('(style.lineWidth ?? 0) + style.lineWidth2')
+    const s1 = Math.max(0, Number('3') || 0)
+    const s2 = Math.max(0, Number('5') || 0)
+    expect((s1 + s2) * 2).toBe(16)
+    expect(s1 * 2).toBe(6)
+    const diag = readSrc('src/lib/diagnosticChecks.js')
+    expect(diag).toContain('computeDualStrokeWidths')
+    expect(diag).toContain('probeTypographyIsolation')
+  })
+
+  it('14. STUDIO_HUD_SYNC: 픽셀 1:1 · 투명 알파 · 폰트 10선 · 브라우저/헤드셋', () => {
+    const pixel = readSrc('src/components/MotionGifStudio/PixelSelectionModal.jsx')
+    expect(pixel).toContain('w-32')
+    expect(pixel).toContain('min-w-[124px]')
+    expect(pixel).toContain('SIDEBAR_BOX')
+    expect(pixel).toContain('width: 128')
+    expect(pixel).toContain('object-contain')
+    expect(pixel).not.toContain('aspect-square')
+    expect(pixel).not.toContain('VIEW_ZOOM')
+    expect(pixel).toContain('LOUPE_SIZE = 50')
+    expect(pixel).toContain('data-pixel-loupe')
+    expect(pixel).toContain('renderLoupeGrid')
+
+    const styler = readSrc('src/lib/renderStyle.js')
+    const purge = readSrc('src/lib/fakeBackgroundPurge.js')
+    const studio = readSrc('src/components/MotionGifStudio/MotionGifStudioModal.jsx')
+    const app = readSrc('src/App.jsx')
+    expect(styler).toContain('export async function exportCleanCanvas')
+    expect(styler).toContain('gridOn: false')
+    expect(app).toContain('exportCleanCanvas')
+    expect(purge).toContain('export function isFakeCheckerPixel')
+    expect(purge).toContain('export function enforceTransparencyPurge')
+    expect(studio).toContain('enforceTransparencyPurge')
+
+    expect(EMOTICON_FONTS).toHaveLength(10)
+    expect(DEFAULT_EMOTICON_FONT_ID).toBe('Jua')
+    expect(EMOTICON_FONTS.map((item) => item.id)).toEqual([
+      'Jua',
+      'Do Hyeon',
+      'CookieRun',
+      'TmonMonsori',
+      'GmarketSansBold',
+      'Binggrae',
+      'Yeon Sung',
+      'GabiaBombaram',
+      'NEXONLv1GothicBold',
+      'Pretendard',
+    ])
+    expect(captionCanvasFont(30, 'Jua')).toContain('Jua')
+    const caption = readSrc('src/components/MotionStudio/CaptionControlBar.jsx')
+    const renderer = readSrc('src/components/MotionStudio/DynamicTextMotionRenderer.js')
+    const encoder = readSrc('src/utils/encoder/MotionEncoderEngine.js')
+    expect(caption).toContain('data-caption-font')
+    expect(caption).toContain('EMOTICON_FONTS')
+    expect(renderer).toContain('captionCanvasFont')
+    expect(encoder).toContain('ensureEmoticonFontsReady')
+    expect(encoder).toContain('captionFont')
+
+    const refresh = readSrc('scripts/refresh-dev.js')
+    const loop = readSrc('scripts/loop-test.js')
+    const headset = readSrc('scripts/play-headset-sound.ps1')
+    expect(refresh).toContain('calligraphy-studio-default-browser.lock')
+    expect(refresh).toContain('기존 창/탭 재사용')
+    expect(refresh).toContain('node_modules')
+    expect(refresh).toContain('.vite')
+    expect(loop).toContain('Cache-Control')
+    expect(loop).toContain('must-revalidate')
+    expect(loop).toContain("reload({ waitUntil: 'domcontentloaded' })")
+    expect(headset).toContain('MediaPlayer')
+    expect(headset).toContain('notify-primary.wav')
+    expect(headset).toContain('notify-reminder.wav')
+
+    const guide = readSrc('docs/GUIDEBOOK.md')
+    expect(guide).toContain('초정밀 픽셀')
+    expect(guide).toContain('50×50')
+    expect(guide).toContain('exportCleanCanvas')
+    expect(guide).toContain('주아체')
+    expect(guide).toContain('npm run verify')
+    expect(guide).toContain('헤드셋')
   })
 })

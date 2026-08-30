@@ -1,3 +1,4 @@
+import { captionCanvasFont } from '../../lib/emoticonFonts.js'
 import { SEQUENCE_VIEW_SIZE, captionLoopIndex } from './motionSequencer.js'
 import { buildCaptionPose } from './dynamicTextMotion.js'
 
@@ -14,6 +15,27 @@ export function clearPreviewCaptionBand(ctx, size) {
   ctx.restore()
 }
 
+export function captionBubbleBox(pose, size = SEQUENCE_VIEW_SIZE) {
+  const label = String(pose?.text || '').trim()
+  if (!label) return { visible: false, x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 }
+  const edge = Math.max(2, Math.round(Number(size) || SEQUENCE_VIEW_SIZE))
+  const band = Math.round(edge * BAND_RATIO)
+  const fontPx = Math.max(12, Math.round(Number(pose.fontPx) || FONT_AT_360 * (edge / SEQUENCE_VIEW_SIZE)))
+  const width = Math.max(96, Math.round(label.length * fontPx * 0.72 + fontPx * 0.8))
+  const height = Math.max(40, Math.round(fontPx * 1.85))
+  const x = edge / 2 + (Number(pose.x) || 0) + (Number(pose.posX) || 0)
+  const y = edge - Math.round(band * 0.42) + (Number(pose.y) || 0) + (Number(pose.posY) || 0)
+  return {
+    visible: true,
+    x,
+    y,
+    width,
+    height,
+    posX: Number(pose.posX) || 0,
+    posY: Number(pose.posY) || 0,
+  }
+}
+
 export function paintDynamicTextMotion(ctx, { size, pose } = {}) {
   const label = String(pose?.text || '').trim()
   if (!ctx?.strokeText || !ctx?.fillText || !label) return
@@ -26,13 +48,13 @@ export function paintDynamicTextMotion(ctx, { size, pose } = {}) {
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.translate(
-    edge / 2 + (Number(pose.x) || 0),
-    edge - Math.round(band * 0.42) + (Number(pose.y) || 0),
+    edge / 2 + (Number(pose.x) || 0) + (Number(pose.posX) || 0),
+    edge - Math.round(band * 0.42) + (Number(pose.y) || 0) + (Number(pose.posY) || 0),
   )
   ctx.rotate(Number(pose.rotation) || 0)
   ctx.scale(Number(pose.scale) || 1, Number(pose.scale) || 1)
   ctx.globalAlpha = Number.isFinite(Number(pose.opacity)) ? Number(pose.opacity) : 1
-  ctx.font = `bold ${fontPx}px "Pretendard", "Apple SD Gothic Neo", sans-serif`
+  ctx.font = captionCanvasFont(fontPx, pose.fontId)
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.lineJoin = 'round'
@@ -72,10 +94,14 @@ export function paintLiveCaptionLayer(ctx, live = {}, time01 = 0, edge = SEQUENC
     total: clock.total,
     sizeId: live.sizeId || live.captionSize || 'md',
     strokeId: live.strokeId || live.captionStroke || 'black',
+    fontId: live.fontId || live.captionFont,
     edge: sized,
+    posX: live.posX,
+    posY: live.posY,
   })
   if (!pose) return false
   paintDynamicTextMotion(ctx, { size: sized, pose })
+  live.bubble = captionBubbleBox(pose, sized)
   return true
 }
 

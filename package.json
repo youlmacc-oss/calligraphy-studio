@@ -1,7 +1,7 @@
 {
   "name": "text-styler-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "diagnose": "vitest run tests/autoRepair.test.js",
-    "test:loop": "node scripts/loop-test.js"
+    "refresh": "node scripts/refresh-dev.js",
+    "test:loop": "node scripts/loop-test.js",
+    "verify": "npm run diagnose && npm run test:loop"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -49,6 +49,8 @@ export function createLayer(partial = {}) {
     curveAmount: 0,
     shadowColor: '#000000',
     shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
     visible: true,
     opacity: 1,
     ...partial,
@@ -76,6 +78,8 @@ export function createDefaultLayers() {
       strokeWidth2: 0,
       curveAmount: 0,
       color: '#F6E7C1',
+      strokeColor: '#6B3F2A',
+      shadowColor: '#000000',
     }),
     createLayer({
       role: 'sub',

@@ -99,6 +99,20 @@ import {
 import { inspectRenderedSlice } from '../utils/debugger.js'
 import { GUIDEBOOK_SECTIONS } from './guidebookSections.js'
 import { APP_BUILD } from './appBuild.js'
+import {
+  CENTER_COL_MIN,
+  LEFT_PANEL_DEFAULT,
+  LEFT_PANEL_MAX,
+  LEFT_PANEL_MIN,
+  RIGHT_PANEL_MAX,
+  clampLeftEdgeVisible,
+  clampLeftPanelWidth,
+  clampRightPanelWidth,
+  fitPanelPair,
+  sideSplitStyle,
+} from './studioLayout.js'
+import { layoutPxFromClientPx, pauseStudioFit } from './studioFit.js'
+import { shiftBoxIntoView, tooltipPlacement } from './tooltipBox.js'
 import { evaluateSystemDiagnostics, exportFullDiagnosticLog } from './systemDiagnostics.js'
 import PreviewLightboxModal from '../components/PreviewLightboxModal.jsx'
 import LayerGuideOverlay from '../components/LayerGuideOverlay.jsx'
@@ -108,7 +122,14 @@ import {
 } from '../utils/diagnosticsBaseline.js'
 import { HQ_KERNEL, polishHqImageData } from '../utils/hqRender.js'
 import { applyBilateralEdgePreserve, applyDefringeToContext, defringeAlphaEdge, featherAlphaEdge, resamplePremultiplied } from '../utils/imageProcessor.js'
-import { MOTION_NONE, MOTION_PRESETS, sampleMotion as sampleGifPreset, isMotionNone } from '../components/MotionGifStudio/motionPresets.js'
+import { MOTION_NONE, MOTION_PRESETS, sampleMotion as sampleGifPreset, isMotionNone, paintMotionFrame } from '../components/MotionGifStudio/motionPresets.js'
+import { cropTransparentSprite, drawDetectionOutline, extractCharacterBoundingBox } from '../components/MotionGifStudio/spriteIsolate.js'
+import { PurePixelSelectionEngine, extractSpriteFromMask, renderLoupeGrid } from '../components/MotionGifStudio/pixelSelectionEngine.js'
+import { checkTransparencyHealth, enforceTransparencyPurge, purgeFakeBackground } from './fakeBackgroundPurge.js'
+import EmoticonSplitterModal from '../components/EmoticonSplitterModal.jsx'
+import TransparencyCheckModal from '../components/TransparencyCheckModal.jsx'
+import PixelSelectionModal from '../components/MotionGifStudio/PixelSelectionModal.jsx'
+import FrameSequencerTrack from '../components/MotionStudio/FrameSequencerTrack.jsx'
 import {
   SEQUENCE_FPS_DEFAULT,
   SEQUENCE_FPS_MAX,
@@ -132,11 +153,13 @@ import {
   captionForSequenceItem,
 } from '../components/MotionStudio/dynamicTextMotion.js'
 import { paintDynamicTextMotion, paintLiveCaptionLayer } from '../components/MotionStudio/DynamicTextMotionRenderer.js'
+import { captionCanvasFont, DEFAULT_EMOTICON_FONT_ID, EMOTICON_FONTS } from './emoticonFonts.js'
 import { PARTICLE_LAYERS } from '../components/MotionStudio/particleOverlayEngine.js'
 import { estimateStoreSpec } from '../components/MotionStudio/storeSpecHud.js'
 import { STUDIO_HUD_STEPS } from './studioHudChecks.js'
 import MotionGifStudioModal from '../components/MotionGifStudio/MotionGifStudioModal.jsx'
 import { isPcImageFile, listPcImageFiles } from '../components/MotionGifStudio/motionPcUpload.js'
+import { NumberSliderControl, bumpSliderValue } from '../components/NumberSliderControl.jsx'
 import MotionPreviewCanvas from '../components/MotionStudio/MotionPreviewCanvas.jsx'
 import MotionSequencerPanel from '../components/MotionStudio/MotionSequencerPanel.jsx'
 import MotionEffectSelector from '../components/MotionStudio/MotionEffectSelector.jsx'
@@ -150,7 +173,7 @@ import { ENCODER_SIZE, composeSequenceCanvases, composeStillMotionCanvases, enco
 import { isAnimatedWebp, muxAnimatedWebp } from '../utils/encoder/webpAnimMux.js'
 import { createSequenceClip, motionClipFileName } from '../utils/encoder/BatchExportEngine.js'
 import JSZip from 'jszip'
-import { estimateLayerBox, hitTestStudio, layerPaintRank, textLines } from './renderStyle.js'
+import { computeDualStrokeWidths, drawLivePreview, estimateLayerBox, exportCleanCanvas, hitTestStudio, layerPaintRank, probeTypographyIsolation, resolveBoundColors, textLines } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
 import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
 import {
@@ -300,7 +323,52 @@ function assertPipelineHud(stepId) {
       if (clampEmoSideWidth(200) !== EMO_SIDE_MIN || clampEmoSideWidth(900) !== EMO_SIDE_MAX) {
         return { status: 'error', detail: '좌우 패널 드래그 리사이저 클램프가 실패했습니다.' }
       }
-      return { status: 'ok', detail: `패널 ${EMO_SIDE_MIN}~${EMO_SIDE_MAX}px` }
+      if (LEFT_PANEL_DEFAULT < 470 || clampLeftPanelWidth(100) !== LEFT_PANEL_MIN || clampRightPanelWidth(5000) !== RIGHT_PANEL_MAX) {
+        return { status: 'error', detail: '스튜디오 기본 폭이 메인 포커스 단추를 가리거나 클램프가 실패했습니다.' }
+      }
+      if (clampLeftEdgeVisible(800, 340, 1920) < 700) {
+        return { status: 'error', detail: '왼쪽 패널이 500px에서 고정됩니다.' }
+      }
+      const pair = fitPanelPair(500, 500, 1200)
+      if (pair.left + pair.right + CENTER_COL_MIN > 1200) {
+        return { status: 'error', detail: '3단 분할이 중앙 360px을 밀어냅니다.' }
+      }
+      if (layoutPxFromClientPx(80, 0.8) !== 100 || clampLeftEdgeVisible(900, 340, 1200) > 1200 - CENTER_COL_MIN - 280) {
+        return { status: 'error', detail: '왼쪽 패널 끝선이 스케일·클램프에서 가려집니다.' }
+      }
+      pauseStudioFit(true)
+      pauseStudioFit(false)
+      if (typeof pauseStudioFit !== 'function') {
+        return { status: 'error', detail: '세로축 드래그 중 레이아웃 리핏 정지가 없습니다.' }
+      }
+      const tip = tooltipPlacement({ left: 8, width: 8, top: 80, height: 200 }, 1920)
+      const shift = shiftBoxIntoView(-80, 20, 220, 48, 1920, 1080)
+      if (tip.place !== 'right' || shift.dx < 80) {
+        return { status: 'error', detail: '세로축 안내 팝업이 화면 밖으로 나갑니다.' }
+      }
+      const css = cssBlobFor('studio-3col')
+      if (css.includes('grid-template-columns') && css.includes('--left-panel-width')) {
+        return { status: 'error', detail: '3단 그리드가 세로 분할선을 패널 폭에 가둡니다.' }
+      }
+      if (sideSplitStyle(true, 340).width !== 0 || sideSplitStyle(false, 340).width !== 348) {
+        return { status: 'error', detail: '패널 접기가 자리를 비우지 않습니다.' }
+      }
+      const frameCss = cssBlobFor('preview-frame')
+      if (frameCss.includes('760px')) {
+        return { status: 'error', detail: '중앙 캔버스가 760px에 고정되어 접어도 커지지 않습니다.' }
+      }
+      const colCss = cssBlobFor('studio-3col')
+      if (colCss.includes('flex-start') && colCss.includes('margin-left: 0')) {
+        return { status: 'error', detail: '중앙 캔버스가 분할선에 붙어 가운데가 아닙니다.' }
+      }
+      if (colCss.includes('is-resizing') && colCss.includes('overflow: visible')) {
+        return { status: 'error', detail: '세로축을 줄일 때 왼쪽 패널이 중앙을 덮습니다.' }
+      }
+      const cardCss = cssBlobFor('layer-card')
+      if (cardCss.includes('overflow: visible')) {
+        return { status: 'error', detail: '메인 타이틀 편집 카드가 세로축을 따라 줄지 않습니다.' }
+      }
+      return { status: 'ok', detail: `패널 ${LEFT_PANEL_MIN}~${LEFT_PANEL_MAX}px · 카드 폭 추종` }
     }
     case 'drag': {
       if (VIEW_BG_DEFAULT !== 'checker' || cycleViewBgMode('checker') !== 'dark' || cycleViewBgMode('light') !== 'checker') {
@@ -602,9 +670,47 @@ export async function checkLayerIsolation(ctx) {
   const clone = { ...main, fontId: `__probe_${Date.now()}` }
   if (main.fontId === clone.fontId) return { status: 'error', detail: '레이어 객체가 불변 복제되지 않습니다.' }
   if (sub.fontId === clone.fontId) return { status: 'error', detail: '서브 상태가 메인 복제본과 간섭합니다.' }
+  const sliderSrc = String(NumberSliderControl)
+  if (!sliderSrc.includes('data-slider-step') || !sliderSrc.includes('data-num-slider') || bumpSliderValue(10, -1, 0, 20, 1) !== 9) {
+    return { status: 'error', detail: '정밀 슬라이더 ± 버튼이 없습니다.' }
+  }
+  if (LEFT_PANEL_DEFAULT < 470 || clampLeftPanelWidth(100) !== LEFT_PANEL_MIN || clampRightPanelWidth(5000) !== RIGHT_PANEL_MAX) {
+    return { status: 'error', detail: '스튜디오 기본 폭이 메인 포커스 단추를 가리거나 클램프가 실패했습니다.' }
+  }
+  if (clampLeftEdgeVisible(800, 340, 1920) < 700) {
+    return { status: 'error', detail: '왼쪽 세로축이 500px에서 멈춥니다.' }
+  }
+  const pair = fitPanelPair(500, 500, 1200)
+  if (pair.left + pair.right + CENTER_COL_MIN > 1200) {
+    return { status: 'error', detail: '세로 분할이 중앙 캔버스 최소폭을 침범합니다.' }
+  }
+  const splitCss = cssBlobFor('studio-left-split')
+  if (splitCss.includes('overflow: visible')) {
+    return { status: 'error', detail: '왼쪽 패널이 줄어들 때 중앙 화면을 덮습니다.' }
+  }
+  const stickCss = cssBlobFor('studio-3col')
+  if (stickCss.includes('flex-start') && stickCss.includes('margin-left: 0')) {
+    return { status: 'error', detail: '중앙 캔버스가 분할선에 붙어 가운데가 아닙니다.' }
+  }
+  const cardCss = cssBlobFor('layer-card')
+  if (cardCss.includes('overflow: visible')) {
+    return { status: 'error', detail: '메인 타이틀 편집 카드가 세로축을 따라 줄지 않습니다.' }
+  }
+  const fitCss = cssBlobFor('data-studio-fit')
+  if (fitCss.includes('transform:') && !fitCss.includes('studio-layout-w')) {
+    return { status: 'error', detail: '축소 레이아웃이 가로 100%를 쓰지 않습니다.' }
+  }
+  if (layoutPxFromClientPx(80, 0.8) !== 100 || clampLeftEdgeVisible(900, 340, 1200) > 1200 - CENTER_COL_MIN - 280) {
+    return { status: 'error', detail: '왼쪽 패널 끝선 스케일 보정이 실패했습니다.' }
+  }
+  const tip = tooltipPlacement({ left: 8, width: 8, top: 80, height: 200 }, 1920)
+  const shift = shiftBoxIntoView(-80, 20, 220, 48, 1920, 1080)
+  if (tip.place !== 'right' || shift.dx < 80) {
+    return { status: 'error', detail: '세로축 안내 팝업이 화면 밖으로 잘립니다.' }
+  }
   return {
     status: 'ok',
-    detail: `독립 id 확인 · 메인 ${main.fontId} / 서브 ${sub.fontId} · 복제 패치가 원본을 바꾸지 않습니다.`,
+    detail: `독립 id 확인 · 메인 ${main.fontId} / 서브 ${sub.fontId} · 슬라이더 ± 스텝 · 세로 분할 ${LEFT_PANEL_MIN}~${LEFT_PANEL_MAX} · 복제 패치가 원본을 바꾸지 않습니다.`,
   }
 }
 
@@ -629,6 +735,9 @@ export async function checkDragEngine() {
   const kitsch = GUIDE_SAMPLES['puljeom-kitsch']
   if (!kitsch || kitsch.presetId !== 'kitsch-sticker' || kitsch.layers?.main?.text !== DEFAULT_TEXT) {
     return { status: 'error', detail: '기본 키치 텍스트 원클릭 데이터가 없습니다.' }
+  }
+  if (!String(drawLivePreview).includes('clearRect')) {
+    return { status: 'error', detail: '미리보기 프레임 버퍼 clearRect가 없습니다.' }
   }
   const overlaySrc = String(LayerGuideOverlay)
   if (!overlaySrc.includes('data-canvas-cross') || !overlaySrc.includes('canvas-crosshair')) {
@@ -683,7 +792,15 @@ export async function checkTypography() {
   if (clampFontSize(FONT_SIZE_MAIN_DEFAULT) !== FONT_SIZE_MAIN_DEFAULT) {
     return { status: 'error', detail: '기본 폰트 크기가 슬라이더 범위 밖으로 잘립니다.' }
   }
-  return { status: 'ok', detail: `줄바꿈 3행 · 행간 클램프 · 좌/중/우 정렬 · 크기 ${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px(기본 ${FONT_SIZE_MAIN_DEFAULT}px 중앙)이 일치합니다.` }
+  const dual = computeDualStrokeWidths('3', '5')
+  if (dual.outer !== 16 || dual.inner !== 6) {
+    return { status: 'error', detail: `2차 외곽선 두께가 문자열 연결이거나 *2 단일화가 깨졌습니다 (${dual.outer}/${dual.inner}).` }
+  }
+  const isolation = probeTypographyIsolation()
+  if (!isolation.ok) {
+    return { status: 'error', detail: isolation.detail || '외곽선/그림자 단일 패스 격리가 실패했습니다.' }
+  }
+  return { status: 'ok', detail: `줄바꿈 3행 · 행간 클램프 · 좌/중/우 정렬 · 이중외곽선 ${dual.outer}/${dual.inner} · 그림자 1회 · 크기 ${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px(기본 ${FONT_SIZE_MAIN_DEFAULT}px 중앙)이 일치합니다.` }
 }
 
 export async function checkZStack(ctx) {
@@ -800,7 +917,17 @@ export async function checkEdit() {
     crop,
   }, { letterbox: false })
   if (!edited || !edited.width) return { status: 'error', detail: '회전/반전/필터 파이프라인이 캔버스를 반환하지 않았습니다.' }
-  return { status: 'ok', detail: `크롭 ${crop.w.toFixed(2)}×${crop.h.toFixed(2)} · 90°/FlipH/필터 출력 ${edited.width}×${edited.height}.` }
+  const bound = resolveBoundColors(
+    { colors: ['#111111', '#222222', '#333333'] },
+    { color: '#ff0033', strokeColor: '#00cc66', shadowColor: '#0033ff' },
+  )
+  if (bound[0] !== '#ff0033' || bound[1] !== '#00cc66' || bound[2] !== '#0033ff') {
+    return { status: 'error', detail: '텍스트/외곽선/그림자 색 바인딩이 역전되어 있습니다.' }
+  }
+  if (bumpSliderValue(10, 1, 0, 20, 1) !== 11 || bumpSliderValue(10, -1, 0, 20, 1) !== 9) {
+    return { status: 'error', detail: '슬라이더 ± 증감이 대상 값과 동기화되지 않습니다.' }
+  }
+  return { status: 'ok', detail: `크롭 ${crop.w.toFixed(2)}×${crop.h.toFixed(2)} · 색 1:1 바인딩 · 슬라이더 ± · 90°/FlipH/필터 출력 ${edited.width}×${edited.height}.` }
 }
 
 export async function checkEncoders() {
@@ -1087,6 +1214,9 @@ export async function checkEmoticonSlicer() {
   if (!Array.isArray(defaultBound) || defaultBound.length !== 20 || defaultSnap.rows !== 4 || defaultSnap.cols !== 5) {
     return { status: 'error', detail: '기본 4×5 스냅이 20칸을 상태에 주입하지 못했습니다.' }
   }
+  if (!String(EmoticonSplitterModal).includes('runModeASmartDetection') || !String(EmoticonSplitterModal).includes("useState('smart')")) {
+    return { status: 'error', detail: '분할기 기본 모드가 A(스마트)가 아닙니다.' }
+  }
   if (!isAcceptedSheetFile({ type: 'image/jpeg', name: 'sheet.jpg' }) || !isAcceptedSheetFile({ type: '', name: 'sheet.webp' })) {
     return { status: 'error', detail: 'JPG/WebP 업로드 허용이 막혀 있습니다.' }
   }
@@ -1343,6 +1473,9 @@ export async function checkEmoticonSlicer() {
   }
   if (typeof extractCleanEmoticonCell !== 'function' || !String(extractCleanEmoticonCell).includes('destination-in')) {
     return { status: 'error', detail: 'destination-in 알파 마스크 합성 엔진이 없습니다.' }
+  }
+  if (!String(extractCleanEmoticonCell).includes('enforceTransparencyPurge') || !String(fitToKakaoCanvas).includes('enforceTransparencyPurge')) {
+    return { status: 'error', detail: '분할 컷 투명화 강제 선행이 파이프라인에 없습니다.' }
   }
   if (typeof sniffCanvasHasAlpha !== 'function' || typeof processHybridSheetCell !== 'function') {
     return { status: 'error', detail: '알파 스니프 하이브리드 분할 엔진이 없습니다.' }
@@ -1645,6 +1778,74 @@ export async function checkEmoticonSlicer() {
   zip.file('kakao-360-01.png', pngBlob)
   const packed = await zip.generateAsync({ type: 'blob' })
   if (!packed?.size) return { status: 'warn', detail: 'IDLE · ZIP 엔진 출력이 비어 있습니다.' }
+  if (!String(EmoticonSplitterModal).includes('data-purge-bg') || !String(EmoticonSplitterModal).includes('배경 투명화 확인사살')) {
+    return { status: 'error', detail: '분할기 배경 투명화 확인사살 버튼이 없습니다.' }
+  }
+  const fakeBg = document.createElement('canvas')
+  fakeBg.width = 24
+  fakeBg.height = 24
+  const fakeCtx = fakeBg.getContext('2d')
+  fakeCtx.fillStyle = '#ffffff'
+  fakeCtx.fillRect(0, 0, 24, 24)
+  fakeCtx.fillStyle = '#cccccc'
+  fakeCtx.fillRect(0, 0, 12, 12)
+  fakeCtx.fillRect(12, 12, 12, 12)
+  fakeCtx.fillStyle = '#111111'
+  fakeCtx.fillRect(8, 8, 8, 8)
+  const beforePurge = checkTransparencyHealth(fakeBg)
+  purgeFakeBackground(fakeBg)
+  const afterPurge = checkTransparencyHealth(fakeBg)
+  if (beforePurge.isHealthy || !afterPurge.isHealthy || fakeCtx.getImageData(10, 10, 1, 1).data[3] < 200) {
+    return { status: 'error', detail: '가짜 체커보드 강제 투명화가 실패했습니다.' }
+  }
+  if (typeof enforceTransparencyPurge !== 'function') {
+    return { status: 'error', detail: 'enforceTransparencyPurge 별칭이 없습니다.' }
+  }
+  const dualTone = document.createElement('canvas')
+  dualTone.width = 48
+  dualTone.height = 48
+  const dualCtx = dualTone.getContext('2d')
+  dualCtx.fillStyle = '#ffffff'
+  dualCtx.fillRect(0, 0, 48, 48)
+  dualCtx.fillStyle = '#e5e5e5'
+  dualCtx.fillRect(0, 0, 24, 24)
+  dualCtx.fillRect(24, 24, 24, 24)
+  dualCtx.fillStyle = '#2211aa'
+  dualCtx.fillRect(16, 16, 16, 16)
+  const purgedCut = fitToKakaoCanvas(dualTone, { x: 0, y: 0, w: 48, h: 48 }, {
+    transparent: true,
+    lockFrame: true,
+    pad: 0,
+    fitRatio: 1,
+    lossless: false,
+    customScale: 100,
+  })
+  const purgedCorner = purgedCut.getContext('2d').getImageData(1, 1, 1, 1).data[3]
+  const keptInk = purgedCut.getContext('2d').getImageData(180, 180, 1, 1).data[3]
+  if (purgedCorner > 8) {
+    return { status: 'error', detail: `배경 투명화 ON에서 분할 컷 코너 알파 ${purgedCorner}가 남았습니다.` }
+  }
+  if (keptInk < 180) {
+    return { status: 'error', detail: '강제 투명화가 캐릭터 잉크를 지웠습니다.' }
+  }
+  const opaqueCut = fitToKakaoCanvas(dualTone, { x: 0, y: 0, w: 48, h: 48 }, {
+    transparent: false,
+    lockFrame: true,
+    pad: 0,
+    fitRatio: 1,
+    lossless: false,
+    customScale: 100,
+  })
+  if (opaqueCut.getContext('2d').getImageData(1, 1, 1, 1).data[3] < 200) {
+    return { status: 'error', detail: '배경 투명화 OFF에서 흰 배경이 투명해졌습니다.' }
+  }
+  const gridCuts = sliceSheet(dualTone, { mode: 'grid', cols: 1, rows: 1, transparent: true })
+  if (!gridCuts[0] || gridCuts[0].canvas.getContext('2d').getImageData(1, 1, 1, 1).data[3] > 8) {
+    return { status: 'error', detail: '모드 B sliceSheet가 투명화 완료 PNG를 넘기지 않았습니다.' }
+  }
+  if (!String(TransparencyCheckModal).includes('data-alpha-gate') || !String(TransparencyCheckModal).includes('그대로 내보내기')) {
+    return { status: 'error', detail: '내보내기 전 투명화 진단 팝업이 없습니다.' }
+  }
   return {
     status: 'ok',
     detail: `PASS · 스마트 ${smart.length}객체 · 가로세로결합분할 · 구멍OFF기본 · 3단엔진${TEXT_ENGINE_DEFAULT} · 팝업체커보드 · 텍스트상하단 · 배경순환 · 파이프라인CropFloodT${FLOOD_FILL_TOLERANCE} · 진단인스펙터 · toBlob PNG · 텍스트존${TEXT_ZONE_DEFAULT}% · Outline기본ON · 그리드 ${grid.length}칸 · 골든 ${goldenCuts}컷 · ${KAKAO_STICKER_SIZE}×${KAKAO_STICKER_SIZE} · ZIP ${packed.size}B · ${GOLDEN_BASELINE.version}`,
@@ -2022,6 +2223,23 @@ export async function checkMotionSequencer() {
   if (!previewSrc.includes('requestAnimationFrame') || !previewSrc.includes('paintMotionFrame')) {
     return { status: 'error', detail: '단일 이미지 requestAnimationFrame 모션 루프가 없습니다.' }
   }
+  if (!previewSrc.includes('setupSpeechBubbleDragger') || !previewSrc.includes('onMouseDown') || !previewSrc.includes('onTouchStart')) {
+    return { status: 'error', detail: '메인 캔버스 말풍선 드래그 히트테스트가 없습니다.' }
+  }
+  if (!String(paintMotionFrame).includes('renderIsolatedCharacterMotion') || !String(paintMotionFrame).includes('clearRect')) {
+    return { status: 'error', detail: '캐릭터 단독 모션 격리 또는 프레임 clearRect가 없습니다.' }
+  }
+  const trimProbe = document.createElement('canvas')
+  trimProbe.width = 40
+  trimProbe.height = 40
+  const trimCtx = trimProbe.getContext('2d')
+  trimCtx.fillStyle = '#ff3366'
+  trimCtx.fillRect(10, 12, 8, 6)
+  const box = extractCharacterBoundingBox(trimProbe)
+  const cropped = cropTransparentSprite(trimProbe)
+  if (!box.found || box.minX !== 10 || box.minY !== 12 || box.width !== 8 || box.height !== 6 || cropped.width !== 8 || cropped.height !== 6) {
+    return { status: 'error', detail: '투명 여백 Auto-Trim 바운딩 박스가 실패했습니다.' }
+  }
   if (!previewSrc.includes('mirrorPreviewFrame') || !String(mirrorPreviewFrame).includes('drawImage')) {
     return { status: 'error', detail: '채팅 미리보기 캔버스 미러링이 없습니다.' }
   }
@@ -2032,17 +2250,114 @@ export async function checkMotionSequencer() {
     return { status: 'error', detail: '프레임 시퀀서 패널 또는 모션 이펙트 선택기가 없습니다.' }
   }
   const uploadSrc = String(MotionGifStudioModal)
+  if (!uploadSrc.includes('data-sprite-isolate') || !uploadSrc.includes('캐릭터 영역 자동 추출') || !uploadSrc.includes('drawDetectionOutline')) {
+    return { status: 'error', detail: '캐릭터 단독 추출 버튼 또는 감지 외곽선이 없습니다.' }
+  }
+  if (!uploadSrc.includes('showCutBank') || !uploadSrc.includes("sourceTab === 'cuts' ? visibleCuts") || !uploadSrc.includes('data-source-tab')) {
+    return { status: 'error', detail: '본체 그래픽 탭에서 분할 컷 뱅크를 숨기지 않습니다.' }
+  }
+  if (uploadSrc.includes('MagneticLasso') || uploadSrc.includes('올가미') || uploadSrc.includes('data-magnetic-lasso') || uploadSrc.includes('data-lasso-')) {
+    return { status: 'error', detail: '올가미 잔재가 모션 스튜디오에 남아 있습니다.' }
+  }
+  if (!uploadSrc.includes('data-pixel-studio-open') || !uploadSrc.includes('초정밀 픽셀 추출') || !uploadSrc.includes('PixelSelectionModal')) {
+    return { status: 'error', detail: '초정밀 픽셀 추출 에디터 연동이 없습니다.' }
+  }
+  if (!uploadSrc.includes('data-pixel-restore') || !uploadSrc.includes('원본 복원')) {
+    return { status: 'error', detail: '원본 복원 버튼이 없습니다.' }
+  }
+  if (typeof exportCleanCanvas !== 'function') {
+    return { status: 'error', detail: '스타일러 클린 투명 내보내기가 없습니다.' }
+  }
+  if (!uploadSrc.includes('enforceTransparencyPurge')) {
+    return { status: 'error', detail: '모션 스튜디오 수신단 알파 정화가 없습니다.' }
+  }
+  if (!String(FrameSequencerTrack).includes('data-seq-remove') || !panelSrc.includes('selectedSeqId')) {
+    return { status: 'error', detail: '타임라인 프레임 개별 삭제가 없습니다.' }
+  }
+  if (String(PixelSelectionModal).includes('data-pixel-zoom-range') || String(PixelSelectionModal).includes('ZOOM_MIN')) {
+    return { status: 'error', detail: '픽셀 에디터 가변 줌 슬라이더가 남아 있습니다.' }
+  }
+  if (String(PixelSelectionModal).includes('VIEW_ZOOM') || String(PixelSelectionModal).includes('배율:')) {
+    return { status: 'error', detail: '픽셀 에디터 고정 배율이 남아 있습니다.' }
+  }
+  if (String(PixelSelectionModal).includes('aspect-square') || String(PixelSelectionModal).includes("aspectRatio: '1 / 1'")) {
+    return { status: 'error', detail: '픽셀 에디터 정사각 고정이 남아 있습니다.' }
+  }
+  if (!String(PixelSelectionModal).includes('max-w-[1500px]') || !String(PixelSelectionModal).includes('w-full') || !String(PixelSelectionModal).includes('justify-between') || !String(PixelSelectionModal).includes('object-contain') || !String(PixelSelectionModal).includes('data-pixel-col') || !String(PixelSelectionModal).includes('data-pixel-loupe')) {
+    return { status: 'error', detail: '픽셀 에디터 풀와이드 3단 또는 전비율 피팅/돋보기가 없습니다.' }
+  }
+  if (!String(PixelSelectionModal).includes('text-xs') || !String(PixelSelectionModal).includes('COMPACT_BTN') || !String(PixelSelectionModal).includes('w-32') || !String(PixelSelectionModal).includes('min-w-[124px]') || !String(PixelSelectionModal).includes('whitespace-nowrap')) {
+    return { status: 'error', detail: '픽셀 에디터 좌우 툴바 1:1 대칭 스타일이 없습니다.' }
+  }
+  if (!String(PixelSelectionModal).includes('data-pixel-wand') || !String(PixelSelectionModal).includes('data-pixel-draft-save')) {
+    return { status: 'error', detail: '픽셀 완드 또는 임시 저장이 없습니다.' }
+  }
+  if (typeof renderLoupeGrid !== 'function') {
+    return { status: 'error', detail: '50×50 돋보기 렌더러가 없습니다.' }
+  }
+  const edgeProbe = document.createElement('canvas')
+  edgeProbe.width = 40
+  edgeProbe.height = 40
+  const edgeCtx = edgeProbe.getContext('2d')
+  edgeCtx.fillStyle = '#ff3366'
+  edgeCtx.fillRect(10, 10, 20, 20)
+  const loupeProbe = document.createElement('canvas')
+  loupeProbe.width = 350
+  loupeProbe.height = 350
+  const loupeOrigin = renderLoupeGrid(loupeProbe, edgeProbe, new Uint8Array(40 * 40), 20, 20)
+  if (!loupeOrigin || loupeOrigin.size !== 50 || loupeProbe.getContext('2d').getImageData(147, 147, 1, 1).data[0] < 180) {
+    return { status: 'error', detail: '50×50 돋보기 격자 렌더가 실패했습니다.' }
+  }
+  const picker = new PurePixelSelectionEngine(40, 40)
+  picker.paint(12, 12, 8, false)
+  picker.saveHistory()
+  picker.grow()
+  picker.magicWand(edgeCtx.getImageData(0, 0, 40, 40).data, 18, 18, 8)
+  if (picker.selectedCount() < 20) {
+    return { status: 'error', detail: '픽셀 브러시/완드 선택이 실패했습니다.' }
+  }
+  const clipped = extractSpriteFromMask(edgeProbe, picker.mask)
+  const clipCtx = clipped.getContext('2d')
+  if (!clipCtx || clipCtx.getImageData(2, 2, 1, 1).data[3] > 8 || clipCtx.getImageData(20, 20, 1, 1).data[3] < 200) {
+    return { status: 'error', detail: '픽셀 마스크 스프라이트 추출이 실패했습니다.' }
+  }
+  const beforeUndo = picker.selectedCount()
+  picker.undo()
+  if (picker.selectedCount() >= beforeUndo) {
+    return { status: 'error', detail: '픽셀 선택 Undo 히스토리가 없습니다.' }
+  }
+  const outline = document.createElement('canvas')
+  outline.width = 80
+  outline.height = 80
+  if (!drawDetectionOutline(outline.getContext('2d'), { width: 20, height: 16 }, 80, 80)) {
+    return { status: 'error', detail: '추출 감지 외곽선 오버레이가 실패했습니다.' }
+  }
   if (!uploadSrc.includes('data-pc-dropzone') || !uploadSrc.includes('data-pc-stage-drop') || !uploadSrc.includes('data-pc-upload')) {
     return { status: 'error', detail: '내 PC 업로드 드롭존 또는 파일 입력이 없습니다.' }
   }
   if (!uploadSrc.includes('openPcFilePicker') || !uploadSrc.includes('input.click()') || !uploadSrc.includes("input.value = ''")) {
     return { status: 'error', detail: '파일 탐색기 클릭 트리거가 없습니다.' }
   }
+  if (!uploadSrc.includes("id=\"mgs-pc-upload\"") || !uploadSrc.includes('htmlFor="mgs-pc-upload"')) {
+    return { status: 'error', detail: '내 PC 업로드 파일 input이 탭과 분리되어 탐색기를 열 수 없습니다.' }
+  }
   if (!uploadSrc.includes('stopPropagation') || !uploadSrc.includes('dropEffect') || !uploadSrc.includes('createPcDragGuard')) {
     return { status: 'error', detail: '드래그 앤 드롭 preventDefault 가드가 없습니다.' }
   }
-  if (!panelSrc.includes('injectFrames') || !panelSrc.includes('makeSequenceItem')) {
-    return { status: 'error', detail: '업로드 이미지가 시퀀서 타임라인에 주입되지 않습니다.' }
+  if (!panelSrc.includes('appendCut') || !panelSrc.includes('data-seq-cut') || !panelSrc.includes('makeSequenceItem')) {
+    return { status: 'error', detail: '컷 클릭 시 타임라인 추가가 없습니다.' }
+  }
+  if (!panelSrc.includes('showCutBank') || !panelSrc.includes('data-cut-bank')) {
+    return { status: 'error', detail: '시퀀서 컷 뱅크 탭 분기 플래그가 없습니다.' }
+  }
+  if (panelSrc.includes('setSequence(injectFrames')) {
+    return { status: 'error', detail: '업로드 컷이 타임라인에 자동 복제됩니다.' }
+  }
+  if (!String(encodeMotionGif).includes('dispose: 2') && !String(encodeMotionGif).includes('dispose:2')) {
+    return { status: 'error', detail: 'GIF dispose:2 잔상 차단이 없습니다.' }
+  }
+  if (!String(encodeMotionGif).includes('0x00') && !String(encodeMotionGif).includes('transparentIndex: 0')) {
+    return { status: 'error', detail: 'GIF 투명 인덱스 0x00이 없습니다.' }
   }
   if (!isPcImageFile({ name: 'a.png', type: 'image/png' }) || isPcImageFile({ name: 'a.txt', type: 'text/plain' })) {
     return { status: 'error', detail: 'PC 업로드 이미지 필터가 실패했습니다.' }
@@ -2058,6 +2373,24 @@ export async function checkMotionSequencer() {
   }
   if (!String(CaptionControlBar).includes('data-caption-input') || !String(CaptionControlBar).includes('data-caption-on')) {
     return { status: 'error', detail: '자막 입력창 또는 ON/OFF 토글이 없습니다.' }
+  }
+  if (EMOTICON_FONTS.length !== 10 || DEFAULT_EMOTICON_FONT_ID !== 'Jua' || !EMOTICON_FONTS.some((item) => item.id === 'Pretendard') || !EMOTICON_FONTS.some((item) => item.id === 'CookieRun')) {
+    return { status: 'error', detail: '말풍선 상업용 무료 폰트 10선이 없습니다.' }
+  }
+  if (!String(CaptionControlBar).includes('data-caption-font') || !String(CaptionControlBar).includes('EMOTICON_FONTS')) {
+    return { status: 'error', detail: '자막 폰트 셀렉터가 없습니다.' }
+  }
+  if (!rendererSrc.includes('captionCanvasFont') || !previewSrc.includes('captionFont') || !panelSrc.includes('captionFont')) {
+    return { status: 'error', detail: '자막 폰트가 캔버스 렌더러와 연결되지 않았습니다.' }
+  }
+  if (!String(composeSequenceCanvases).includes('captionFont') || !String(composeStillMotionCanvases).includes('ensureEmoticonFontsReady')) {
+    return { status: 'error', detail: 'GIF 인코더 자막 폰트 동기화가 없습니다.' }
+  }
+  if (!captionCanvasFont(30, 'Jua').includes('Jua')) {
+    return { status: 'error', detail: '캔버스 ctx.font 웹폰트 문자열이 주아체를 쓰지 않습니다.' }
+  }
+  if (!String(PixelSelectionModal).includes('SIDEBAR_BOX') || !String(PixelSelectionModal).includes('width: 128')) {
+    return { status: 'error', detail: '픽셀 에디터 좌우 128px 1:1 툴바가 없습니다.' }
   }
   if (!panelSrc.includes('data-loop-mode') || !panelSrc.includes('ParticleOverlayBar') || !panelSrc.includes('ChatRoomSimulator') || !panelSrc.includes('StoreSpecHud')) {
     return { status: 'error', detail: '핑퐁·파티클·채팅 시뮬·심사 HUD가 없습니다.' }

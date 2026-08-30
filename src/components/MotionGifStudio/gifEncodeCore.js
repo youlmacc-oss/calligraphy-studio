@@ -72,16 +72,15 @@ export function maskRgbaTransparency(rgba, cut = ALPHA_CUT) {
 
 function encodeTransparentFrame(rgba, cut = ALPHA_CUT) {
   const masked = maskRgbaTransparency(rgba, cut)
-  const palette = quantize(masked, 255, { format: 'rgb565' })
-  const table = (palette || []).map((color) => color.slice(0, 3))
-  if (!table.length) table.push([0, 0, 0])
-  const transparentIndex = Math.min(255, table.length)
-  const index = applyPalette(masked, table, 'rgb565')
-  for (let p = 0, i = 0; i < index.length; i += 1, p += 4) {
-    if (masked[p + 3] === 0) index[i] = transparentIndex
+  const colors = (quantize(masked, 255, { format: 'rgb565' }) || []).map((color) => color.slice(0, 3))
+  if (!colors.length) colors.push([0, 0, 0])
+  const raw = applyPalette(masked, colors, 'rgb565')
+  const index = new Uint8Array(raw.length)
+  for (let p = 0, i = 0; i < raw.length; i += 1, p += 4) {
+    index[i] = masked[p + 3] === 0 ? 0x00 : (raw[i] + 1) & 255
   }
-  if (table.length < 256) table.push([0, 0, 0])
-  return { index, palette: table, transparentIndex }
+  const table = [[0, 0, 0], ...colors].slice(0, 256)
+  return { index, palette: table, transparentIndex: 0x00 }
 }
 
 export function encodeRgbaFrames(frames, options = {}) {
@@ -114,6 +113,7 @@ export function encodeRgbaFrames(frames, options = {}) {
       palette: mapped.palette,
       delay,
       repeat: i === 0 ? 0 : -1,
+      dispose: 2,
       transparent,
       transparentIndex: mapped.transparentIndex,
     })

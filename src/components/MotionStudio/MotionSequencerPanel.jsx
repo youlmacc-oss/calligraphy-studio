@@ -9,6 +9,7 @@ import MotionExportPanel from './MotionExportPanel.jsx'
 import MotionPreviewCanvas from './MotionPreviewCanvas.jsx'
 import ParticleOverlayBar from './ParticleOverlayBar.jsx'
 import StoreSpecHud from './StoreSpecHud.jsx'
+import { DEFAULT_EMOTICON_FONT_ID, normalizeEmoticonFontId } from '../../lib/emoticonFonts.js'
 import { TEXT_MOTION_NONE } from './dynamicTextMotion.js'
 import CaptionControlBar from './CaptionControlBar.jsx'
 import { PLAYBACK_SPEEDS, useMotionStudio } from './motionStudioContext.jsx'
@@ -33,11 +34,13 @@ function speedLabel(value) {
 export default function MotionSequencerPanel({
   cuts = [],
   injectFrames = null,
+  showCutBank = true,
   cutBankEmpty = '분할기에서 28컷을 먼저 만드세요.',
   sourceUrl = '',
   playing: playingProp,
   onPlayingChange,
   motionPreset = 'none',
+  isolateSprite = true,
   intensity = 70,
   loopSeconds = 2,
   overlayRef,
@@ -58,6 +61,9 @@ export default function MotionSequencerPanel({
   const [captionText, setCaptionText] = useState('')
   const [captionSize, setCaptionSize] = useState('md')
   const [captionStroke, setCaptionStroke] = useState('black')
+  const [captionFont, setCaptionFont] = useState(DEFAULT_EMOTICON_FONT_ID)
+  const [captionPos, setCaptionPos] = useState({ posX: 0, posY: 0 })
+  const [selectedSeqId, setSelectedSeqId] = useState('')
   const chatMirrorRef = useRef(null)
   const injectStampRef = useRef('')
   const speed = studio?.speed ?? localSpeed
@@ -77,6 +83,7 @@ export default function MotionSequencerPanel({
 
   if (overlayRef) overlayRef.current = particles
   if (captionLiveRef) {
+    const prev = captionLiveRef.current
     captionLiveRef.current = {
       enabled: captionOn,
       isTextEnabled: captionOn,
@@ -88,6 +95,19 @@ export default function MotionSequencerPanel({
       captionSize,
       strokeId: captionStroke,
       captionStroke,
+      fontId: captionFont,
+      captionFont,
+      posX: captionPos.posX,
+      posY: captionPos.posY,
+      setPos: (next, maybeY) => {
+        if (next && typeof next === 'object') {
+          setCaptionPos({ posX: Number(next.posX) || 0, posY: Number(next.posY) || 0 })
+          return
+        }
+        setCaptionPos({ posX: Number(next) || 0, posY: Number(maybeY) || 0 })
+      },
+      visible: captionOn && Boolean(String(captionText || '').trim()),
+      bubble: prev?.bubble,
       effect,
       fps,
       speed,
@@ -120,6 +140,10 @@ export default function MotionSequencerPanel({
     if (typeof clip.captionText === 'string') setCaptionText(clip.captionText)
     if (clip.captionSize) setCaptionSize(clip.captionSize)
     if (clip.captionStroke) setCaptionStroke(clip.captionStroke)
+    if (clip.captionFont) setCaptionFont(normalizeEmoticonFontId(clip.captionFont))
+    if (Number.isFinite(Number(clip.posX)) || Number.isFinite(Number(clip.posY))) {
+      setCaptionPos({ posX: Number(clip.posX) || 0, posY: Number(clip.posY) || 0 })
+    }
     setPlaying(true)
     studio.clearRestore?.()
   }, [studio, studio?.restore, setSpeed])
@@ -135,20 +159,35 @@ export default function MotionSequencerPanel({
     setCaptionText('')
     setCaptionSize('md')
     setCaptionStroke('black')
+    setCaptionFont(DEFAULT_EMOTICON_FONT_ID)
+    setCaptionPos({ posX: 0, posY: 0 })
     setFps(SEQUENCE_FPS_DEFAULT)
   }, [studio?.fallbackSeq])
 
   useEffect(() => {
     onCaptionLive?.()
-  }, [captionOn, captionText, captionSize, captionStroke, effect, fps, speed, loopSeconds, onCaptionLive])
+  }, [captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, effect, fps, speed, loopSeconds, onCaptionLive])
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== 'Delete' && event.key !== 'Del') return
+      if (!selectedSeqId) return
+      const tag = String(event.target?.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea') return
+      if (document.querySelector('[data-pixel-studio="1"]')) return
+      event.preventDefault()
+      setSequence((prev) => removeSequenceItem(prev, selectedSeqId))
+      setSelectedSeqId('')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedSeqId])
 
   useEffect(() => {
     if (!Array.isArray(injectFrames) || !injectFrames.length) return
     const stamp = injectFrames.map((item) => item.id || item.url).join('|')
     if (!stamp || injectStampRef.current === stamp) return
     injectStampRef.current = stamp
-    setSequence(injectFrames.map((item, index) => makeSequenceItem(item, index, index)))
-    setPlaying(true)
   }, [injectFrames])
 
   const appendCut = (cut, index) => {
@@ -235,10 +274,12 @@ export default function MotionSequencerPanel({
           text={captionText}
           sizeId={captionSize}
           strokeId={captionStroke}
+          fontId={captionFont}
           onEnabled={setCaptionOn}
           onText={setCaptionText}
           onSize={setCaptionSize}
           onStroke={setCaptionStroke}
+          onFont={setCaptionFont}
         />
       </div>
 
@@ -253,6 +294,7 @@ export default function MotionSequencerPanel({
           particles={particles}
           stillLoop={stillLoop}
           motionPreset={motionPreset}
+          isolateSprite={isolateSprite}
           intensity={intensity}
           loopSeconds={loopSeconds}
           mirrorRef={chatMirrorRef}
@@ -260,38 +302,50 @@ export default function MotionSequencerPanel({
           captionText={captionText}
           captionSize={captionSize}
           captionStroke={captionStroke}
+          captionFont={captionFont}
+          captionPos={captionPos}
+          onCaptionPos={setCaptionPos}
           onTick={(_index, url) => setLiveUrl(url)}
         />
         <div className="ms-tracks">
-          <p className="ms-kicker">컷 선택</p>
-          {cuts.length ? (
-            <div className="ms-cut-bank" role="list">
-              {cuts.map((cut, index) => {
-                const url = cutFrameUrl(cut)
-                return (
-                  <button
-                    key={cut.id || index}
-                    type="button"
-                    className="ms-cut"
-                    disabled={!url}
-                    data-seq-cut={index}
-                    onClick={() => appendCut(cut, index)}
-                    {...magnify(`${index + 1}번`, '이 컷을 타임라인 끝에 추가합니다')}
-                  >
-                    {url ? <img src={url} alt={`${index + 1}번`} /> : null}
-                    <span>{index + 1}</span>
-                  </button>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="ms-empty">{cutBankEmpty}</p>
-          )}
+          {showCutBank ? (
+            <>
+              <p className="ms-kicker">컷 선택</p>
+              {cuts.length ? (
+                <div className="ms-cut-bank" role="list" data-cut-bank="1">
+                  {cuts.map((cut, index) => {
+                    const url = cutFrameUrl(cut)
+                    return (
+                      <button
+                        key={cut.id || index}
+                        type="button"
+                        className="ms-cut"
+                        disabled={!url}
+                        data-seq-cut={index}
+                        onClick={() => appendCut(cut, index)}
+                        {...magnify(`${index + 1}번`, '이 컷을 타임라인 끝에 추가합니다')}
+                      >
+                        {url ? <img src={url} alt={`${index + 1}번`} /> : null}
+                        <span>{index + 1}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="ms-empty" data-cut-bank-empty="1">{cutBankEmpty}</p>
+              )}
+            </>
+          ) : null}
           <p className="ms-kicker">타임라인 {timelineFrames.length}</p>
           <FrameSequencerTrack
             items={sequence}
+            selectedId={selectedSeqId}
+            onSelect={setSelectedSeqId}
             onMove={(index, delta) => setSequence((prev) => moveSequenceItem(prev, index, delta))}
-            onRemove={(id) => setSequence((prev) => removeSequenceItem(prev, id))}
+            onRemove={(id) => {
+              setSequence((prev) => removeSequenceItem(prev, id))
+              setSelectedSeqId((prev) => (prev === id ? '' : prev))
+            }}
           />
         </div>
       </div>
@@ -320,12 +374,15 @@ export default function MotionSequencerPanel({
         particles={particles}
         stillLoop={stillLoop}
         motionPreset={motionPreset}
+        isolateSprite={isolateSprite}
         intensity={intensity}
         loopSeconds={loopSeconds}
         captionOn={captionOn}
         captionText={captionText}
         captionSize={captionSize}
         captionStroke={captionStroke}
+        captionFont={captionFont}
+        captionPos={captionPos}
       />
     </section>
   )

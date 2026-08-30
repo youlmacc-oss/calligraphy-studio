@@ -1,13 +1,84 @@
+import { execFile } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import readline from 'node:readline'
+import { promisify } from 'node:util'
 import { createCanvas } from 'canvas'
 import { chromium } from 'playwright'
+import { refreshDev } from './refresh-dev.js'
+
+const execFileAsync = promisify(execFile)
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+async function playBeep(type = 'primary') {
+  try {
+    if (process.platform === 'win32') {
+      await execFileAsync('powershell', [
+        '-STA',
+        '-NoProfile',
+        '-File',
+        join(ROOT, 'scripts', 'play-headset-sound.ps1'),
+        '-Type',
+        type === 'reminder' ? 'reminder' : 'primary',
+      ])
+      return
+    }
+    if (process.platform === 'darwin') {
+      const times = type === 'reminder' ? 2 : 3
+      for (let i = 0; i < times; i += 1) {
+        await execFileAsync('afplay', ['/System/Library/Sounds/Glass.aiff'])
+      }
+      return
+    }
+    process.stdout.write(type === 'reminder' ? '\x07\x07' : '\x07\x07\x07')
+  } catch {
+    process.stdout.write(type === 'reminder' ? '\x07\x07' : '\x07\x07\x07')
+  }
+}
+
+async function waitForApprovalWithReminder() {
+  await playBeep('primary')
+  console.log('\n🎧 [알림음이 헤드셋으로 전송되었습니다]')
+  console.log('🎧 [BEEP!] 캐시 삭제, 자동 재실행 및 화면 캡처(public/test-result.png)가 완료되었습니다.')
+  console.log('[1: 승인 및 종료] / [2: 추가 수정 필요 (피드백 입력)] 중 선택해 주세요: ')
+
+  let answered = false
+  let reminderTimer = 0
+  const reminderDone = new Promise((resolve) => {
+    reminderTimer = setTimeout(async () => {
+      if (!answered) {
+        await playBeep('reminder')
+        if (!answered) {
+          process.stdout.write('\n🔔 [5초 경과 알림] 확인을 기다리고 있습니다. 번호를 입력해 주세요: ')
+        }
+      }
+      resolve()
+    }, 5000)
+  })
+
+  if (!process.stdin.isTTY) {
+    await reminderDone
+    return ''
+  }
+
+  const answer = await new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+    rl.question('', (value) => {
+      answered = true
+      clearTimeout(reminderTimer)
+      rl.close()
+      resolve(String(value || '').trim())
+    })
+  })
+  return answer
+}
+
 const SHEET_PATH = join(ROOT, 'public', 'sample-emoticon-sheet.png')
 const GRID_SHOT = join(ROOT, 'public', 'test-result-grid.png')
 const SPLIT_SHOT = join(ROOT, 'public', 'test-result.png')
 const STUDIO_SHOT = join(ROOT, 'public', 'test-result-studio.png')
+const PIXEL_SHOT = join(ROOT, 'public', 'test-result-pixel.png')
 
 function writeSampleSheet() {
   const cols = 7
@@ -78,9 +149,25 @@ async function setGridSize(page, cols, rows) {
 }
 
 async function runVisualCheck() {
+  await refreshDev({ openBrowser: true })
   const sheetPath = writeSampleSheet()
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true })
+  const context = await browser.newContext({
+    viewport: { width: 1600, height: 1000 },
+    acceptDownloads: true,
+    bypassCSP: true,
+    ignoreHTTPSErrors: true,
+  })
+  await context.route('**/*', (route) => {
+    const headers = {
+      ...route.request().headers(),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+    }
+    return route.continue({ headers })
+  })
+  const page = await context.newPage()
+  page.on('dialog', (dialog) => dialog.dismiss())
 
   await page.addInitScript(() => {
     try {
@@ -90,7 +177,9 @@ async function runVisualCheck() {
     }
   })
 
-  await page.goto('http://localhost:5173/calligraphy-studio/', { waitUntil: 'domcontentloaded' })
+  const studioUrl = `http://localhost:5173/calligraphy-studio/?v=${Date.now()}`
+  await page.goto(studioUrl, { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('[data-guide-book="1"]', { timeout: 15000 })
   await page.locator('[data-guide-book="1"]').click()
   await page.waitForSelector('[data-guide-pipeline="1"]', { timeout: 10000 })
@@ -142,6 +231,8 @@ async function runVisualCheck() {
     const on = document.querySelector('[data-text-engine="VECTOR_OVERLAY"]')?.classList.contains('is-on')
     return Boolean(on) && !note.includes('처리 중') && !note.includes('나누는 중') && document.querySelectorAll('.emo-thumbs li').length === 28
   }, { timeout: 120000 })
+  await page.locator('[data-purge-bg]').click()
+  await page.waitForSelector('[data-purge-toast="1"]', { timeout: 8000 })
   await page.waitForTimeout(300)
   await page.screenshot({ path: GRID_SHOT, fullPage: false })
 
@@ -149,6 +240,13 @@ async function runVisualCheck() {
   await page.locator('[data-tour="gif-export"]').click()
   await page.waitForSelector('#mgs-title', { timeout: 10000 })
   await page.getByRole('button', { name: '본체 그래픽' }).click()
+  await page.waitForFunction(() => {
+    const sources = document.querySelector('[data-source-tab="canvas"]')
+    return Boolean(sources)
+      && !document.querySelector('#emo-split-title')
+      && !document.querySelector('[data-cut-bank="1"]')
+      && !document.querySelector('.mgs-cuts')
+  }, null, { timeout: 8000 })
   await page.waitForSelector('.mgs-preview-canvas:not([hidden])', { timeout: 15000 })
   await page.waitForSelector('[data-still-loop="1"]', { timeout: 10000 })
   await page.locator('[data-particle="sparkle"]').click()
@@ -157,6 +255,107 @@ async function runVisualCheck() {
     return document.querySelector('[data-particle="sparkle"]')?.classList.contains('is-on')
       && document.querySelector('[data-particle="hearts"]')?.classList.contains('is-on')
   }, { timeout: 5000 })
+  await page.waitForSelector('[data-sprite-isolate="1"]', { timeout: 8000 })
+  await page.locator('[data-sprite-isolate]').click()
+  await page.waitForSelector('[data-detect-outline="1"]', { timeout: 5000 })
+  await page.waitForSelector('[data-isolate-toast="1"]', { timeout: 5000 })
+  const pixelBtn = page.locator('[data-pixel-studio-open]')
+  await pixelBtn.scrollIntoViewIfNeeded()
+  await pixelBtn.click({ force: true })
+  const pixelOverlay = page.locator('[data-pixel-studio="1"]')
+  await pixelOverlay.waitFor({ state: 'visible', timeout: 8000 })
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-pixel-studio="1"]')
+    if (!el) return false
+    const rect = el.getBoundingClientRect()
+    const style = window.getComputedStyle(el)
+    return rect.width >= 240
+      && rect.height >= 240
+      && rect.top < window.innerHeight
+      && rect.left < window.innerWidth
+      && style.display !== 'none'
+      && style.visibility !== 'hidden'
+      && Number.parseInt(style.zIndex, 10) >= 90
+  }, null, { timeout: 8000 })
+  await page.waitForSelector('[data-pixel-ready="1"]', { timeout: 8000 })
+  await page.waitForSelector('[data-pixel-col="left"]', { timeout: 5000 })
+  await page.waitForSelector('[data-pixel-col="right"]', { timeout: 5000 })
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-pixel-canvas]')
+    const apply = document.querySelector('[data-pixel-apply]')
+    const badge = document.querySelector('[data-pixel-zoom]')
+    const shell = document.querySelector('[data-pixel-shell]')
+    const body = document.querySelector('[data-pixel-body]')
+    const left = document.querySelector('[data-pixel-col="left"]')
+    const right = document.querySelector('[data-pixel-col="right"]')
+    if (!canvas || !apply || !shell || !body || !left || !right || !/맞춤/.test(String(badge?.textContent || ''))) return false
+    const cr = canvas.getBoundingClientRect()
+    const ar = apply.getBoundingClientRect()
+    const sr = shell.getBoundingClientRect()
+    const br = body.getBoundingClientRect()
+    const lr = left.getBoundingClientRect()
+    const rr = right.getBoundingClientRect()
+    return cr.width >= 80
+      && cr.height >= 80
+      && cr.bottom <= ar.top + 8
+      && sr.width >= Math.min(900, window.innerWidth * 0.7)
+      && Math.abs(br.width - sr.width) <= 48
+      && lr.left <= sr.left + 28
+      && rr.right >= sr.right - 28
+      && Math.abs(lr.width - rr.width) <= 2
+  }, null, { timeout: 8000 })
+  await page.locator('[data-pixel-loupe-open]').click()
+  await page.locator('[data-pixel-canvas]').evaluate((canvas) => {
+    const rect = canvas.getBoundingClientRect()
+    canvas.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width * 0.5,
+      clientY: rect.top + rect.height * 0.42,
+      pointerId: 1,
+      pointerType: 'mouse',
+      buttons: 1,
+    }))
+    canvas.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width * 0.5,
+      clientY: rect.top + rect.height * 0.42,
+      pointerId: 1,
+      pointerType: 'mouse',
+      buttons: 0,
+    }))
+  })
+  await page.waitForSelector('[data-pixel-loupe="1"]', { timeout: 8000 })
+  await page.screenshot({ path: PIXEL_SHOT, fullPage: false })
+  await page.locator('[data-pixel-loupe-close]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-pixel-loupe="1"]'), null, { timeout: 5000 })
+  await page.locator('[data-pixel-wand]').click()
+  await page.locator('[data-pixel-canvas]').evaluate((canvas) => {
+    const rect = canvas.getBoundingClientRect()
+    const fire = (type, xr, yr, buttons) => {
+      canvas.dispatchEvent(new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left + rect.width * xr,
+        clientY: rect.top + rect.height * yr,
+        pointerId: 1,
+        pointerType: 'mouse',
+        buttons,
+      }))
+    }
+    fire('pointerdown', 0.5, 0.42, 1)
+    fire('pointerup', 0.5, 0.42, 0)
+  })
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('[data-pixel-canvas]')
+    const btn = document.querySelector('[data-pixel-apply]')
+    return Number(canvas?.getAttribute('data-pixel-selected') || 0) > 20 && Boolean(btn) && !btn.disabled
+  }, null, { timeout: 8000 })
+  await page.evaluate(() => document.querySelector('[data-pixel-apply]')?.click())
+  await page.waitForFunction(() => !document.querySelector('[data-pixel-studio="1"]'), null, { timeout: 8000 })
+  await page.locator('[data-pixel-restore]').click()
+  await page.waitForSelector('[data-restore-toast="1"]', { timeout: 5000 })
   await page.locator('[data-motion-preset="jellyBounce"]').click()
   await page.waitForFunction(() => document.querySelector('[data-motion-preset="jellyBounce"]')?.classList.contains('is-on'), { timeout: 5000 })
   const playBtn = page.locator('[data-play-toggle="stage"]')
@@ -172,7 +371,12 @@ async function runVisualCheck() {
     if (!chat || !main) return false
     const ctx = chat.getContext('2d')
     if (!ctx) return false
-    const sample = ctx.getImageData(0, 0, Math.min(chat.width, 24), Math.min(chat.height, 24))
+    const w = chat.width || 0
+    const h = chat.height || 0
+    if (w < 8 || h < 8) return false
+    const sx = Math.max(0, Math.floor(w / 2 - 12))
+    const sy = Math.max(0, Math.floor(h / 2 - 12))
+    const sample = ctx.getImageData(sx, sy, Math.min(24, w - sx), Math.min(24, h - sy))
     for (let i = 3; i < sample.data.length; i += 4) {
       if (sample.data[i] > 8) return true
     }
@@ -200,7 +404,13 @@ async function runVisualCheck() {
   await page.waitForSelector('[data-clip-del]', { timeout: 5000 })
   await page.waitForSelector('[data-clip-clear]', { timeout: 5000 })
   await page.getByRole('button', { name: '이모티콘 컷' }).click()
+  await page.waitForSelector('[data-source-tab="cuts"]', { timeout: 8000 })
   await page.waitForSelector('.mgs-cuts button', { timeout: 10000 })
+  await page.waitForSelector('[data-cut-bank="1"]', { timeout: 8000 })
+  await page.locator('[data-seq-cut="0"]').click()
+  await page.waitForSelector('[data-seq-remove="0"]', { timeout: 8000 })
+  await page.locator('[data-seq-remove="0"]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-seq-index="0"]'), null, { timeout: 5000 })
   await page.waitForFunction(() => {
     const save = document.querySelector('[data-clip-save]')
     const gif = document.querySelector('[data-encode-fmt="gif"]')
@@ -227,11 +437,10 @@ async function runVisualCheck() {
   await page.waitForTimeout(400)
   await page.screenshot({ path: STUDIO_SHOT, fullPage: false })
 
-  await page.getByRole('button', { name: '내 PC 업로드' }).click()
-  await page.waitForSelector('[data-pc-dropzone="1"]', { timeout: 8000 })
   const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 })
-  await page.locator('[data-pc-dropzone="1"]').click()
+  await page.getByRole('button', { name: '내 PC 업로드' }).click()
   const chooser = await chooserPromise
+  await page.waitForSelector('[data-pc-dropzone="1"]', { timeout: 8000 })
   if (!chooser.isMultiple()) {
     throw new Error('PC upload file picker is not multiple')
   }
@@ -248,12 +457,14 @@ async function runVisualCheck() {
   const specText = await page.locator('[data-store-spec]').innerText()
   console.log('\n=============================================')
   console.log(`📸 [그리드 캡처]: public/test-result-grid.png (${cutCount}칸)`)
+  console.log(`📸 [초정밀 픽셀 에디터 E2E]: public/test-result-pixel.png`)
   console.log(`📸 [내 PC 업로드]: public/test-result.png`)
   console.log(`📸 [모션 스튜디오]: public/test-result-studio.png (${heading || '모션 스튜디오'} · stillLoop=${stillLoop} · jelly=${jellyOn} · playing=${playing})`)
   console.log(`🔍 [시각 검증 완료]: 텍스트 끄기(빈 입력) · 채팅 미리보기 실시간 미러 · 스펙 ${specText.replace(/\s+/g, ' ').trim()} · 체커보드`)
   console.log('=============================================\n')
 
   await browser.close()
+  await waitForApprovalWithReminder()
 }
 
 runVisualCheck().catch((error) => {

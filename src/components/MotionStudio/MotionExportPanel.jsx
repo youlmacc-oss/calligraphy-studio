@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import TransparencyCheckModal from '../TransparencyCheckModal.jsx'
+import { canvasFromUrl } from '../../lib/fakeBackgroundPurge.js'
+import { useTransparencyGate } from '../../hooks/useTransparencyGate.js'
 import clsx from 'clsx'
 import { magnify } from '../MenuMagnifierHUD.jsx'
 import EncodeProgressModal from './EncodeProgressModal.jsx'
@@ -33,12 +36,15 @@ export default function MotionExportPanel({
   particles = [],
   stillLoop = false,
   motionPreset = 'none',
+  isolateSprite = true,
   intensity = 70,
   loopSeconds = 2,
   captionOn = false,
   captionText = '',
   captionSize = 'md',
   captionStroke = 'black',
+  captionFont,
+  captionPos = { posX: 0, posY: 0 },
 }) {
   const studio = useMotionStudio()
   const [busy, setBusy] = useState(false)
@@ -52,6 +58,7 @@ export default function MotionExportPanel({
   const [result, setResult] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [toast, setToast] = useState('')
+  const alphaGate = useTransparencyGate()
   const ready = frames.length > 0 && !busy
 
   const flashToast = (text) => {
@@ -74,8 +81,17 @@ export default function MotionExportPanel({
       captionText,
       captionSize,
       captionStroke,
+      captionFont,
+      posX: captionPos.posX,
+      posY: captionPos.posY,
     })
     flashToast(`클립 ${slot} 저장됨`)
+  }
+
+  const requestExport = async (format) => {
+    if (!ready) return
+    const probe = await canvasFromUrl(frames[0]?.url || '')
+    await alphaGate.runOrAsk(probe ? [probe] : [], () => runExport(format))
   }
 
   const runExport = async (format) => {
@@ -100,12 +116,16 @@ export default function MotionExportPanel({
         particles,
         stillLoop,
         preset: motionPreset,
+        isolate: isolateSprite,
         intensity,
         loopSeconds,
         captionOn,
         captionText,
         captionSize,
         captionStroke,
+        captionFont,
+        posX: captionPos.posX,
+        posY: captionPos.posY,
         onProgress: (info) => {
           setPercent(info.percent || 0)
           setCurrent(info.current || 0)
@@ -149,7 +169,7 @@ export default function MotionExportPanel({
           className={clsx('ms-btn', 'ms-export-btn')}
           disabled={!frames.length || busy}
           data-encode-fmt="gif"
-          onClick={() => runExport('gif')}
+          onClick={() => requestExport('gif')}
           {...magnify('GIF로 내보내기', '타임라인과 텍스트 모션을 360×360 GIF로 인코딩해 바로 저장합니다')}
         >
           {busy ? BUSY_LABEL : '🎬 GIF로 내보내기'}
@@ -159,7 +179,7 @@ export default function MotionExportPanel({
           className={clsx('ms-btn', 'ms-export-btn')}
           disabled={!frames.length || busy}
           data-encode-fmt="webp"
-          onClick={() => runExport('webp')}
+          onClick={() => requestExport('webp')}
           {...magnify('WebP 내보내기', '알파 투명 Animated WebP로 인코딩해 카카오 최신 규격으로 저장합니다')}
         >
           {busy ? BUSY_LABEL : '✨ WebP(투명) 내보내기'}
@@ -168,6 +188,12 @@ export default function MotionExportPanel({
       {toast ? (
         <p className="ms-toast" role="status" data-clip-toast="1">{toast}</p>
       ) : null}
+      <TransparencyCheckModal
+        open={alphaGate.open}
+        onPurgeAndExport={alphaGate.confirmPurge}
+        onExportAsIs={alphaGate.confirmAsIs}
+        onCancel={alphaGate.cancel}
+      />
       <EncodeProgressModal
         open={open}
         state={state}

@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Trash2 } from 'lucide-react'
 import FontPicker from './FontPicker.jsx'
+import { NumberSliderControl } from './NumberSliderControl.jsx'
 import { magnify } from './MenuMagnifierHUD.jsx'
 import { fitLayerFontSize, resolveWeight } from '../lib/renderStyle.js'
 import { clampFontSize, FONT_SIZE_MAX, FONT_SIZE_MIN, fontSizeSliderRange } from '../lib/fontSize.js'
@@ -213,21 +214,6 @@ export default function LayerEditCard({
 
           <div className="size-fit-block mt-3">
             <div className="size-fit-head">
-              <label className="ui-label slider-control" {...magnify('폰트 크기', `${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px. 기본 70px가 슬라이더 정중앙입니다. 긴 문장은 화면 맞춤으로 한 번에 줄입니다`)}>
-                크기
-              </label>
-              <input
-                type="number"
-                className="size-num"
-                min={range.min}
-                max={range.max}
-                step={1}
-                value={clampFontSize(layer.fontSize)}
-                onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
-                onBlur={onCommit}
-                {...magnify('크기 숫자 입력', '원하는 px 값을 직접 입력합니다')}
-              />
-              <span className="size-num-unit">px</span>
               <button
                 type="button"
                 className="size-fit-btn"
@@ -242,64 +228,97 @@ export default function LayerEditCard({
                 📏 화면 맞춤
               </button>
             </div>
-            <input
-              type="range"
+            <NumberSliderControl
+              label="크기"
+              tooltip={`${FONT_SIZE_MIN}~${FONT_SIZE_MAX}px. 기본 70px가 슬라이더 정중앙입니다. 긴 문장은 화면 맞춤으로 한 번에 줄입니다`}
+              unit="px"
               min={range.min}
               max={range.max}
               step={1}
-              className="ctrl-slider slider-control mt-1.5"
               value={clampFontSize(layer.fontSize)}
-              onChange={(event) => onPatch(layer.id, { fontSize: clampFontSize(event.target.value) }, false)}
-              onPointerUp={onCommit}
-              {...magnify('폰트 크기 슬라이더', `${FONT_SIZE_MIN}px부터 ${FONT_SIZE_MAX}px까지 1px 단위입니다. 기본 70px가 정중앙입니다`)}
+              onChange={(next) => onPatch(layer.id, { fontSize: clampFontSize(next) }, false)}
+              onCommit={onCommit}
             />
           </div>
-          <label className="ui-label slider-control mt-2" {...magnify('자간', '글자 사이 간격을 조절합니다')}>
-            자간 {layer.letterSpacing}
-            <input type="range" min="-8" max="28" className="ctrl-slider mt-1" value={layer.letterSpacing} onChange={(event) => onPatch(layer.id, { letterSpacing: Number(event.target.value) }, false)} />
-          </label>
+          <NumberSliderControl
+            label="자간"
+            tooltip="글자 사이 간격을 조절합니다"
+            unit="px"
+            min={-8}
+            max={28}
+            step={1}
+            value={layer.letterSpacing}
+            onChange={(next) => onPatch(layer.id, { letterSpacing: next }, false)}
+            onCommit={onCommit}
+          />
           {layer.type !== 'seal' ? (
-            <label className="ui-label slider-control mt-2" {...magnify('줄간격', '여러 줄 사이 세로 간격을 조절합니다')}>
-              줄간격
-              <input
-                type="range"
-                min="80"
-                max="250"
-                className="ctrl-slider mt-1"
-                value={Math.round((layer.lineHeight ?? 1.2) * 100)}
-                onChange={(event) => onPatch(layer.id, { lineHeight: Number(event.target.value) / 100 }, false)}
-              />
-            </label>
+            <NumberSliderControl
+              label="줄간격"
+              tooltip="여러 줄 사이 세로 간격을 조절합니다"
+              unit=""
+              min={80}
+              max={250}
+              step={1}
+              value={Math.round((layer.lineHeight ?? 1.2) * 100)}
+              onChange={(next) => onPatch(layer.id, { lineHeight: next / 100 }, false)}
+              onCommit={onCommit}
+            />
           ) : null}
-          <label className="ui-label slider-control mt-2" {...magnify('레이어 회전', '이 텍스트만 각도를 돌립니다')}>
-            회전 {layer.rotation}°
-            <input type="range" min="-180" max="180" className="ctrl-slider mt-1" value={layer.rotation} onChange={(event) => onPatch(layer.id, { rotation: Number(event.target.value) }, false)} />
-          </label>
+          <NumberSliderControl
+            label="회전"
+            tooltip="이 텍스트만 각도를 돌립니다"
+            unit="°"
+            min={-180}
+            max={180}
+            step={1}
+            value={layer.rotation}
+            onChange={(next) => onPatch(layer.id, { rotation: next }, false)}
+            onCommit={onCommit}
+          />
           {layer.type !== 'seal' ? (
-            <label className="ui-label slider-control mt-2" {...magnify('곡선 텍스트', '글자를 원형·반원 아치로 휘게 합니다')}>
-              곡선 텍스트 {layer.curveAmount ?? 0}°
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                className="ctrl-slider mt-1"
-                value={layer.curveAmount ?? 0}
-                onChange={(event) => onPatch(layer.id, { curveAmount: Number(event.target.value) }, false)}
-              />
-            </label>
+            <NumberSliderControl
+              label="곡선 텍스트"
+              tooltip="글자를 원형·반원 아치로 휘게 합니다"
+              unit="°"
+              min={-180}
+              max={180}
+              step={1}
+              value={layer.curveAmount ?? 0}
+              onChange={(next) => onPatch(layer.id, { curveAmount: next }, false)}
+              onCommit={onCommit}
+            />
           ) : null}
-          <label className="ui-label slider-control mt-2" {...magnify('투명도', '글자가 배경과 얼마나 겹쳐 보일지 조절합니다')}>
-            투명도 {Math.round((layer.opacity ?? 1) * 100)}%
-            <input type="range" min="0" max="100" className="ctrl-slider mt-1" value={Math.round((layer.opacity ?? 1) * 100)} onChange={(event) => onPatch(layer.id, { opacity: Number(event.target.value) / 100 }, false)} />
-          </label>
-          <label className="ui-label slider-control mt-2" {...magnify('가로 위치', '텍스트를 좌우로 옮깁니다')}>
-            가로 위치 {Math.round((layer.ox ?? 0) * 100)}
-            <input type="range" min="-45" max="45" className="ctrl-slider mt-1" value={Math.round((layer.ox ?? 0) * 100)} onChange={(event) => onPatch(layer.id, { ox: Number(event.target.value) / 100 }, false)} />
-          </label>
-          <label className="ui-label slider-control mt-2" {...magnify('세로 위치', '텍스트를 위아래로 옮깁니다')}>
-            세로 위치 {Math.round((layer.oy ?? 0) * 100)}
-            <input type="range" min="-45" max="45" className="ctrl-slider mt-1" value={Math.round((layer.oy ?? 0) * 100)} onChange={(event) => onPatch(layer.id, { oy: Number(event.target.value) / 100 }, false)} />
-          </label>
+          <NumberSliderControl
+            label="투명도"
+            tooltip="글자가 배경과 얼마나 겹쳐 보일지 조절합니다"
+            unit="%"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round((layer.opacity ?? 1) * 100)}
+            onChange={(next) => onPatch(layer.id, { opacity: next / 100 }, false)}
+            onCommit={onCommit}
+          />
+          <NumberSliderControl
+            label="가로 위치"
+            tooltip="텍스트를 좌우로 옮깁니다"
+            min={-45}
+            max={45}
+            step={1}
+            value={Math.round((layer.ox ?? 0) * 100)}
+            onChange={(next) => onPatch(layer.id, { ox: next / 100 }, false)}
+            onCommit={onCommit}
+          />
+          <NumberSliderControl
+            label="세로 위치"
+            tooltip="텍스트를 위아래로 옮깁니다"
+            min={-45}
+            max={45}
+            step={1}
+            value={Math.round((layer.oy ?? 0) * 100)}
+            onChange={(next) => onPatch(layer.id, { oy: next / 100 }, false)}
+            onCommit={onCommit}
+          />
 
           {layer.type !== 'seal' ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -355,49 +374,104 @@ export default function LayerEditCard({
               <label className="ui-label" {...magnify('외곽선 색', '글자 테두리 색을 고릅니다')}>외곽선
                 <input type="color" className="color-input" value={layer.strokeColor} onChange={(event) => onPatch(layer.id, { strokeColor: event.target.value }, false)} />
               </label>
-              <label className="ui-label col-span-2" {...magnify('외곽선 두께', '글자 테두리를 두껍게 또는 얇게 만듭니다')}>두께 {layer.strokeWidth}
-                <input type="range" min="0" max="14" className="ctrl-slider mt-1" value={layer.strokeWidth} onChange={(event) => onPatch(layer.id, { strokeWidth: Number(event.target.value) }, false)} />
-              </label>
+              <div className="col-span-2">
+                <NumberSliderControl
+                  label="외곽선 두께"
+                  tooltip="글자 테두리를 두껍게 또는 얇게 만듭니다"
+                  min={0}
+                  max={14}
+                  step={1}
+                  value={layer.strokeWidth}
+                  onChange={(next) => onPatch(layer.id, { strokeWidth: next }, false)}
+                  onCommit={onCommit}
+                />
+              </div>
               <label className="ui-label" {...magnify('2차 외곽선 색', '유튜브 썸네일용 바깥 테두리 색입니다')}>2차 외곽선
                 <input type="color" className="color-input" value={layer.strokeColor2 || '#0f172a'} onChange={(event) => onPatch(layer.id, { strokeColor2: event.target.value }, false)} />
               </label>
-              <label className="ui-label" {...magnify('2차 외곽선 두께', '안쪽 테두리 바깥에 한 겹 더 칩니다')}>2차 두께 {layer.strokeWidth2 ?? 0}
-                <input type="range" min="0" max="18" className="ctrl-slider mt-1" value={layer.strokeWidth2 ?? 0} onChange={(event) => onPatch(layer.id, { strokeWidth2: Number(event.target.value) }, false)} />
-              </label>
+              <div className="col-span-2">
+                <NumberSliderControl
+                  label="2차 두께"
+                  tooltip="안쪽 테두리 바깥에 한 겹 더 칩니다"
+                  min={0}
+                  max={18}
+                  step={1}
+                  value={layer.strokeWidth2 ?? 0}
+                  onChange={(next) => onPatch(layer.id, { strokeWidth2: next }, false)}
+                  onCommit={onCommit}
+                />
+              </div>
               <label className="ui-label" {...magnify('그림자 색', '글자 그림자의 색을 고릅니다')}>그림자
                 <input type="color" className="color-input" value={layer.shadowColor} onChange={(event) => onPatch(layer.id, { shadowColor: event.target.value }, false)} />
               </label>
-              <label className="ui-label" {...magnify('그림자 블러', '그림자를 부드럽게 번지게 합니다')}>블러 {layer.shadowBlur}
-                <input type="range" min="0" max="40" className="ctrl-slider mt-1" value={layer.shadowBlur} onChange={(event) => onPatch(layer.id, { shadowBlur: Number(event.target.value) }, false)} />
-              </label>
+              <div className="col-span-2">
+                <NumberSliderControl
+                  label="그림자 블러"
+                  tooltip="그림자를 부드럽게 번지게 합니다"
+                  min={0}
+                  max={40}
+                  step={1}
+                  value={layer.shadowBlur}
+                  onChange={(next) => onPatch(layer.id, { shadowBlur: next }, false)}
+                  onCommit={onCommit}
+                />
+              </div>
             </div>
           </div>
 
           {showCalligraphy ? (
             <div className="calligraphy-panel mt-3">
               <p className="ui-label mb-2">✍️ 서예 세부 조절</p>
-              <label className="ui-label" {...magnify('먹물 농담', '서예 잉크의 진하기를 조절합니다')}>
-                먹물 농담 {studio.inkDensity}
-                <input type="range" min="10" max="100" className="ctrl-slider ink-slider mt-1" value={studio.inkDensity} onChange={(event) => onPatchStudio({ inkDensity: Number(event.target.value) }, false)} />
-              </label>
-              <label className="ui-label mt-2" {...magnify('갈필 강도', '붓이 마른 듯한 갈필·번짐 정도를 조절합니다')}>
-                번짐 / 갈필 {studio.dryBrush}
-                <input type="range" min="0" max="100" className="ctrl-slider ink-slider mt-1" value={studio.dryBrush} onChange={(event) => onPatchStudio({ dryBrush: Number(event.target.value) }, false)} />
-              </label>
+              <NumberSliderControl
+                label="먹물 농담"
+                tooltip="서예 잉크의 진하기를 조절합니다"
+                min={10}
+                max={100}
+                step={1}
+                value={studio.inkDensity}
+                sliderClassName="ctrl-slider ink-slider"
+                onChange={(next) => onPatchStudio({ inkDensity: next }, false)}
+                onCommit={onCommit}
+              />
+              <NumberSliderControl
+                label="번짐 / 갈필"
+                tooltip="붓이 마른 듯한 갈필·번짐 정도를 조절합니다"
+                min={0}
+                max={100}
+                step={1}
+                value={studio.dryBrush}
+                sliderClassName="ctrl-slider ink-slider"
+                onChange={(next) => onPatchStudio({ dryBrush: next }, false)}
+                onCommit={onCommit}
+              />
             </div>
           ) : null}
 
           {showWoodcut ? (
             <div className="woodcut-panel mt-3">
               <p className="ui-label mb-2">🪵 목각 세부 조절</p>
-              <label className="ui-label" {...magnify('조각 깊이', '목각이 파여 들어간 깊이를 조절합니다')}>
-                조각 깊이 {studio.chiselDepth}
-                <input type="range" min="1" max="12" className="ctrl-slider wood-slider mt-1" value={studio.chiselDepth} onChange={(event) => onPatchStudio({ chiselDepth: Number(event.target.value) }, false)} />
-              </label>
-              <label className="ui-label mt-2" {...magnify('나이테 결', '나무 결의 거친 정도를 조절합니다')}>
-                나이테 결 {studio.roughness}
-                <input type="range" min="0" max="100" className="ctrl-slider wood-slider mt-1" value={studio.roughness} onChange={(event) => onPatchStudio({ roughness: Number(event.target.value) }, false)} />
-              </label>
+              <NumberSliderControl
+                label="조각 깊이"
+                tooltip="목각이 파여 들어간 깊이를 조절합니다"
+                min={1}
+                max={12}
+                step={1}
+                value={studio.chiselDepth}
+                sliderClassName="ctrl-slider wood-slider"
+                onChange={(next) => onPatchStudio({ chiselDepth: next }, false)}
+                onCommit={onCommit}
+              />
+              <NumberSliderControl
+                label="나이테 결"
+                tooltip="나무 결의 거친 정도를 조절합니다"
+                min={0}
+                max={100}
+                step={1}
+                value={studio.roughness}
+                sliderClassName="ctrl-slider wood-slider"
+                onChange={(next) => onPatchStudio({ roughness: next }, false)}
+                onCommit={onCommit}
+              />
             </div>
           ) : null}
 

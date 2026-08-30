@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import clsx from 'clsx'
 import { magnify } from '../MenuMagnifierHUD.jsx'
+import { DEFAULT_EMOTICON_FONT_ID, EMOTICON_FONTS, ensureEmoticonFontsReady, normalizeEmoticonFontId } from '../../lib/emoticonFonts.js'
 import { CAPTION_SIZE_PRESETS, CAPTION_STROKE_PRESETS } from './dynamicTextMotion.js'
 
 export default function CaptionControlBar({
@@ -7,11 +9,19 @@ export default function CaptionControlBar({
   text = '',
   sizeId = 'md',
   strokeId = 'black',
+  fontId = DEFAULT_EMOTICON_FONT_ID,
   onEnabled,
   onText,
   onSize,
   onStroke,
+  onFont,
 }) {
+  const selectedFont = normalizeEmoticonFontId(fontId)
+
+  useEffect(() => {
+    ensureEmoticonFontsReady(selectedFont)
+  }, [selectedFont])
+
   return (
     <div className="ms-caption ms-toolbar-row" data-caption-bar="1" aria-label="자막 입력">
       <button
@@ -35,6 +45,21 @@ export default function CaptionControlBar({
         onChange={(event) => onText?.(event.target.value)}
         aria-label="자막 입력"
       />
+      <select
+        className="ms-caption-font"
+        value={selectedFont}
+        disabled={!enabled}
+        data-caption-font="1"
+        aria-label="자막 폰트"
+        onChange={(event) => onFont?.(normalizeEmoticonFontId(event.target.value))}
+        {...magnify('자막 폰트', '말풍선/자막에 쓸 상업용 무료 한글 폰트 10선입니다')}
+      >
+        {EMOTICON_FONTS.map((font) => (
+          <option key={font.id} value={font.id} style={{ fontFamily: font.family }}>
+            {font.name}
+          </option>
+        ))}
+      </select>
       <div className="ms-speed" role="group" aria-label="글자 크기">
         {CAPTION_SIZE_PRESETS.map((item) => (
           <button

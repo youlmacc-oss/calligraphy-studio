@@ -1,4 +1,5 @@
 import { primeHqContext } from '../../utils/hqRender.js'
+import { resolveMotionSprite } from './spriteIsolate.js'
 
 export const MOTION_NONE = 'none'
 
@@ -245,13 +246,46 @@ export function poseAtLoopSeam(presetId, intensity = 0.7) {
   return { start: a, end: b }
 }
 
+const SPRITE_FIT = 0.8
+
+export function spriteDrawSize(image, width, height, fit = SPRITE_FIT) {
+  const sw = image?.naturalWidth || image?.width || 1
+  const sh = image?.naturalHeight || image?.height || 1
+  const maxDim = Math.min(width * fit, height * fit)
+  const aspect = sw / Math.max(1, sh)
+  if (aspect > 1) return { drawW: maxDim, drawH: maxDim / aspect }
+  return { drawW: maxDim * aspect, drawH: maxDim }
+}
+
 function drawContained(ctx, source, dx, dy, width, height) {
-  const sw = source.naturalWidth || source.width || width
-  const sh = source.naturalHeight || source.height || height
-  const scale = Math.min(width / sw, height / sh)
-  const dw = sw * scale
-  const dh = sh * scale
-  ctx.drawImage(source, dx - dw / 2, dy - dh / 2, dw, dh)
+  const { drawW, drawH } = spriteDrawSize(source, width, height, SPRITE_FIT)
+  ctx.drawImage(source, dx - drawW / 2, dy - drawH / 2, drawW, drawH)
+}
+
+export function renderIsolatedSpriteMotion(ctx, croppedSprite, motionParams = {}, width = 360, height = 360) {
+  return renderIsolatedCharacterMotion(ctx, croppedSprite, motionParams, width, height)
+}
+
+export function renderIsolatedCharacterMotion(ctx, characterImg, motionParams = {}, width = 360, height = 360) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+  if (!characterImg) return
+  const {
+    offsetX = 0,
+    offsetY = 0,
+    rotation = 0,
+    scaleX = 1,
+    scaleY = 1,
+    opacity = 1,
+  } = motionParams
+  const { drawW, drawH } = spriteDrawSize(characterImg, width, height, SPRITE_FIT)
+  ctx.save()
+  ctx.globalAlpha = opacity
+  ctx.translate(width / 2 + Number(offsetX), height / 2 + Number(offsetY))
+  ctx.rotate((Number(rotation) * Math.PI) / 180)
+  ctx.scale(Number(scaleX) || 1, Number(scaleY) || 1)
+  ctx.drawImage(characterImg, -drawW / 2, -drawH / 2, drawW, drawH)
+  ctx.restore()
 }
 
 export function paintMotionFrame(ctx, source, {
@@ -260,17 +294,15 @@ export function paintMotionFrame(ctx, source, {
   time01,
   preset = MOTION_NONE,
   intensity = 70,
+  isolate = true,
 } = {}) {
   const w = width || ctx.canvas.width
   const h = height || ctx.canvas.height
+  const sprite = resolveMotionSprite(source, isolate)
 
   if (isMotionNone(preset)) {
     primeHqContext(ctx)
-    ctx.save()
-    ctx.clearRect(0, 0, w, h)
-    ctx.translate(w / 2, h / 2)
-    drawContained(ctx, source, 0, 0, w, h)
-    ctx.restore()
+    renderIsolatedCharacterMotion(ctx, sprite, {}, w, h)
     return
   }
 
@@ -279,6 +311,7 @@ export function paintMotionFrame(ctx, source, {
 
   primeHqContext(ctx)
   ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, w, h)
   ctx.translate(w / 2 + motion.dx, h / 2)
   ctx.rotate((motion.rotateDeg * Math.PI) / 180)
@@ -298,31 +331,31 @@ export function paintMotionFrame(ctx, source, {
     ctx.shadowBlur = 0
     ctx.shadowOffsetX = -shift
     ctx.shadowOffsetY = 0
-    drawContained(ctx, source, 0, motion.dy, w, h)
+    drawContained(ctx, sprite, 0, motion.dy, w, h)
     ctx.shadowColor = 'rgba(40, 210, 255, 0.95)'
     ctx.shadowOffsetX = shift
-    drawContained(ctx, source, 0, motion.dy, w, h)
+    drawContained(ctx, sprite, 0, motion.dy, w, h)
     ctx.restore()
     ctx.globalCompositeOperation = 'source-over'
     ctx.globalAlpha = motion.alpha
     ctx.shadowColor = 'transparent'
     ctx.shadowOffsetX = 0
-    drawContained(ctx, source, 0, motion.dy, w, h)
+    drawContained(ctx, sprite, 0, motion.dy, w, h)
     const bandH = Math.max(8, h * 0.1)
     const bandY = h * 0.38 + motion.dy
     ctx.drawImage(
-      source,
+      sprite,
       0,
-      Math.max(0, (source.height || h) * 0.38),
-      source.width || w,
-      Math.max(1, (source.height || h) * 0.1),
+      Math.max(0, (sprite.height || h) * 0.38),
+      sprite.width || w,
+      Math.max(1, (sprite.height || h) * 0.1),
       -w / 2 + motion.sliceShift,
       -h / 2 + bandY - bandH / 2,
       w,
       bandH,
     )
   } else {
-    drawContained(ctx, source, 0, motion.dy, w, h)
+    drawContained(ctx, sprite, 0, motion.dy, w, h)
   }
 
   ctx.restore()

@@ -60,16 +60,19 @@ import {
   SHEET_ACCEPT,
   SHEET_GRID_PRESETS,
 } from '../lib/emoticonSplit.js'
+import { buildDiagnosticReport, copyDiagnosticLog, publishInspectorHud } from '../utils/debugger.js'
+import { evaluateSystemDiagnostics, mergeDiagnosticReport } from '../lib/systemDiagnostics.js'
+import { publishEmoticonCuts } from './MotionGifStudio/cutSnapshot.js'
+import { purgeFakeBackground } from '../lib/fakeBackgroundPurge.js'
+import { useTransparencyGate } from '../hooks/useTransparencyGate.js'
+import TransparencyCheckModal from './TransparencyCheckModal.jsx'
+import { blitToHiDpiCanvas } from '../utils/hqRender.js'
 
 const liveSheetMemory = {
   canvas: null,
   url: '',
   fileName: '',
 }
-import { buildDiagnosticReport, copyDiagnosticLog, publishInspectorHud } from '../utils/debugger.js'
-import { evaluateSystemDiagnostics, mergeDiagnosticReport } from '../lib/systemDiagnostics.js'
-import { publishEmoticonCuts } from './MotionGifStudio/cutSnapshot.js'
-import { blitToHiDpiCanvas } from '../utils/hqRender.js'
 
 const TEXT_MODES = [
   { id: 'black', label: '블랙', hint: '하단 ROI 글자만 검게 바꿉니다. 캐릭터는 읽기 전용입니다' },
@@ -210,6 +213,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
   const [lightboxIndex, setLightboxIndex] = useState(-1)
   const [showTransparencyGuideModal, setShowTransparencyGuideModal] = useState(false)
   const [gridDetect, setGridDetect] = useState(null)
+  const alphaGate = useTransparencyGate()
   const vGuidesRef = useRef(verticalGuides)
   const hGuidesRef = useRef(horizontalGuides)
   const boundsRef = useRef(bounds)
@@ -533,8 +537,6 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     bindDetectedGrid(detected, canvas)
     const nextVertical = equalSplitGuides(DEFAULT_SHEET_COLS, nextBounds.left, nextBounds.right)
     const nextHorizontal = equalSplitGuides(DEFAULT_SHEET_ROWS, nextBounds.top, nextBounds.bottom)
-    setMode('grid')
-    modeRef.current = 'grid'
     setCols(DEFAULT_SHEET_COLS)
     setRows(DEFAULT_SHEET_ROWS)
     colsRef.current = DEFAULT_SHEET_COLS
@@ -543,9 +545,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     setHorizontalGuides(nextHorizontal)
     vGuidesRef.current = nextVertical
     hGuidesRef.current = nextHorizontal
-    await runSlice({
-      source: canvas,
-      nextMode: 'grid',
+    await runModeASmartDetection(canvas, {
       nextCols: DEFAULT_SHEET_COLS,
       nextRows: DEFAULT_SHEET_ROWS,
       nextVertical,
@@ -849,7 +849,31 @@ export default function EmoticonSplitterModal({ open, onClose }) {
     saveAs(blob, item.name)
   }
 
+  const refreshPurgedSlices = () => {
+    const next = slices.map((item) => {
+      if (item?.canvas) purgeFakeBackground(item.canvas)
+      return item?.canvas ? { ...item, preview: item.canvas.toDataURL('image/png') } : item
+    })
+    setSlices(next)
+    publishEmoticonCuts(next)
+    return next
+  }
+
+  const purgeBackgrounds = () => {
+    if (!slices.length) return
+    refreshPurgedSlices()
+    setNote('✨ 배경이 완벽하게 투명화되었습니다!')
+  }
+
   const downloadZip = async () => {
+    if (!slices.length) return
+    await alphaGate.runOrAsk(slices.map((item) => item.canvas).filter(Boolean), async ({ purged }) => {
+      if (purged) refreshPurgedSlices()
+      await packZip()
+    })
+  }
+
+  const packZip = async () => {
     if (!slices.length) return
     setBusy(true)
     setNote('카카오 360×360 PNG를 ZIP으로 묶는 중…')
@@ -1084,7 +1108,7 @@ export default function EmoticonSplitterModal({ open, onClose }) {
           style={{ '--emo-side-width': `${sideWidth}px` }}
         >
           <aside className="emo-split-side">
-            <p className="emo-split-note">{busy ? '처리 중…' : note}</p>
+            <p className="emo-split-note" data-purge-toast={String(note).includes('완벽하게 투명화') ? '1' : '0'}>{busy ? '처리 중…' : note}</p>
             <div
               className={clsx('emo-drop', dragOver && 'is-over')}
               onClick={(event) => {
@@ -1155,6 +1179,16 @@ export default function EmoticonSplitterModal({ open, onClose }) {
                 모드 B
               </button>
             </div>
+            <button
+              type="button"
+              className="emo-mode allow-long-text"
+              data-purge-bg="1"
+              disabled={busy || !slices.length}
+              onClick={purgeBackgrounds}
+              {...magnify('배경 투명화 확인사살', '가짜 흰/회색 격자 타일을 외곽부터 지워 진짜 투명 배경으로 바꿉니다.')}
+            >
+              🔪 배경 투명화 확인사살
+            </button>
             <div className="emo-presets" data-sheet-presets="1">
               {SHEET_GRID_PRESETS.map((preset) => (
                 <button
@@ -1404,6 +1438,12 @@ export default function EmoticonSplitterModal({ open, onClose }) {
         open={showTransparencyGuideModal}
         onContinue={() => dismissPngGuide(false)}
         onHideToday={() => dismissPngGuide(true)}
+      />
+      <TransparencyCheckModal
+        open={alphaGate.open}
+        onPurgeAndExport={alphaGate.confirmPurge}
+        onExportAsIs={alphaGate.confirmAsIs}
+        onCancel={alphaGate.cancel}
       />
     </div>
   )

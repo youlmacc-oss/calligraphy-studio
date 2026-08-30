@@ -96,13 +96,20 @@ export function buildCaptionPose({
   total = 1,
   sizeId = 'md',
   strokeId = 'black',
+  fontId,
+  captionFont,
   edge = 360,
+  posX = 0,
+  posY = 0,
 } = {}) {
   const label = resolveCaption(enabled, text, { customText, captionText, caption })
   if (!label) return null
   const pose = sampleTextMotion(effect, index, total, label)
   pose.fontPx = captionFontPx(sizeId, edge)
   pose.strokeStyle = captionStrokeColor(strokeId)
+  pose.fontId = fontId || captionFont
+  pose.posX = Number(posX) || 0
+  pose.posY = Number(posY) || 0
   return pose
 }
 

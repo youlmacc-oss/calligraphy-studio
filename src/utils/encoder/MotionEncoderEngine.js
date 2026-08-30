@@ -1,9 +1,10 @@
 import { GIFEncoder, quantize } from 'gifenc'
+import { ensureEmoticonFontsReady } from '../../lib/emoticonFonts.js'
 import {
   buildCaptionPose,
   normalizeTextMotionEffect,
 } from '../../components/MotionStudio/dynamicTextMotion.js'
-import { clearPreviewCaptionBand, paintDynamicTextMotion } from '../../components/MotionStudio/DynamicTextMotionRenderer.js'
+import { paintDynamicTextMotion } from '../../components/MotionStudio/DynamicTextMotionRenderer.js'
 import { clampSequenceFps, stillLoopFrameCount } from '../../components/MotionStudio/motionSequencer.js'
 import { applyDefringeToContext } from '../imageProcessor.js'
 import { normalizeParticleLayers, paintParticleOverlay } from '../../components/MotionStudio/particleOverlayEngine.js'
@@ -114,6 +115,9 @@ function paintTextAndParticles(ctx, {
   customText,
   captionSize,
   captionStroke,
+  captionFont,
+  posX = 0,
+  posY = 0,
 }) {
   const pose = buildCaptionPose({
     enabled: captionOn,
@@ -124,10 +128,12 @@ function paintTextAndParticles(ctx, {
     total: Math.max(1, total),
     sizeId: captionSize,
     strokeId: captionStroke,
+    fontId: captionFont,
     edge: size,
+    posX,
+    posY,
   })
   if (pose) {
-    clearPreviewCaptionBand(ctx, size)
     paintDynamicTextMotion(ctx, { size, pose })
   }
   const layers = normalizeParticleLayers(particles)
@@ -139,18 +145,13 @@ function paintTextAndParticles(ctx, {
 export async function composeStillMotionCanvases(frame, options = {}) {
   const size = ENCODER_SIZE
   const effect = normalizeTextMotionEffect(options.effect)
-  const source = document.createElement('canvas')
-  source.width = size
-  source.height = size
-  const sourceCtx = source.getContext('2d', { alpha: true, willReadFrequently: true })
-  if (!sourceCtx) throw new Error('Canvas 2D를 만들 수 없습니다.')
+  await ensureEmoticonFontsReady(options.captionFont || options.fontId)
   let image = null
   try {
     image = await loadFrameImage(frame?.url)
   } catch {
     image = null
   }
-  paintCharacter(sourceCtx, image, size)
   const total = stillLoopFrameCount(options.fps, options.loopSeconds, 1)
   const canvases = []
   for (let i = 0; i < total; i += 1) {
@@ -168,12 +169,13 @@ export async function composeStillMotionCanvases(frame, options = {}) {
     canvas.height = size
     const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
     if (!ctx) throw new Error('Canvas 2D를 만들 수 없습니다.')
-    paintMotionFrame(ctx, source, {
+    paintMotionFrame(ctx, image, {
       width: size,
       height: size,
       time01,
       preset: options.preset ?? 'none',
       intensity: options.intensity ?? 70,
+      isolate: options.isolate !== false,
     })
     paintTextAndParticles(ctx, {
       size,
@@ -188,6 +190,9 @@ export async function composeStillMotionCanvases(frame, options = {}) {
       customText: options.customText ?? options.captionText,
       captionSize: options.captionSize,
       captionStroke: options.captionStroke,
+      captionFont: options.captionFont || options.fontId,
+      posX: options.posX,
+      posY: options.posY,
     })
     canvases.push(canvas)
     await yieldToMain()
@@ -203,6 +208,7 @@ export async function composeSequenceCanvases(frames, options = {}) {
   }
   const size = ENCODER_SIZE
   const effect = normalizeTextMotionEffect(options.effect)
+  await ensureEmoticonFontsReady(options.captionFont || options.fontId)
   const canvases = []
   for (let i = 0; i < list.length; i += 1) {
     report(options.onProgress, {
@@ -238,6 +244,9 @@ export async function composeSequenceCanvases(frames, options = {}) {
       customText: options.customText ?? options.captionText,
       captionSize: options.captionSize,
       captionStroke: options.captionStroke,
+      captionFont: options.captionFont || options.fontId,
+      posX: options.posX,
+      posY: options.posY,
     })
     canvases.push(canvas)
     await yieldToMain()
@@ -264,22 +273,26 @@ export async function encodeGifFromCanvases(canvases, options = {}) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true })
     const imageData = ctx.getImageData(0, 0, width, height)
     const masked = maskOpaqueRgb(imageData.data)
-    const palette = (quantize(masked, 255, { format: 'rgb565' }) || []).map((color) => color.slice(0, 3))
-    if (!palette.length) palette.push([0, 0, 0])
-    const transparentIndex = Math.min(255, palette.length)
-    if (palette.length < 256) palette.push([0, 0, 0])
-    const index = floydSteinbergIndex(
+    const colors = (quantize(masked, 255, { format: 'rgb565' }) || []).map((color) => color.slice(0, 3))
+    if (!colors.length) colors.push([0, 0, 0])
+    const raw = floydSteinbergIndex(
       { width, height, data: imageData.data },
-      palette.slice(0, transparentIndex),
-      transparentIndex,
+      colors,
+      255,
       ENCODER_ALPHA_CUT,
     )
+    const index = new Uint8Array(raw.length)
+    for (let p = 0; p < raw.length; p += 1) {
+      index[p] = raw[p] === 255 ? 0x00 : raw[p] + 1
+    }
+    const palette = [[0, 0, 0], ...colors].slice(0, 256)
     gif.writeFrame(index, width, height, {
       palette,
       delay,
       repeat: i === 0 ? 0 : -1,
+      dispose: 2,
       transparent: true,
-      transparentIndex,
+      transparentIndex: 0x00,
     })
     const packed = 48 + Math.round(((i + 1) / list.length) * 52)
     report(options.onProgress, {

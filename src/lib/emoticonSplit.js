@@ -1,4 +1,5 @@
 import { inspectRenderedSlice } from '../utils/debugger.js'
+import { enforceTransparencyPurge } from './fakeBackgroundPurge.js'
 import { primeHqContext } from '../utils/hqRender.js'
 import { resamplePremultiplied } from '../utils/imageProcessor.js'
 import {
@@ -1415,7 +1416,7 @@ export function extractCleanEmoticonCell(sourceCanvas, sx, sy, sWidth, sHeight, 
     flattenTransparentPixels(keyed)
     cellCtx.putImageData(keyed, 0, 0)
   }
-  return cell
+  return opts.transparent === false ? cell : enforceTransparencyPurge(cell)
 }
 
 export function processHybridSheetCell(sourceCanvas, sx, sy, sWidth, sHeight, options = {}) {
@@ -2228,7 +2229,7 @@ export function fitToKakaoCanvas(source, box, {
     ctx.drawImage(crop, 0, 0, dwSrc, dhSrc, fit.renderX, fit.renderY, fit.renderW, fit.renderH)
     void textMode
     void customColor
-    return canvas
+    return transparent ? enforceTransparencyPurge(canvas) : canvas
   }
   const factor = 3
   const { canvas: hi, ctx: hiCtx } = makeAlphaCanvas(Math.max(2, fit.renderW * factor), Math.max(2, fit.renderH * factor))
@@ -2242,7 +2243,7 @@ export function fitToKakaoCanvas(source, box, {
   ctx.putImageData(pixels, 0, 0)
   void textMode
   void customColor
-  return canvas
+  return transparent ? enforceTransparencyPurge(canvas) : canvas
 }
 
 export async function fileToSheetCanvas(file) {

@@ -100,37 +100,148 @@ function strokeSpaced(ctx, layout, x, y, letterSpacing) {
   eachGlyph(layout, x, y, letterSpacing, (ch, gx, gy) => ctx.strokeText(ch, gx, gy))
 }
 
+function clearCanvasShadow(ctx) {
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
+}
+
+export function computeDualStrokeWidths(strokeWidth, stroke2Width) {
+  const s1 = Math.max(0, Number(strokeWidth) || 0)
+  const s2 = Math.max(0, Number(stroke2Width) || 0)
+  return { outer: (s1 + s2) * 2, inner: s1 * 2 }
+}
+
 function paintLayer(ctx, layout, x, y, letterSpacing, style) {
   ctx.save()
-  if (style.shadowColor) {
-    ctx.shadowColor = style.shadowColor
-    ctx.shadowBlur = style.shadowBlur ?? 0
-    ctx.shadowOffsetX = style.shadowOffsetX ?? 0
-    ctx.shadowOffsetY = style.shadowOffsetY ?? 0
-  }
-  const ox = x + (style.ox ?? 0)
-  const oy = y + (style.oy ?? 0)
+  const ox = x + (Number(style.ox) || 0)
+  const oy = y + (Number(style.oy) || 0)
   const curve = Number(style.curve) || 0
+  const s1 = Math.max(0, Number(style.lineWidth) || 0)
+  const s2 = Math.max(0, Number(style.lineWidth2) || 0)
+  const strokeMul = Number(style.strokeMul) > 0 ? Number(style.strokeMul) : 1
+  const hasS2 = Boolean(style.stroke2Style) && s2 > 0
+  const hasS1 = Boolean(style.strokeStyle) && s1 > 0
+  const hasFill = Boolean(style.fillStyle)
+  const shadowBlur = Number(style.shadowBlur) || 0
+  const shadowOffsetX = Number(style.shadowOffsetX) || 0
+  const shadowOffsetY = Number(style.shadowOffsetY) || 0
+  const hasShadow = Boolean(style.shadowColor) && (shadowBlur > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0)
   const run = (mode) => walkGlyphs(layout, ox, oy, letterSpacing, curve, (ch, gx, gy, angle, width) => {
     strokeOrFillGlyph(ctx, mode, ch, gx, gy, angle, width)
   })
+  const applyShadowOnce = () => {
+    if (!hasShadow) return
+    ctx.shadowColor = style.shadowColor
+    ctx.shadowBlur = shadowBlur
+    ctx.shadowOffsetX = shadowOffsetX
+    ctx.shadowOffsetY = shadowOffsetY
+  }
+
   ctx.lineJoin = 'round'
   ctx.miterLimit = 2
-  if (style.stroke2Style && (style.lineWidth2 ?? 0) > 0) {
+  let shadowApplied = false
+
+  if (hasS2) {
+    applyShadowOnce()
+    shadowApplied = hasShadow
     ctx.strokeStyle = style.stroke2Style
-    ctx.lineWidth = (style.lineWidth ?? 0) + style.lineWidth2
+    ctx.lineWidth = (s1 + s2) * strokeMul
     run('stroke')
+    clearCanvasShadow(ctx)
   }
-  if (style.strokeStyle && (style.lineWidth ?? 0) > 0) {
+  if (hasS1) {
+    if (!shadowApplied) {
+      applyShadowOnce()
+      shadowApplied = hasShadow
+    }
     ctx.strokeStyle = style.strokeStyle
-    ctx.lineWidth = style.lineWidth ?? 2
+    ctx.lineWidth = s1 * strokeMul
     run('stroke')
+    clearCanvasShadow(ctx)
   }
-  if (style.fillStyle) {
+  if (hasFill) {
+    if (!shadowApplied) applyShadowOnce()
     ctx.fillStyle = style.fillStyle
     run('fill')
+    clearCanvasShadow(ctx)
   }
   ctx.restore()
+}
+
+export function paintSinglePassTypography(ctx, layout, x, y, letterSpacing, state) {
+  const s1 = Math.max(0, Number(state.strokeWidth) || 0)
+  const s2 = Math.max(0, Number(state.stroke2Width) || 0)
+  paintLayer(ctx, layout, x, y, letterSpacing, {
+    fillStyle: state.textColor || state.fillStyle || '#ffffff',
+    strokeStyle: s1 > 0 ? (state.strokeColor || '#000000') : undefined,
+    lineWidth: s1,
+    stroke2Style: s2 > 0 ? (state.stroke2Color || '#000000') : undefined,
+    lineWidth2: s2,
+    strokeMul: 2,
+    shadowColor: state.shadowColor,
+    shadowBlur: Number(state.shadowBlur) || 0,
+    shadowOffsetX: Number(state.shadowOffsetX) || 0,
+    shadowOffsetY: Number(state.shadowOffsetY) || 0,
+    curve: Number(state.curve) || 0,
+    ox: Number(state.ox) || 0,
+    oy: Number(state.oy) || 0,
+  })
+}
+
+export function probeTypographyIsolation() {
+  if (typeof document === 'undefined') return { ok: true, skipped: true }
+  const w = 260
+  const h = 180
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return { ok: false, detail: '2d context missing' }
+  applyTypeface(ctx, { font: { family: 'sans-serif', weights: [900] }, fontSize: 72, fontWeight: 900 })
+  const layout = layoutText(ctx, '가', 0)
+  const paint = (shadowBlur) => {
+    ctx.clearRect(0, 0, w, h)
+    paintSinglePassTypography(ctx, layout, w / 2, h / 2, 0, {
+      textColor: '#ffffff',
+      strokeColor: '#ff0000',
+      stroke2Color: '#0000ff',
+      strokeWidth: 4,
+      stroke2Width: 4,
+      shadowColor: shadowBlur ? '#00ff00' : undefined,
+      shadowBlur,
+    })
+    return ctx.getImageData(0, 0, w, h)
+  }
+  const bbox = (img, thresh) => {
+    let minX = w
+    let minY = h
+    let maxX = -1
+    let maxY = -1
+    const data = img.data
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        if (data[(y * w + x) * 4 + 3] > thresh) {
+          if (x < minX) minX = x
+          if (y < minY) minY = y
+          if (x > maxX) maxX = x
+          if (y > maxY) maxY = y
+        }
+      }
+    }
+    if (maxX < 0) return { w: 0, h: 0 }
+    return { w: maxX - minX + 1, h: maxY - minY + 1 }
+  }
+  const tight = bbox(paint(0), 200)
+  const glow = bbox(paint(18), 8)
+  const extraW = glow.w - tight.w
+  const extraH = glow.h - tight.h
+  const maxExtra = computeDualStrokeWidths(4, 4).outer + 18 * 3 + 16
+  if (tight.w < 8 || extraW > maxExtra || extraH > maxExtra) {
+    return { ok: false, detail: `ghost expand ${extraW}×${extraH} (tight ${tight.w}×${tight.h})` }
+  }
+  return { ok: true, extraW, extraH }
 }
 
 function verticalGradient(ctx, x, y, fontSize, stops) {
@@ -324,7 +435,7 @@ function paintChunkyLetters(ctx, layout, x, y, letterSpacing, fontSize, { fill, 
 }
 
 function paintKitschSticker(ctx, layout, x, y, letterSpacing, fontSize, colors, mask, extras) {
-  const [, c1, c2] = colors
+  const [c0, c1] = colors
   paintChunkyLetters(
     ctx,
     layout,
@@ -332,7 +443,7 @@ function paintKitschSticker(ctx, layout, x, y, letterSpacing, fontSize, colors, 
     y,
     letterSpacing,
     fontSize,
-    { fill: c1, stroke: c2, bounce: 0.08, tilt: 0.06, line: 0.18 },
+    { fill: c0, stroke: c1, bounce: 0.08, tilt: 0.06, line: 0.18 },
     mask,
   )
   if (extras.stickerOn !== false) {
@@ -1410,11 +1521,26 @@ function resolveLayerPreset(layer, fallbackPreset, extras) {
   return null
 }
 
+function bindLayerColors(preset, layer) {
+  if (!preset?.colors) return preset
+  const next = [
+    layer.color ?? preset.colors[0],
+    layer.strokeColor ?? preset.colors[1],
+    layer.shadowColor ?? preset.colors[2],
+  ]
+  if (next[0] === preset.colors[0] && next[1] === preset.colors[1] && next[2] === preset.colors[2]) return preset
+  return { ...preset, colors: next }
+}
+
+export function resolveBoundColors(preset, layer) {
+  return bindLayerColors(preset, layer)?.colors ?? []
+}
+
 function paintStudioLayer(ctx, layer, font, preset, extras, viewW, viewH, scale, mask) {
   const display = displayText(layer.text)
   const fontSize = Math.max(10, layer.fontSize * scale)
   const letterSpacing = (layer.letterSpacing ?? 0) * scale
-  const layerPreset = resolveLayerPreset(layer, preset, extras)
+  const layerPreset = bindLayerColors(resolveLayerPreset(layer, preset, extras), layer)
   const { x, y } = layerAnchor(layer, viewW, viewH)
   ctx.save()
   ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity ?? 1))
@@ -1430,45 +1556,65 @@ function paintStudioLayer(ctx, layer, font, preset, extras, viewW, viewH, scale,
   const paintOne = (layout, lx, ly) => {
     const curve = Number(layer.curveAmount) || 0
     const useCurve = Math.abs(curve) >= 2
+    const s1 = Math.max(0, Number(layer.strokeWidth) || 0)
+    const s2 = Math.max(0, Number(layer.strokeWidth2) || 0)
+    const shadowBlur = Math.max(0, Number(layer.shadowBlur) || 0)
+    const shadowOffsetX = Number(layer.shadowOffsetX) || 0
+    const shadowOffsetY = Number(layer.shadowOffsetY) || 0
+    const userStroke = s1 > 0 || s2 > 0
+    const userShadow = shadowBlur > 0 || shadowOffsetX !== 0 || shadowOffsetY !== 0
+    const sliderPass = userStroke || userShadow
     const strokeStyle = {
-      strokeStyle: layer.strokeWidth > 0 ? layer.strokeColor : undefined,
-      lineWidth: layer.strokeWidth > 0 ? layer.strokeWidth * scale : 0,
-      stroke2Style: layer.strokeWidth2 > 0 ? (layer.strokeColor2 || '#0f172a') : undefined,
-      lineWidth2: layer.strokeWidth2 > 0 ? layer.strokeWidth2 * scale : 0,
+      strokeStyle: s1 > 0 ? layer.strokeColor : undefined,
+      lineWidth: s1 > 0 ? s1 * scale : 0,
+      stroke2Style: s2 > 0 ? (layer.strokeColor2 || '#0f172a') : undefined,
+      lineWidth2: s2 > 0 ? s2 * scale : 0,
+      strokeMul: 2,
       curve: useCurve ? curve : 0,
     }
     if (mask) {
-      if (layerPreset && TYPO_SHADERS.has(layerPreset.shader) && !useCurve) {
+      if (layerPreset && TYPO_SHADERS.has(layerPreset.shader) && !useCurve && !sliderPass) {
         paintShader(ctx, layout, lx, ly, letterSpacing, fontSize, layerPreset, viewW, viewH, true, { ...extras, text: display })
       } else {
         ctx.fillStyle = '#ffffff'
-        if (useCurve) {
-          paintLayer(ctx, layout, lx, ly, letterSpacing, { fillStyle: '#ffffff', curve })
+        if (useCurve || sliderPass) {
+          paintLayer(ctx, layout, lx, ly, letterSpacing, { fillStyle: '#ffffff', curve: strokeStyle.curve })
         } else {
           fillSpaced(ctx, layout, lx, ly, letterSpacing)
         }
       }
       return
     }
-    if (layerPreset && !useCurve) {
-      paintShader(ctx, layout, lx, ly, letterSpacing, fontSize, layerPreset, viewW, viewH, false, { ...extras, text: display })
-    }
-    if (layer.shadowBlur > 0) {
+    if (sliderPass) {
       paintLayer(ctx, layout, lx, ly, letterSpacing, {
         fillStyle: layer.color || '#f8fafc',
-        shadowColor: layer.shadowColor || '#000000',
-        shadowBlur: layer.shadowBlur,
-        curve: strokeStyle.curve,
-      })
-    }
-    if (!layerPreset || useCurve) {
-      paintLayer(ctx, layout, lx, ly, letterSpacing, {
-        fillStyle: layer.color || '#f8fafc',
+        shadowColor: userShadow ? (layer.shadowColor || '#000000') : undefined,
+        shadowBlur,
+        shadowOffsetX,
+        shadowOffsetY,
         ...strokeStyle,
       })
-    } else if (layer.strokeWidth > 0 || layer.strokeWidth2 > 0) {
-      paintLayer(ctx, layout, lx, ly, letterSpacing, strokeStyle)
+      if (layerPreset?.shader === 'kitschSticker' && extras.stickerOn !== false) {
+        paintStickers(ctx, {
+          text: display,
+          x: lx,
+          y: ly,
+          fontSize,
+          layout,
+          theme: extras.stickerTheme || 'fnb',
+          mask: false,
+        })
+      }
+      return
     }
+    if (layerPreset && !useCurve) {
+      paintShader(ctx, layout, lx, ly, letterSpacing, fontSize, layerPreset, viewW, viewH, false, { ...extras, text: display })
+      return
+    }
+    paintLayer(ctx, layout, lx, ly, letterSpacing, {
+      fillStyle: layer.color || '#f8fafc',
+      ...strokeStyle,
+    })
   }
   block.layouts.forEach((layout, index) => {
     paintOne(
@@ -1557,8 +1703,8 @@ async function drawStudioScene(ctx, options) {
     presetsById: options.presetsById,
   }
   const mask = viewMode === 'mask'
+  ctx.clearRect(0, 0, viewW, viewH)
   if (mask) {
-    ctx.clearRect(0, 0, viewW, viewH)
     ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, viewW, viewH)
   } else {
@@ -1607,6 +1753,7 @@ export async function drawLivePreview(canvas, options) {
   const ctx = canvas.getContext('2d', { alpha: true })
   primeHqContext(ctx)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, cssW, cssH)
   const scale = Math.min(cssW, cssH) / 512
 
   if (options.layers?.length) {
@@ -1644,6 +1791,16 @@ export async function drawLivePreview(canvas, options) {
   }
   if (options.viewMode === 'mask') drawMask(ctx, scaled)
   else drawStyled(ctx, scaled)
+}
+
+export async function exportCleanCanvas(options = {}) {
+  return renderStyledText({
+    ...options,
+    showOverlay: false,
+    gridOn: false,
+    centerGuides: false,
+    transparent: true,
+  })
 }
 
 export async function renderStyledText(options) {

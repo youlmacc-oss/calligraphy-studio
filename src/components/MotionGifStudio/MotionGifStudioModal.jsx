@@ -40,6 +40,12 @@ import { MotionStudioProvider } from '../MotionStudio/motionStudioContext.jsx'
 import MotionZipToolbarButton from '../MotionStudio/MotionZipToolbarButton.jsx'
 import { paintParticleOverlay, normalizeParticleLayers } from '../MotionStudio/particleOverlayEngine.js'
 import { paintLiveCaptionLayer } from '../MotionStudio/DynamicTextMotionRenderer.js'
+import { setupSpeechBubbleDragger } from '../MotionStudio/speechBubbleDrag.js'
+import { cropSpriteWithFeedback, drawDetectionOutline, forgetCroppedSprite } from './spriteIsolate.js'
+import PixelSelectionModal from './PixelSelectionModal.jsx'
+import TransparencyCheckModal from '../TransparencyCheckModal.jsx'
+import { canvasFromUrl, enforceTransparencyPurge, sourceToCanvas } from '../../lib/fakeBackgroundPurge.js'
+import { useTransparencyGate } from '../../hooks/useTransparencyGate.js'
 import './motionGifStudio.css'
 
 const VIEW_BG = [
@@ -139,7 +145,7 @@ function fitSource(image, width, height) {
   const dw = sw * scale
   const dh = sh * scale
   ctx.drawImage(image, (width - dw) / 2, (height - dh) / 2, dw, dh)
-  return canvas
+  return enforceTransparencyPurge(canvas)
 }
 
 function releaseCanvas(canvas) {
@@ -154,6 +160,17 @@ function cutUrl(cut) {
 
 function cutKey(cut, index = 0) {
   return cut?.id || `cut-${index}`
+}
+
+function snapshotCanvas(canvas) {
+  if (!canvas || !canvas.width || !canvas.height) return null
+  const copy = document.createElement('canvas')
+  copy.width = canvas.width
+  copy.height = canvas.height
+  const ctx = copy.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(canvas, 0, 0)
+  return copy
 }
 
 export default function MotionGifStudioModal({ isOpen, onClose, initialSource = null }) {
@@ -178,6 +195,8 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const encodeErrorRef = useRef('')
   const diagSnapRef = useRef({})
   const overlayRef = useRef([])
+  const detectRef = useRef({ until: 0, bounds: null })
+  const pixelSpriteRef = useRef(null)
   const captionLiveRef = useRef({
     enabled: false,
     isTextEnabled: false,
@@ -206,6 +225,12 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const [playing, setPlaying] = useState(true)
   const [zoom, setZoom] = useState(100)
   const [preset, setPreset] = useState(MOTION_NONE)
+  const [isolateOn, setIsolateOn] = useState(true)
+  const [detectOn, setDetectOn] = useState(false)
+  const [pixelOpen, setPixelOpen] = useState(false)
+  const [pixelSource, setPixelSource] = useState(null)
+  const alphaGate = useTransparencyGate()
+  const detectTimerRef = useRef(0)
   const [loopSeconds, setLoopSeconds] = useState(2)
   const [intensity, setIntensity] = useState(70)
   const [fps, setFps] = useState(24)
@@ -225,7 +250,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const loop = clampLoopSeconds(loopSeconds)
 
   useEffect(() => {
-    paramsRef.current = { preset, intensity, loopSeconds: loop, fps, sizeId, playing, zoom }
+    paramsRef.current = { preset, intensity, loopSeconds: loop, fps, sizeId, playing, zoom, isolate: isolateOn }
     sourceTabRef.current = sourceTab
     cutsRef.current = cuts
     diagSnapRef.current = {
@@ -251,10 +276,11 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   }, [])
 
   const paintNow = useCallback((time01) => {
-    const source = fittedRef.current
+    const sprite = pixelSpriteRef.current || imageRef.current
+    const fitted = fittedRef.current
     const view = viewRef.current
-    if (!source || !view) return
-    const size = { width: source.width, height: source.height }
+    if (!sprite || !fitted || !view) return
+    const size = { width: fitted.width, height: fitted.height }
     let virtual = virtualRef.current
     if (!virtual) {
       virtual = document.createElement('canvas')
@@ -266,13 +292,18 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     }
     const virtualCtx = virtual.getContext('2d', { alpha: true })
     primeHqContext(virtualCtx)
-    paintMotionFrame(virtualCtx, source, {
+    paintMotionFrame(virtualCtx, sprite, {
       width: size.width,
       height: size.height,
       time01,
       preset: paramsRef.current.preset,
       intensity: paramsRef.current.intensity,
+      isolate: paramsRef.current.isolate !== false,
     })
+    const detect = detectRef.current
+    if (detect.until > performance.now() && detect.bounds && Math.floor(performance.now() / 180) % 2 === 0) {
+      drawDetectionOutline(virtualCtx, detect.bounds, size.width, size.height)
+    }
     const edge = Math.min(size.width, size.height)
     paintLiveCaptionLayer(virtualCtx, captionLiveRef.current, time01, edge)
     const layers = normalizeParticleLayers(overlayRef.current)
@@ -286,7 +317,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     blitToHiDpiCanvas(view, virtual, {
       cssWidth: size.width,
       cssHeight: size.height,
-      zoomPercent: paramsRef.current.zoom || 100,
+      zoomPercent: 100,
       live: true,
       edgePreserve: false,
     })
@@ -295,6 +326,19 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const syncStageCaption = useCallback(() => {
     paintNow(playRef.current.pausedT || 0)
   }, [paintNow])
+
+  const stageDrag = useMemo(() => setupSpeechBubbleDragger(
+    viewRef,
+    () => captionLiveRef.current?.bubble,
+    (x, y) => {
+      captionLiveRef.current?.setPos?.(x, y)
+      paintNow(playRef.current.pausedT || 0)
+    },
+    () => {
+      const fitted = fittedRef.current
+      return { width: fitted?.width || 360, height: fitted?.height || 360 }
+    },
+  ), [paintNow])
 
   const startLoop = useCallback(() => {
     stopLoop()
@@ -332,17 +376,23 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     stopLoop()
     releaseCanvas(virtualRef.current)
     releaseCanvas(fittedRef.current)
+    releaseCanvas(pixelSpriteRef.current)
     fittedRef.current = null
+    pixelSpriteRef.current = null
     imageRef.current = null
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
     objectUrlsRef.current = []
   }, [stopLoop])
 
   const applyImage = useCallback(async (image) => {
-    imageRef.current = image
-    setSourceMeta(sourceSize(image))
-    const size = outputSize(paramsRef.current.sizeId, image)
-    const fitted = fitSource(image, size.width, size.height)
+    releaseCanvas(pixelSpriteRef.current)
+    pixelSpriteRef.current = null
+    const cleaned = sourceToCanvas(image)
+    if (cleaned) enforceTransparencyPurge(cleaned)
+    imageRef.current = cleaned || image
+    setSourceMeta(sourceSize(imageRef.current))
+    const size = outputSize(paramsRef.current.sizeId, imageRef.current)
+    const fitted = fitSource(imageRef.current, size.width, size.height)
     releaseCanvas(fittedRef.current)
     fittedRef.current = fitted
     setHasSource(true)
@@ -557,7 +607,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       stopLoop()
     }
     return undefined
-  }, [isOpen, hasSource, preset, intensity, loopSeconds, sizeId, playing, zoom, paintNow, startLoop, stopLoop])
+  }, [isOpen, hasSource, preset, intensity, loopSeconds, sizeId, playing, zoom, isolateOn, paintNow, startLoop, stopLoop])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -607,7 +657,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     const exportFps = size.fps || fps
     try {
       const result = await encodeMotionGif({
-        source,
+        source: pixelSpriteRef.current || imageRef.current || source,
         width: size.width,
         height: size.height,
         fps: exportFps,
@@ -670,7 +720,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
         const size = outputSize(sizeId, image)
         const fitted = fitSource(image, size.width, size.height)
         const result = await encodeMotionGif({
-          source: fitted,
+          source: image,
           width: size.width,
           height: size.height,
           fps: exportFps,
@@ -726,6 +776,29 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     const list = uploadedImages.filter((item) => item.url)
     return runBatchEncode(list, 'custom_images_motion_gif.zip', 'custom_images_motion_gif')
   }, [runBatchEncode, uploadedImages])
+
+  const requestDownload = useCallback(() => {
+    const canvas = sourceToCanvas(pixelSpriteRef.current || imageRef.current || fittedRef.current)
+    if (!canvas) return
+    void alphaGate.runOrAsk([canvas], async ({ purged, canvases }) => {
+      if (purged && canvases[0]) pixelSpriteRef.current = canvases[0]
+      await handleDownload()
+    })
+  }, [alphaGate, handleDownload])
+
+  const requestUploadBatchExport = useCallback(async () => {
+    const list = uploadedImages.filter((item) => item.url)
+    const canvases = []
+    for (const item of list) canvases.push(await canvasFromUrl(item.url))
+    await alphaGate.runOrAsk(canvases, async ({ purged, canvases: next }) => {
+      if (purged) {
+        next.forEach((canvas, index) => {
+          if (list[index] && canvas) list[index].url = canvas.toDataURL('image/png')
+        })
+      }
+      await runBatchEncode(list, 'custom_images_motion_gif.zip', 'custom_images_motion_gif')
+    })
+  }, [alphaGate, runBatchEncode, uploadedImages])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -795,7 +868,29 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       ? cutUrl(visibleCuts.find((item, index) => cutKey(item, index) === selectedCut) || visibleCuts[0])
       : (parsed.dataUrl || '')
 
+  const handlePixelApply = (sprite) => {
+    if (!sprite) return
+    releaseCanvas(pixelSpriteRef.current)
+    pixelSpriteRef.current = sprite
+    setIsolateOn(true)
+    paramsRef.current.isolate = true
+    forgetCroppedSprite(sprite)
+    const extracted = cropSpriteWithFeedback(sprite)
+    if (extracted.bounds) {
+      detectRef.current = { until: performance.now() + 1500, bounds: extracted.bounds }
+      setDetectOn(true)
+      if (detectTimerRef.current) window.clearTimeout(detectTimerRef.current)
+      detectTimerRef.current = window.setTimeout(() => setDetectOn(false), 1500)
+      setStatusKind('ok')
+      setStatus('✨ 캐릭터 영역이 성공적으로 분리되었습니다!')
+    }
+    setPixelOpen(false)
+    setPixelSource(sprite)
+    paintNow(playRef.current.pausedT || 0)
+  }
+
   return (
+    <>
     <div
       className="studio-modal-root mgs-root"
       data-no-magnifier
@@ -829,7 +924,21 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
         </header>
 
         <div className="mgs-body">
-          <aside className="mgs-pane mgs-sources">
+          <aside className="mgs-pane mgs-sources" data-source-tab={sourceTab}>
+            <input
+              id="mgs-pc-upload"
+              ref={fileRef}
+              type="file"
+              accept={PC_IMAGE_ACCEPT}
+              multiple
+              className="mgs-file-input"
+              data-pc-upload="1"
+              tabIndex={-1}
+              onChange={(event) => {
+                ingestLocalFiles(event.target.files)
+                event.target.value = ''
+              }}
+            />
             <h3>SOURCES</h3>
             <div className="mgs-tabs">
               <button type="button" className={clsx('mgs-tab', sourceTab === 'canvas' && 'is-on')} disabled={encoding} onClick={() => setSourceTab('canvas')} data-tooltip="메인 에디터에서 편집 중인 현재 그래픽 가져오기" data-mgs-place="right">
@@ -842,7 +951,10 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               }} data-tooltip="이모티콘 시트 분할기에서 생성된 개별 컷 선택" data-mgs-place="right">
                 이모티콘 컷
               </button>
-              <button type="button" className={clsx('mgs-tab', sourceTab === 'drop' && 'is-on')} disabled={encoding} onClick={() => setSourceTab('drop')} data-tooltip="내 컴퓨터의 PNG/JPG/WebP를 여러 장 드래그하여 로드" data-mgs-place="right">
+              <button type="button" className={clsx('mgs-tab', sourceTab === 'drop' && 'is-on')} disabled={encoding} onClick={() => {
+                setSourceTab('drop')
+                openPcFilePicker()
+              }} data-tooltip="내 컴퓨터의 PNG/JPG/WebP를 여러 장 고르거나 드래그하여 로드" data-mgs-place="right">
                 내 PC 업로드
               </button>
             </div>
@@ -887,7 +999,13 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                   type="button"
                   className="mgs-tab mgs-batch allow-long-text"
                   disabled={encoding || !visibleCuts.length}
-                  onClick={handleBatchExport}
+                  onClick={() => {
+                    const list = (cuts.length ? cuts : parsed.cuts).filter((cut) => cutUrl(cut)).slice(0, 28)
+                    void (async () => {
+                      const probe = list[0] ? await canvasFromUrl(cutUrl(list[0])) : null
+                      await alphaGate.runOrAsk(probe ? [probe] : [], () => runBatchEncode(list, 'motion-studio-batch.zip', 'motion-studio-batch'))
+                    })()
+                  }}
                   data-tooltip="선택된 모션을 모든 컷에 적용해 ZIP으로 받습니다"
                   data-mgs-place="right"
                 >
@@ -912,28 +1030,16 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
             {sourceTab === 'drop' ? (
               <>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept={PC_IMAGE_ACCEPT}
-                  multiple
-                  className="mgs-file-input"
-                  data-pc-upload="1"
-                  tabIndex={-1}
-                  onChange={(event) => {
-                    ingestLocalFiles(event.target.files)
-                    event.target.value = ''
-                  }}
-                />
-                <div
-                  role="button"
-                  tabIndex={0}
+                <label
+                  htmlFor="mgs-pc-upload"
                   className={clsx('mgs-drop', dropOver && 'is-over')}
                   data-pc-dropzone="1"
                   data-pc-dragging={dropOver ? '1' : '0'}
                   data-tooltip="PNG/JPG/WebP를 여러 장 한 번에 드래그하거나 클릭해서 올립니다"
                   data-mgs-place="right"
-                  onClick={openPcFilePicker}
+                  onClick={(event) => {
+                    if (encoding) event.preventDefault()
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
@@ -948,7 +1054,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                   PNG/JPG/WebP 여러 장을 놓거나
                   <br />
                   클릭해서 올리기
-                </div>
+                </label>
                 {uploadedImages.length ? (
                   <>
                     <div className="mgs-uploads">
@@ -990,7 +1096,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                       type="button"
                       className="mgs-tab mgs-batch allow-long-text"
                       disabled={encoding || !uploadedImages.length}
-                      onClick={handleUploadBatchExport}
+                      onClick={requestUploadBatchExport}
                       data-tooltip="올린 모든 이미지에 현재 모션을 적용해 ZIP으로 받습니다"
                       data-mgs-place="right"
                     >
@@ -1025,7 +1131,15 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                 ref={viewRef}
                 className="mgs-preview-canvas"
                 hidden={!hasSource}
-                style={{ transform: `scale(${zoom / 100})` }}
+                data-caption-drag="1"
+                data-detect-outline={detectOn ? '1' : '0'}
+                onMouseDown={(event) => stageDrag.handleMouseDown(event)}
+                onMouseMove={(event) => stageDrag.handleMouseMove(event)}
+                onMouseUp={() => stageDrag.handleMouseUp()}
+                onMouseLeave={() => stageDrag.handleMouseUp()}
+                onTouchStart={(event) => stageDrag.handleMouseDown(event)}
+                onTouchMove={(event) => stageDrag.handleMouseMove(event)}
+                onTouchEnd={() => stageDrag.handleMouseUp()}
               />
               {!hasSource && !loading ? <p className="mgs-empty">왼쪽에서 이미지를 고르거나 파일을 놓으세요.</p> : null}
               {loading ? <p className="mgs-empty">소스 읽는 중…</p> : null}
@@ -1057,8 +1171,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               <span className="mgs-hint">프리뷰 {clampFps(fps)} FPS</span>
             </div>
             <MotionSequencerPanel
-              cuts={sourceTab === 'drop' ? uploadedImages : visibleCuts}
-              injectFrames={sourceTab === 'drop' ? uploadedImages : null}
+              cuts={sourceTab === 'cuts' ? visibleCuts : sourceTab === 'drop' ? uploadedImages : []}
+              injectFrames={null}
+              showCutBank={sourceTab === 'cuts' || sourceTab === 'drop'}
               cutBankEmpty={sourceTab === 'drop' ? '왼쪽에서 PNG를 올리거나 가운데에 놓으세요.' : '분할기에서 28컷을 먼저 만드세요.'}
               sourceUrl={liveSourceUrl}
               playing={playing}
@@ -1072,6 +1187,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                 setPlaying(next)
               }}
               motionPreset={preset}
+              isolateSprite={isolateOn}
               intensity={intensity}
               loopSeconds={loop}
               overlayRef={overlayRef}
@@ -1082,6 +1198,82 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
           <aside className="mgs-pane mgs-controls">
             <h3>MOTION PRESETS & CONTROLS</h3>
+            <button
+              type="button"
+              className={clsx('mgs-tab', 'allow-long-text', isolateOn && 'is-on')}
+              data-sprite-isolate={isolateOn ? '1' : '0'}
+              disabled={encoding || !hasSource}
+              data-tooltip="투명 여백을 잘라 순수 캐릭터만 모션합니다"
+              data-mgs-place="left"
+              onClick={() => {
+                setIsolateOn(true)
+                paramsRef.current.isolate = true
+                const source = imageRef.current
+                if (!source) return
+                forgetCroppedSprite(source)
+                const extracted = cropSpriteWithFeedback(source)
+                if (extracted.bounds) {
+                  detectRef.current = { until: performance.now() + 1500, bounds: extracted.bounds }
+                  setDetectOn(true)
+                  if (detectTimerRef.current) window.clearTimeout(detectTimerRef.current)
+                  detectTimerRef.current = window.setTimeout(() => setDetectOn(false), 1500)
+                  setStatusKind('ok')
+                  setStatus('✨ 캐릭터 영역이 성공적으로 분리되었습니다!')
+                } else {
+                  detectRef.current = { until: 0, bounds: null }
+                  setDetectOn(false)
+                  setStatusKind('error')
+                  setStatus('캐릭터 영역을 찾지 못했습니다.')
+                }
+                paintNow(playRef.current.pausedT || 0)
+              }}
+            >
+              🪄 캐릭터 영역 자동 추출
+            </button>
+            <button
+              type="button"
+              className="mgs-tab allow-long-text"
+              data-pixel-studio-open="1"
+              data-tooltip="확대 팝업에서 픽셀을 칠해 캐릭터만 추출합니다"
+              data-mgs-place="left"
+              onClick={() => {
+                const activeImg = imageRef.current
+                  || fittedRef.current
+                  || virtualRef.current
+                  || snapshotCanvas(viewRef.current)
+                setPixelOpen(true)
+                if (!activeImg) {
+                  setPixelSource(null)
+                  setStatusKind('error')
+                  setStatus('편집할 캐릭터 이미지를 먼저 선택해 주세요.')
+                  window.alert('편집할 캐릭터 이미지를 먼저 선택해 주세요.')
+                  return
+                }
+                setPixelSource(activeImg)
+              }}
+            >
+              ✨ 초정밀 픽셀 추출
+            </button>
+            <button
+              type="button"
+              className="mgs-tab allow-long-text"
+              data-pixel-restore="1"
+              data-tooltip="픽셀 추출을 지우고 원본 프레임으로 되돌립니다"
+              data-mgs-place="left"
+              onClick={() => {
+                releaseCanvas(pixelSpriteRef.current)
+                pixelSpriteRef.current = null
+                setPixelSource(null)
+                if (imageRef.current) forgetCroppedSprite(imageRef.current)
+                detectRef.current = { until: 0, bounds: null }
+                setDetectOn(false)
+                setStatusKind('ok')
+                setStatus('원본 이미지로 복원했습니다.')
+                paintNow(playRef.current.pausedT || 0)
+              }}
+            >
+              🔄 원본 복원
+            </button>
             <div className="mgs-preset-grid max-h-[340px] overflow-y-auto pr-1" data-preset-list="1">
             <button
               type="button"
@@ -1220,6 +1412,8 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
         <footer className="mgs-foot">
           {statusKind === 'error' ? <p className="mgs-foot-error">{status}</p> : null}
+          {detectOn && statusKind === 'ok' ? <p className="mgs-hint" data-isolate-toast="1">{status}</p> : null}
+          {!detectOn && statusKind === 'ok' && String(status).includes('원본') ? <p className="mgs-hint" data-restore-toast="1">{status}</p> : null}
           <div className="mgs-foot-actions">
             {encoding ? (
               <button
@@ -1243,7 +1437,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               data-tooltip="투명 배경 무손실 GIF 생성 및 PC 즉시 다운로드"
               data-mgs-place="up"
               disabled={!hasSource || encoding}
-              onClick={handleDownload}
+              onClick={requestDownload}
             >
               {encoding ? `인코딩 중 ${progress}%` : '🚀 초고화질 무한루프 GIF 다운로드'}
             </button>
@@ -1252,5 +1446,23 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
         </MotionStudioProvider>
       </div>
     </div>
+    <TransparencyCheckModal
+      open={alphaGate.open}
+      onPurgeAndExport={alphaGate.confirmPurge}
+      onExportAsIs={alphaGate.confirmAsIs}
+      onCancel={alphaGate.cancel}
+    />
+    {pixelOpen ? (
+      <PixelSelectionModal
+        open={pixelOpen}
+        isOpen={pixelOpen}
+        source={pixelSource}
+        sourceImage={pixelSource}
+        image={pixelSource}
+        onClose={() => setPixelOpen(false)}
+        onApply={handlePixelApply}
+      />
+    ) : null}
+    </>
   )
 }

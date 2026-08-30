@@ -41,8 +41,10 @@ export function blitToHiDpiCanvas(target, source, {
     target.width = bw
     target.height = bh
   }
-  target.style.width = `${w}px`
-  target.style.height = `${h}px`
+  if (!live) {
+    target.style.width = `${w}px`
+    target.style.height = `${h}px`
+  }
   const ctx = target.getContext('2d', { alpha: true })
   if (!ctx) return target
   primeHqContext(ctx)

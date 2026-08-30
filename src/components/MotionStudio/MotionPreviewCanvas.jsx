@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { buildCaptionPose, TEXT_MOTION_NONE, normalizeTextMotionEffect } from './dynamicTextMotion.js'
-import { clearPreviewCaptionBand, paintDynamicTextMotion } from './DynamicTextMotionRenderer.js'
+import { captionBubbleBox, paintDynamicTextMotion } from './DynamicTextMotionRenderer.js'
+import { setupSpeechBubbleDragger } from './speechBubbleDrag.js'
 import { SEQUENCE_VIEW_SIZE, captionLoopIndex, clampSequenceFps, clampStillLoopSeconds, pingPongPlayIndex } from './motionSequencer.js'
 import { applyDefringeToContext } from '../../utils/imageProcessor.js'
 import { paintParticleOverlay, normalizeParticleLayers } from './particleOverlayEngine.js'
@@ -47,6 +48,9 @@ function paintOverlay(ctx, {
   captionText,
   captionSize,
   captionStroke,
+  captionFont,
+  captionPos,
+  bubbleRef,
 }) {
   const pose = buildCaptionPose({
     enabled: captionOn,
@@ -56,11 +60,16 @@ function paintOverlay(ctx, {
     total: Math.max(1, total),
     sizeId: captionSize,
     strokeId: captionStroke,
+    fontId: captionFont,
     edge,
+    posX: captionPos?.posX,
+    posY: captionPos?.posY,
   })
   if (pose) {
-    clearPreviewCaptionBand(ctx, edge)
     paintDynamicTextMotion(ctx, { size: edge, pose })
+    if (bubbleRef) bubbleRef.current = captionBubbleBox(pose, edge)
+  } else if (bubbleRef) {
+    bubbleRef.current = { visible: false, x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 }
   }
   if (layers.length) {
     paintParticleOverlay(ctx, {
@@ -82,6 +91,7 @@ export default function MotionPreviewCanvas({
   particles = [],
   stillLoop = false,
   motionPreset = 'none',
+  isolateSprite = true,
   intensity = 70,
   loopSeconds = 2,
   onTick,
@@ -90,6 +100,9 @@ export default function MotionPreviewCanvas({
   captionText = '',
   captionSize = 'md',
   captionStroke = 'black',
+  captionFont,
+  captionPos = { posX: 0, posY: 0 },
+  onCaptionPos,
 }) {
   const canvasRef = useRef(null)
   const cacheRef = useRef(new Map())
@@ -99,8 +112,19 @@ export default function MotionPreviewCanvas({
   const tickRef = useRef(onTick)
   const mirrorHoldRef = useRef(mirrorRef)
   const [cacheRev, setCacheRev] = useState(0)
+  const bubbleRef = useRef({ visible: false })
+  const dragRef = useRef(null)
   tickRef.current = onTick
   mirrorHoldRef.current = mirrorRef
+
+  useEffect(() => {
+    dragRef.current = setupSpeechBubbleDragger(
+      canvasRef,
+      () => bubbleRef.current,
+      (posX, posY) => onCaptionPos?.({ posX, posY }),
+      () => ({ width: size, height: size }),
+    )
+  }, [onCaptionPos, size])
 
   useEffect(() => {
     let alive = true
@@ -147,6 +171,7 @@ export default function MotionPreviewCanvas({
           time01,
           preset: motionPreset,
           intensity,
+          isolate: isolateSprite,
         })
         applyDefringeToContext(ctx, edge, edge)
       } else {
@@ -164,6 +189,9 @@ export default function MotionPreviewCanvas({
         captionText,
         captionSize,
         captionStroke,
+        captionFont,
+        captionPos,
+        bubbleRef,
       })
       blit()
       tickRef.current?.(0, item?.url || '')
@@ -186,6 +214,9 @@ export default function MotionPreviewCanvas({
         captionText,
         captionSize,
         captionStroke,
+        captionFont,
+        captionPos,
+        bubbleRef,
       })
       blit()
       tickRef.current?.(index, item?.url || '')
@@ -226,7 +257,7 @@ export default function MotionPreviewCanvas({
       drawStep(stepRef.current)
     }, delay)
     return () => window.clearInterval(timer)
-  }, [frames, fps, playing, size, effect, speed, pingPong, particles, stillLoop, motionPreset, intensity, loopSeconds, cacheRev, captionOn, captionText, captionSize, captionStroke])
+  }, [frames, fps, playing, size, effect, speed, pingPong, particles, stillLoop, motionPreset, isolateSprite, intensity, loopSeconds, cacheRev, captionOn, captionText, captionSize, captionStroke, captionFont, captionPos])
 
   return (
     <div className="ms-preview-stage checkerboard-bg">
@@ -237,7 +268,15 @@ export default function MotionPreviewCanvas({
         height={size}
         data-still-loop={stillLoop || frames.length === 1 ? '1' : '0'}
         data-preview-canvas="1"
+        data-caption-drag="1"
         aria-label="모션 시퀀스 미리보기"
+        onMouseDown={(event) => dragRef.current?.handleMouseDown(event)}
+        onMouseMove={(event) => dragRef.current?.handleMouseMove(event)}
+        onMouseUp={() => dragRef.current?.handleMouseUp()}
+        onMouseLeave={() => dragRef.current?.handleMouseUp()}
+        onTouchStart={(event) => dragRef.current?.handleMouseDown(event)}
+        onTouchMove={(event) => dragRef.current?.handleMouseMove(event)}
+        onTouchEnd={() => dragRef.current?.handleMouseUp()}
       />
     </div>
   )

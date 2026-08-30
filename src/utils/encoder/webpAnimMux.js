@@ -100,7 +100,7 @@ function anmfChunk(payload, width, height, delayMs) {
     le24(Math.max(0, width - 1)),
     le24(Math.max(0, height - 1)),
     le24(Math.max(1, Math.round(Number(delayMs) || 100))),
-    Uint8Array.of(1),
+    Uint8Array.of(3),
     payload,
   ])
   return riffChunk('ANMF', body)

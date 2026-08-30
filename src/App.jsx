@@ -26,6 +26,7 @@ import EmoticonSplitterModal from './components/EmoticonSplitterModal.jsx'
 import MotionGifStudioModal from './components/MotionGifStudio/MotionGifStudioModal.jsx'
 import GuidebookModal from './components/GuidebookModal.jsx'
 import LayerEditCard from './components/LayerEditCard.jsx'
+import { NumberSliderControl } from './components/NumberSliderControl.jsx'
 import LayerGuideOverlay from './components/LayerGuideOverlay.jsx'
 import { magnify } from './components/MenuMagnifierHUD.jsx'
 import GlobalTooltip from './components/GlobalTooltip.jsx'
@@ -45,6 +46,7 @@ import { composeGifFrame, GIF_MOTIONS, resolveGifMotion } from './lib/gifMotion.
 import { clampFontSize, FONT_SIZE_EXTRA_DEFAULT, FONT_SIZE_SEAL_DEFAULT } from './lib/fontSize.js'
 import {
   drawLivePreview,
+  exportCleanCanvas,
   hitTestStudio,
   renderStyledText,
   resolveWeight,
@@ -63,6 +65,24 @@ import {
 import { loadFavoriteFonts, saveFavoriteFonts, toggleFavoriteId } from './lib/fontFavorites.js'
 import { DIAG_STEPS } from './lib/featureRegistry.js'
 import { APP_BUILD } from './lib/appBuild.js'
+import {
+  LEFT_PANEL_KEY,
+  RIGHT_PANEL_KEY,
+  LEFT_PANEL_DEFAULT,
+  RIGHT_PANEL_DEFAULT,
+  LEFT_PANEL_MIN,
+  LEFT_PANEL_MAX,
+  RIGHT_PANEL_MIN,
+  RIGHT_PANEL_MAX,
+  clampLeftPanelWidth,
+  clampRightPanelWidth,
+  clampLeftEdgeVisible,
+  clampRightEdgeVisible,
+  fitPanelPair,
+  sideAsideStyle,
+  sideSplitStyle,
+} from './lib/studioLayout.js'
+import { pauseStudioFit, readStudioLayoutWidth } from './lib/studioFit.js'
 import { subscribeInspectorHud } from './utils/debugger.js'
 import { liveStatusFromLayer } from './lib/liveStatus.js'
 import { preloadStudioFonts } from './lib/fontPreload.js'
@@ -126,16 +146,6 @@ const CROP_ASPECTS = [
   { id: 'free', label: '자유 비율' },
 ]
 const GIF_STYLE_LABEL = Object.fromEntries(GIF_MOTIONS.map((item) => [item.id, item.name]))
-const LEFT_PANEL_KEY = 'styler-left-panel-width'
-const LEFT_PANEL_DEFAULT = 360
-const LEFT_PANEL_MIN = 280
-const LEFT_PANEL_MAX = 550
-
-function clampLeftPanelWidth(width, viewport = typeof window === 'undefined' ? 1440 : window.innerWidth) {
-  const max = Math.min(LEFT_PANEL_MAX, Math.round(viewport * 0.45))
-  return Math.round(Math.max(LEFT_PANEL_MIN, Math.min(max, Number(width) || LEFT_PANEL_DEFAULT)))
-}
-
 function loadLeftPanelWidth() {
   try {
     const raw = Number(localStorage.getItem(LEFT_PANEL_KEY))
@@ -149,6 +159,24 @@ function loadLeftPanelWidth() {
 function saveLeftPanelWidth(width) {
   try {
     localStorage.setItem(LEFT_PANEL_KEY, String(clampLeftPanelWidth(width)))
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function loadRightPanelWidth() {
+  try {
+    const raw = Number(localStorage.getItem(RIGHT_PANEL_KEY))
+    if (Number.isFinite(raw) && raw > 0) return clampRightPanelWidth(raw)
+  } catch {
+    /* ignore quota / private mode */
+  }
+  return RIGHT_PANEL_DEFAULT
+}
+
+function saveRightPanelWidth(width) {
+  try {
+    localStorage.setItem(RIGHT_PANEL_KEY, String(clampRightPanelWidth(width)))
   } catch {
     /* ignore quota / private mode */
   }
@@ -211,14 +239,21 @@ export default function App() {
   const [tourStep, setTourStep] = useState(0)
   const [renderHud, setRenderHud] = useState(() => readRenderPerf())
   const [sliceInspectorHud, setSliceInspectorHud] = useState({ status: 'idle', suspectCount: 0, sliceCount: 0 })
-  const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadLeftPanelWidth())
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => fitPanelPair(loadLeftPanelWidth(), loadRightPanelWidth()).left)
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => fitPanelPair(loadLeftPanelWidth(), loadRightPanelWidth()).right)
   const [isResizing, setIsResizing] = useState(false)
   const projectInputRef = useRef(null)
   const canvasRef = useRef(null)
   const stageRef = useRef(null)
   const leftSplitRef = useRef(null)
+  const rightSplitRef = useRef(null)
   const leftPanelWidthRef = useRef(leftPanelWidth)
+  const rightPanelWidthRef = useRef(rightPanelWidth)
   const resizingRef = useRef(false)
+  const resizeSideRef = useRef('left')
+  const resizeScaleRef = useRef(1)
+  const resizeStartXRef = useRef(0)
+  const resizeStartWRef = useRef(LEFT_PANEL_DEFAULT)
   const urlsRef = useRef({ transparentUrl: null, maskUrl: null })
   const bgImageRef = useRef(null)
   const studioRef = useRef(studio)
@@ -231,7 +266,10 @@ export default function App() {
   const closeDiag = useCallback(() => setDiagOpen(false), [])
 
   studioRef.current = studio
-  leftPanelWidthRef.current = leftPanelWidth
+  if (!resizingRef.current) {
+    leftPanelWidthRef.current = leftPanelWidth
+    rightPanelWidthRef.current = rightPanelWidth
+  }
   diagOpenRef.current = diagOpen
 
   useLayoutEffect(() => {
@@ -436,37 +474,65 @@ export default function App() {
   useEffect(() => {
     const onUp = () => {
       if (!resizingRef.current) return
+      const side = resizeSideRef.current
+      const nextLeft = leftPanelWidthRef.current
+      const nextRight = rightPanelWidthRef.current
       resizingRef.current = false
+      pauseStudioFit(false)
       setIsResizing(false)
-      saveLeftPanelWidth(leftPanelWidthRef.current)
+      if (side === 'right') {
+        setRightPanelWidth(nextRight)
+        saveRightPanelWidth(nextRight)
+        return
+      }
+      setLeftPanelWidth(nextLeft)
+      saveLeftPanelWidth(nextLeft)
     }
     const onMove = (event) => {
       if (!resizingRef.current) return
-      if (!event.buttons) {
-        onUp()
+      const scale = resizeScaleRef.current || 1
+      const delta = (event.clientX - resizeStartXRef.current) / scale
+      if (resizeSideRef.current === 'right') {
+        const next = clampRightEdgeVisible(
+          resizeStartWRef.current - delta,
+          leftPanelWidthRef.current,
+          readStudioLayoutWidth(),
+        )
+        rightPanelWidthRef.current = next
+        setRightPanelWidth(next)
         return
       }
-      const origin = leftSplitRef.current?.getBoundingClientRect().left ?? 12
-      const next = clampLeftPanelWidth(event.clientX - origin)
+      const next = clampLeftEdgeVisible(
+        resizeStartWRef.current + delta,
+        rightPanelWidthRef.current,
+        readStudioLayoutWidth(),
+      )
       leftPanelWidthRef.current = next
       setLeftPanelWidth(next)
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     window.addEventListener('blur', onUp)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
       window.removeEventListener('blur', onUp)
     }
   }, [])
 
   useEffect(() => {
     const onResize = () => {
+      if (resizingRef.current) return
+      const pair = fitPanelPair(leftPanelWidthRef.current, rightPanelWidthRef.current, readStudioLayoutWidth())
       setLeftPanelWidth((current) => {
-        const next = clampLeftPanelWidth(current)
-        if (next !== current) saveLeftPanelWidth(next)
-        return next
+        if (pair.left !== current) saveLeftPanelWidth(pair.left)
+        return pair.left
+      })
+      setRightPanelWidth((current) => {
+        if (pair.right !== current) saveRightPanelWidth(pair.right)
+        return pair.right
       })
     }
     window.addEventListener('resize', onResize)
@@ -479,7 +545,7 @@ export default function App() {
     const w = Math.round(node.clientWidth || 0)
     const h = Math.round(node.clientHeight || 0)
     if (w > 0 && h > 0) setCanvasCss((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))
-  }, [studio.aspectId, leftCollapsed, rightCollapsed, leftPanelWidth, cropMode])
+  }, [studio.aspectId, leftCollapsed, rightCollapsed, leftPanelWidth, rightPanelWidth, cropMode])
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -498,6 +564,7 @@ export default function App() {
     const canvas = canvasRef.current
     if (!canvas) return undefined
     const redraw = () => {
+      if (resizingRef.current) return
       const node = canvasRef.current
       if (node) {
         const w = Math.round(node.clientWidth || 0)
@@ -526,7 +593,7 @@ export default function App() {
     let raf = 0
     const tick = (now) => {
       noteFrame(now)
-      if (now - lastPerfEmit.current >= 280 && !diagOpenRef.current) {
+      if (now - lastPerfEmit.current >= 280 && !diagOpenRef.current && !resizingRef.current) {
         lastPerfEmit.current = now
         setRenderHud(readRenderPerf())
       }
@@ -545,7 +612,33 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [])
 
+  const lastFocusLayer = useRef(null)
+  const bootAt = useRef(Date.now())
+  useLayoutEffect(() => {
+    const node = leftSplitRef.current?.querySelector('.studio-left')
+    if (node) node.scrollTop = 0
+  }, [])
   useEffect(() => {
+    const snapTop = () => {
+      const node = leftSplitRef.current?.querySelector('.studio-left')
+      if (node) node.scrollTop = 0
+    }
+    snapTop()
+    const t1 = window.setTimeout(snapTop, 0)
+    const t2 = window.setTimeout(snapTop, 240)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+    }
+  }, [])
+  useEffect(() => {
+    const aside = leftSplitRef.current?.querySelector('.studio-left')
+    if (Date.now() - bootAt.current < 900 || lastFocusLayer.current == null || lastFocusLayer.current === studio.activeLayerId) {
+      lastFocusLayer.current = studio.activeLayerId
+      if (aside) aside.scrollTop = 0
+      return undefined
+    }
+    lastFocusLayer.current = studio.activeLayerId
     const frame = requestAnimationFrame(() => {
       const card = document.querySelector(`[data-layer-card="${studio.activeLayerId}"]`)
       card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -994,14 +1087,24 @@ export default function App() {
   })
 
   const openGifStudio = useCallback(() => {
-    let dataUrl = null
-    try {
-      dataUrl = canvasRef.current?.toDataURL('image/png') ?? null
-    } catch {
-      dataUrl = null
-    }
-    setGifStudioInitialSource(dataUrl)
-    setIsGifStudioOpen(true)
+    void (async () => {
+      let dataUrl = null
+      try {
+        const result = await exportCleanCanvas({
+          ...renderOptionsRef.current,
+          showOverlay: false,
+          gridOn: false,
+          centerGuides: false,
+          skipCrop: false,
+        })
+        dataUrl = result.transparentUrl || null
+      } catch {
+        dataUrl = null
+      }
+      setGifStudioInitialSource(dataUrl)
+      setEmoSplitOpen(false)
+      setIsGifStudioOpen(true)
+    })()
   }, [])
 
   const downloadIcons = () => runExport('파비콘 패키지', async () => {
@@ -1142,8 +1245,36 @@ export default function App() {
 
   const startLeftResize = (event) => {
     event.preventDefault()
+    event.stopPropagation()
+    const aside = leftSplitRef.current?.querySelector('.studio-left')
+    const box = aside?.getBoundingClientRect()
+    resizeStartXRef.current = event.clientX
+    resizeStartWRef.current = aside?.offsetWidth || leftPanelWidthRef.current
+    resizeScaleRef.current = box && aside?.offsetWidth ? box.width / aside.offsetWidth : 1
+    resizeSideRef.current = 'left'
     resizingRef.current = true
+    pauseStudioFit(true)
     setIsResizing(true)
+    if (event.pointerId != null) {
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* ignore */ }
+    }
+  }
+
+  const startRightResize = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const aside = rightSplitRef.current?.querySelector('.studio-right')
+    const box = aside?.getBoundingClientRect()
+    resizeStartXRef.current = event.clientX
+    resizeStartWRef.current = aside?.offsetWidth || rightPanelWidthRef.current
+    resizeScaleRef.current = box && aside?.offsetWidth ? box.width / aside.offsetWidth : 1
+    resizeSideRef.current = 'right'
+    resizingRef.current = true
+    pauseStudioFit(true)
+    setIsResizing(true)
+    if (event.pointerId != null) {
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* ignore */ }
+    }
   }
 
   const resetLeftPanelWidth = () => {
@@ -1153,8 +1284,18 @@ export default function App() {
     saveLeftPanelWidth(LEFT_PANEL_DEFAULT)
   }
 
+  const resetRightPanelWidth = () => {
+    resizingRef.current = false
+    setIsResizing(false)
+    setRightPanelWidth(RIGHT_PANEL_DEFAULT)
+    saveRightPanelWidth(RIGHT_PANEL_DEFAULT)
+  }
+
   return (
-    <div className={clsx('studio-shell', isResizing && 'is-resizing')} style={{ '--left-panel-width': `${leftPanelWidth}px` }}>
+    <div
+      className={clsx('studio-shell', isResizing && 'is-resizing')}
+      style={{ '--left-panel-width': `${leftPanelWidth}px`, '--right-panel-width': `${rightPanelWidth}px` }}
+    >
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(34,211,238,0.08),transparent_45%),radial-gradient(ellipse_at_bottom_right,_rgba(168,85,247,0.08),transparent_40%)]" />
 
       <header className="app-nav" data-studio-tab={studio.studioTab}>
@@ -1228,16 +1369,25 @@ export default function App() {
         </div>
       </header>
 
+      <div className="studio-workspace">
       <div
         className={clsx(
           'studio-3col',
           leftCollapsed && 'is-left-collapsed',
           rightCollapsed && 'is-right-collapsed',
         )}
-        style={{ '--left-panel-width': `${leftPanelWidth}px` }}
+        data-studio-split="1"
+        style={{ '--left-panel-width': `${leftPanelWidth}px`, '--right-panel-width': `${rightPanelWidth}px` }}
       >
-        <div className="studio-left-split" ref={leftSplitRef}>
-        <aside className="studio-left">
+        <div
+          className="studio-left-split"
+          ref={leftSplitRef}
+          style={sideSplitStyle(leftCollapsed, leftPanelWidth)}
+        >
+        <aside
+          className="studio-left"
+          style={sideAsideStyle(leftCollapsed, leftPanelWidth)}
+        >
           <button
             type="button"
             className="panel-fold panel-fold-left"
@@ -1352,14 +1502,26 @@ export default function App() {
               />
               배경 이미지 선택
             </label>
-            <label className="mt-2 block text-[11px] text-zinc-400" {...magnify('배경 불투명도', '배경 사진이 얼마나 진하게 보일지 조절합니다')}>
-              배경 불투명도 {Math.round(studio.background.opacity * 100)}%
-              <input type="range" min="0" max="100" className="ctrl-slider mt-1" value={studio.background.opacity * 100} onChange={(event) => patchStudio({ background: { ...studio.background, opacity: Number(event.target.value) / 100 } }, false)} />
-            </label>
-            <label className="mt-2 block text-[11px] text-zinc-400" {...magnify('배경 블러', '배경 사진을 흐리게 만들어 글자를 돋보이게 합니다')}>
-              배경 블러 {studio.background.blur}px
-              <input type="range" min="0" max="20" className="ctrl-slider mt-1" value={studio.background.blur} onChange={(event) => patchStudio({ background: { ...studio.background, blur: Number(event.target.value) } }, false)} />
-            </label>
+            <NumberSliderControl
+              label="배경 불투명도"
+              tooltip="배경 사진이 얼마나 진하게 보일지 조절합니다"
+              unit="%"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(studio.background.opacity * 100)}
+              onChange={(next) => patchStudio({ background: { ...studio.background, opacity: next / 100 } }, false)}
+            />
+            <NumberSliderControl
+              label="배경 블러"
+              tooltip="배경 사진을 흐리게 만들어 글자를 돋보이게 합니다"
+              unit="px"
+              min={0}
+              max={20}
+              step={1}
+              value={studio.background.blur}
+              onChange={(next) => patchStudio({ background: { ...studio.background, blur: next } }, false)}
+            />
             <label className="mt-2 block text-[11px] text-zinc-400" {...magnify('블렌드 모드', '배경과 글자가 섞이는 방식을 고릅니다')}>
               블렌드 모드
               <select
@@ -1380,15 +1542,16 @@ export default function App() {
           </section>
         </aside>
         <div
-          className={clsx('panel-resizer', isResizing && 'is-on')}
+          className={clsx('panel-resizer', isResizing && resizeSideRef.current !== 'right' && 'is-on')}
           role="separator"
           aria-orientation="vertical"
           aria-label="왼쪽 패널 너비 조절"
+          data-left-resizer="1"
           aria-valuemin={LEFT_PANEL_MIN}
           aria-valuemax={LEFT_PANEL_MAX}
           aria-valuenow={leftPanelWidth}
-          {...magnify('패널 너비 조절', '드래그로 왼쪽 폭을 바꾸고, 더블클릭하면 360px로 돌아갑니다')}
-          onMouseDown={startLeftResize}
+          {...magnify('패널 너비 조절', '드래그로 왼쪽 폭을 220px부터 중앙이 남을 때까지 바꾸고, 더블클릭하면 480px로 돌아갑니다')}
+          onPointerDown={startLeftResize}
           onDoubleClick={resetLeftPanelWidth}
         />
         </div>
@@ -1519,18 +1682,16 @@ export default function App() {
                     { key: 'vignette', label: '비네팅 Vignette', min: 0, max: 100, tip: '가장자리를 어둡게 해 가운데를 강조합니다' },
                     { key: 'ink', label: '수묵 흑백화', min: 0, max: 100, tip: '수묵화처럼 흑백으로 바꿉니다' },
                   ].map((item) => (
-                    <label key={item.key} className="filter-row" {...magnify(item.label, item.tip)}>
-                      {item.label} {Math.round(viewEdit[item.key] ?? 0)}
-                      <input
-                        type="range"
-                        min={item.min}
-                        max={item.max}
-                        className="ctrl-slider mt-1"
-                        value={viewEdit[item.key] ?? 0}
-                        onPointerDown={capture}
-                        onChange={(event) => patchViewEdit({ [item.key]: Number(event.target.value) }, false)}
-                      />
-                    </label>
+                    <NumberSliderControl
+                      key={item.key}
+                      label={item.label}
+                      tooltip={item.tip}
+                      min={item.min}
+                      max={item.max}
+                      step={1}
+                      value={Math.round(viewEdit[item.key] ?? 0)}
+                      onChange={(next) => patchViewEdit({ [item.key]: next }, false)}
+                    />
                   ))}
                   <button
                     type="button"
@@ -1731,7 +1892,28 @@ export default function App() {
           ) : null}
         </main>
 
-        <aside className="studio-right">
+        <div
+          className="studio-right-split"
+          ref={rightSplitRef}
+          style={sideSplitStyle(rightCollapsed, rightPanelWidth)}
+        >
+        <div
+          className={clsx('panel-resizer', 'panel-resizer-right', isResizing && resizeSideRef.current === 'right' && 'is-on')}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="오른쪽 패널 너비 조절"
+          aria-valuemin={RIGHT_PANEL_MIN}
+          aria-valuemax={RIGHT_PANEL_MAX}
+          aria-valuenow={rightPanelWidth}
+          data-right-resizer="1"
+          {...magnify('우측 패널 너비', '드래그로 오른쪽 폭을 220px부터 중앙이 남을 때까지 바꾸고, 더블클릭하면 340px로 돌아갑니다')}
+          onPointerDown={startRightResize}
+          onDoubleClick={resetRightPanelWidth}
+        />
+        <aside
+          className="studio-right"
+          style={sideAsideStyle(rightCollapsed, rightPanelWidth)}
+        >
           <button
             type="button"
             className="panel-fold panel-fold-right"
@@ -1864,6 +2046,8 @@ export default function App() {
             <p className="mt-2 text-[10px] leading-4 text-zinc-500">{promptPack.guide}</p>
           </section>
         </aside>
+        </div>
+      </div>
       </div>
 
       <ProgressModal
@@ -1909,7 +2093,7 @@ export default function App() {
         onClose={() => setGuideOpen(false)}
         onApplySample={applySample}
       />
-      <EmoticonSplitterModal open={emoSplitOpen} onClose={() => setEmoSplitOpen(false)} />
+      <EmoticonSplitterModal open={emoSplitOpen && !isGifStudioOpen} onClose={() => setEmoSplitOpen(false)} />
       <MotionGifStudioModal
         isOpen={isGifStudioOpen}
         onClose={() => setIsGifStudioOpen(false)}

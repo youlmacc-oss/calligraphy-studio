@@ -24,7 +24,7 @@ export default defineConfig({
   base: '/calligraphy-studio/',
   server: {
     port: 5173,
-    open: '/calligraphy-studio/',
+    open: false,
   },
   test: {
     environment: 'node',

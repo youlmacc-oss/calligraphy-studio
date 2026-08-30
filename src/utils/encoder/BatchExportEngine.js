@@ -42,6 +42,7 @@ export function createSequenceClip(meta = {}, index = 0) {
     captionText: String(meta.captionText || ''),
     captionSize: meta.captionSize || 'md',
     captionStroke: meta.captionStroke || 'black',
+    captionFont: meta.captionFont || '',
     frames,
     isPermanent: true,
   }
@@ -69,6 +70,7 @@ export function createMotionClip(packed, meta = {}, index = 0) {
     captionText: String(meta.captionText || ''),
     captionSize: meta.captionSize || 'md',
     captionStroke: meta.captionStroke || 'black',
+    captionFont: meta.captionFont || '',
     frames: Array.isArray(meta.frames) ? meta.frames.map((item) => ({ ...item })) : [],
     isPermanent: false,
   }
