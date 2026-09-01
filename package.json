@@ -1,7 +1,7 @@
 {
   "name": "text-styler-app",
   "private": true,
-  "version": "1.5.4",
+  "version": "2.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

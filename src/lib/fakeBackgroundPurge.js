@@ -110,3 +110,51 @@ export function checkTransparencyHealth(canvas) {
   const opaqueRatio = total ? opaque / total : 0
   return { isHealthy: opaqueRatio < 0.15, opaqueRatio }
 }
+
+export function sanitizeExportSource(source) {
+  const canvas = sourceToCanvas(source)
+  if (!canvas) return source
+  enforceTransparencyPurge(canvas)
+  return canvas
+}
+
+export async function sanitizeExportFrames(frames) {
+  const list = Array.isArray(frames) ? frames : []
+  const out = []
+  for (const item of list) {
+    if (!item) continue
+    if (typeof item === 'string') {
+      const canvas = await canvasFromUrl(item)
+      if (!canvas) continue
+      enforceTransparencyPurge(canvas)
+      out.push({ id: 'clean-frame', url: canvas.toDataURL('image/png'), canvas })
+      continue
+    }
+    if (item.getContext && item.width) {
+      enforceTransparencyPurge(item)
+      out.push({
+        ...item,
+        url: typeof item.toDataURL === 'function' ? item.toDataURL('image/png') : item.url,
+        canvas: item,
+      })
+      continue
+    }
+    const url = item.url
+    if (!url) {
+      out.push(item)
+      continue
+    }
+    const canvas = await canvasFromUrl(url)
+    if (!canvas) {
+      out.push(item)
+      continue
+    }
+    enforceTransparencyPurge(canvas)
+    out.push({
+      ...item,
+      url: canvas.toDataURL('image/png'),
+      canvas,
+    })
+  }
+  return out
+}

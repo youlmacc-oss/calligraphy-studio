@@ -74,6 +74,34 @@ async function waitForApprovalWithReminder() {
   return answer
 }
 
+async function encodeUntilDone(page, fmt) {
+  await page.waitForSelector(`[data-encode-fmt="${fmt}"]:not([disabled])`, { timeout: 8000 })
+  await page.locator(`[data-encode-fmt="${fmt}"]`).scrollIntoViewIfNeeded()
+  const download = page.waitForEvent('download', { timeout: 180000 }).catch(() => null)
+  await page.locator(`[data-encode-fmt="${fmt}"]`).click()
+  await page.waitForSelector('[data-encode-progress="1"], [data-alpha-gate="1"]', { timeout: 15000 })
+  if (await page.locator('[data-alpha-gate="1"]').count()) {
+    await page.locator('[data-alpha-export-as-is="1"]').click()
+    await page.waitForSelector('[data-encode-progress="1"]', { timeout: 15000 })
+  }
+  const outcome = await page.waitForFunction(() => {
+    const el = document.querySelector('[data-encode-progress="1"]')
+    const state = el?.getAttribute('data-encode-state')
+    if (state === 'error') return 'error'
+    if (state === 'done' || Number(el?.getAttribute('data-encode-pct') || 0) >= 100) return 'done'
+    if (/내보내기 완료/.test(document.querySelector('[data-clip-toast="1"]')?.textContent || '')) return 'done'
+    if (/paintMotionFrame is not defined/i.test(el?.textContent || '')) return 'error'
+    return null
+  }, null, { timeout: 180000 })
+  const state = await outcome.jsonValue()
+  if (state !== 'done') {
+    const msg = await page.locator('[data-encode-progress="1"] .ms-enc-msg').textContent().catch(() => '')
+    throw new Error(`${fmt} encode did not finish: ${state || 'unknown'} ${msg || ''}`)
+  }
+  await download
+  await page.waitForFunction(() => !document.querySelector('[data-encode-progress="1"]'), null, { timeout: 4000 }).catch(() => {})
+}
+
 const SHEET_PATH = join(ROOT, 'public', 'sample-emoticon-sheet.png')
 const GRID_SHOT = join(ROOT, 'public', 'test-result-grid.png')
 const SPLIT_SHOT = join(ROOT, 'public', 'test-result.png')
@@ -184,7 +212,7 @@ async function runVisualCheck() {
   await page.locator('[data-guide-book="1"]').click()
   await page.waitForSelector('[data-guide-pipeline="1"]', { timeout: 10000 })
   await page.waitForTimeout(350)
-  await page.screenshot({ path: SPLIT_SHOT, fullPage: false })
+  await page.screenshot({ path: SPLIT_SHOT, fullPage: false, timeout: 60000 })
   await page.locator('.guide-master .studio-modal-close').click()
   await page.waitForFunction(() => !document.querySelector('[data-guide-pipeline="1"]'), { timeout: 8000 })
 
@@ -234,7 +262,7 @@ async function runVisualCheck() {
   await page.locator('[data-purge-bg]').click()
   await page.waitForSelector('[data-purge-toast="1"]', { timeout: 8000 })
   await page.waitForTimeout(300)
-  await page.screenshot({ path: GRID_SHOT, fullPage: false })
+  await page.screenshot({ path: GRID_SHOT, fullPage: false, timeout: 60000 })
 
   await page.locator('.emo-split-card .studio-modal-close').click()
   await page.locator('[data-tour="gif-export"]').click()
@@ -257,6 +285,32 @@ async function runVisualCheck() {
   }, null, { timeout: 8000 })
   await page.waitForSelector('.mgs-preview-canvas:not([hidden])', { timeout: 15000 })
   await page.waitForSelector('[data-still-loop="1"]', { timeout: 10000 })
+  await page.waitForSelector('[data-bg-select]', { timeout: 8000 })
+  await page.locator('[data-bg-select]').scrollIntoViewIfNeeded()
+  await page.selectOption('[data-bg-select]', 'white_studio')
+  await page.waitForFunction(() => document.querySelector('[data-bg-select]')?.value === 'white_studio', { timeout: 5000 })
+  await page.locator('.mgs-root .studio-modal-backdrop').click({ position: { x: 6, y: 6 }, force: true })
+  await page.locator('#mgs-title').waitFor({ state: 'attached', timeout: 8000 })
+  await page.locator('.mgs-card .studio-modal-close').click()
+  await page.waitForSelector('[data-close-confirm]', { timeout: 5000 })
+  await page.locator('[data-close-cancel]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-close-confirm]'), { timeout: 5000 })
+  await page.waitForSelector('#mgs-title')
+  await page.locator('.mgs-card .studio-modal-close').click()
+  await page.waitForSelector('[data-close-confirm]', { timeout: 5000 })
+  await page.locator('[data-close-save]').click()
+  await page.waitForFunction(() => !document.querySelector('#mgs-title'), { timeout: 8000 })
+  await page.locator('[data-tour="gif-export"]').click()
+  await page.waitForSelector('#mgs-title', { timeout: 10000 })
+  await page.waitForSelector('[data-session-resume="1"]', { timeout: 8000 })
+  await page.locator('[data-session-resume-yes]').click()
+  await page.waitForFunction(() => !document.querySelector('[data-session-resume="1"]'), { timeout: 8000 })
+  await page.waitForFunction(() => document.querySelector('[data-bg-select]')?.value === 'white_studio', { timeout: 8000 })
+  await page.waitForSelector('.mgs-preview-canvas:not([hidden])', { timeout: 15000 })
+  await page.waitForFunction(() => {
+    const btn = document.querySelector('[data-sprite-isolate]')
+    return Boolean(btn) && !btn.disabled
+  }, { timeout: 15000 })
   await page.locator('[data-particle="sparkle"]').click()
   await page.locator('[data-particle="hearts"]').click()
   await page.waitForFunction(() => {
@@ -264,9 +318,11 @@ async function runVisualCheck() {
       && document.querySelector('[data-particle="hearts"]')?.classList.contains('is-on')
   }, { timeout: 5000 })
   await page.waitForSelector('[data-sprite-isolate="1"]', { timeout: 8000 })
-  await page.locator('[data-sprite-isolate]').click()
-  await page.waitForSelector('[data-detect-outline="1"]', { timeout: 5000 })
-  await page.waitForSelector('[data-isolate-toast="1"]', { timeout: 5000 })
+  const isolateBtn = page.locator('[data-sprite-isolate]')
+  await isolateBtn.scrollIntoViewIfNeeded()
+  await isolateBtn.click()
+  await page.waitForSelector('[data-detect-outline="1"]', { timeout: 8000 })
+  await page.waitForSelector('[data-isolate-toast="1"]', { state: 'attached', timeout: 8000 })
   const pixelBtn = page.locator('[data-pixel-studio-open]')
   await pixelBtn.scrollIntoViewIfNeeded()
   await pixelBtn.click({ force: true })
@@ -335,7 +391,7 @@ async function runVisualCheck() {
     }))
   })
   await page.waitForSelector('[data-pixel-loupe="1"]', { timeout: 8000 })
-  await page.screenshot({ path: PIXEL_SHOT, fullPage: false })
+  await page.screenshot({ path: PIXEL_SHOT, fullPage: false, timeout: 60000 })
   await page.locator('[data-pixel-loupe-close]').click()
   await page.waitForFunction(() => !document.querySelector('[data-pixel-loupe="1"]'), null, { timeout: 5000 })
   await page.locator('[data-pixel-wand]').click()
@@ -407,6 +463,8 @@ async function runVisualCheck() {
     return String(input?.value || '') === '안녕' && bounce?.classList.contains('is-on')
   }, { timeout: 5000 })
   await page.waitForTimeout(500)
+  await encodeUntilDone(page, 'gif')
+  await encodeUntilDone(page, 'webp')
   await page.locator('[data-clip-save]').click()
   await page.waitForSelector('[data-motion-clip="0"]', { timeout: 8000 })
   await page.waitForSelector('[data-clip-del]', { timeout: 5000 })
@@ -443,7 +501,7 @@ async function runVisualCheck() {
     })
   }, { timeout: 8000 })
   await page.waitForTimeout(400)
-  await page.screenshot({ path: STUDIO_SHOT, fullPage: false })
+  await page.screenshot({ path: STUDIO_SHOT, fullPage: false, timeout: 60000 })
 
   const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 })
   await page.getByRole('button', { name: '내 PC 업로드' }).click()
@@ -455,8 +513,29 @@ async function runVisualCheck() {
   await chooser.setFiles([sheetPath, sheetPath])
   await page.waitForSelector('.mgs-upload-card', { timeout: 20000 })
   await page.waitForFunction(() => document.querySelectorAll('.mgs-upload-card').length >= 2, { timeout: 20000 })
+  await page.waitForFunction(() => document.querySelector('[data-source-tab]')?.getAttribute('data-source-tab') === 'drop', null, { timeout: 5000 })
+  await page.locator('[data-session-save]').click()
+  await page.waitForFunction(() => document.querySelector('[data-session-ind="1"]'), null, { timeout: 15000 })
   await page.waitForTimeout(400)
-  await page.screenshot({ path: SPLIT_SHOT, fullPage: false })
+  await page.screenshot({ path: SPLIT_SHOT, fullPage: false, timeout: 60000 })
+  await page.locator('.mgs-card .studio-modal-close').click()
+  await page.waitForSelector('[data-close-confirm]', { timeout: 8000 })
+  await page.locator('[data-close-save]').click()
+  await page.waitForFunction(() => !document.querySelector('#mgs-title'), null, { timeout: 8000 })
+  await page.locator('[data-tour="gif-export"]').click()
+  await page.waitForSelector('#mgs-title', { timeout: 10000 })
+  await page.waitForSelector('[data-session-resume="1"]', { timeout: 8000 })
+  await page.locator('[data-session-resume-yes]').click()
+  await page.waitForFunction(() => document.querySelector('[data-source-tab]')?.getAttribute('data-source-tab') === 'drop', null, { timeout: 25000 })
+  await page.locator('.mgs-card .studio-modal-close').click()
+  await page.waitForSelector('[data-close-confirm]', { timeout: 8000 })
+  await page.locator('[data-close-discard]').click()
+  await page.waitForFunction(() => !document.querySelector('#mgs-title'), null, { timeout: 8000 })
+  await page.locator('[data-tour="gif-export"]').click()
+  await page.waitForSelector('#mgs-title', { timeout: 10000 })
+  const resumeAfterDiscard = page.locator('[data-session-fresh]')
+  if (await resumeAfterDiscard.count()) await resumeAfterDiscard.click()
+  await page.waitForFunction(() => document.querySelector('[data-source-tab]')?.getAttribute('data-source-tab') === 'canvas', null, { timeout: 8000 })
 
   const heading = await page.locator('#mgs-title').textContent()
   const stillLoop = await page.locator('[data-motion-seq]').getAttribute('data-still-loop')

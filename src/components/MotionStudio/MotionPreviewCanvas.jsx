@@ -7,6 +7,7 @@ import { SEQUENCE_VIEW_SIZE, captionLoopIndex, clampSequenceFps, clampStillLoopS
 import { applyDefringeToContext } from '../../utils/imageProcessor.js'
 import { paintParticleOverlay, normalizeParticleLayers } from './particleOverlayEngine.js'
 import { paintMotionFrame } from '../MotionGifStudio/motionPresets.js'
+import { applyBackgroundUnder } from '../../lib/motionBackground.js'
 import { mirrorPreviewFrame } from './ChatRoomSimulator.jsx'
 
 function loadFrame(url) {
@@ -108,6 +109,7 @@ export default function MotionPreviewCanvas({
   captionTail = defaultBubbleTail(),
   onCaptionPos,
   onCaptionTail,
+  bgConfig,
 }) {
   const canvasRef = useRef(null)
   const cacheRef = useRef(new Map())
@@ -187,6 +189,7 @@ export default function MotionPreviewCanvas({
           isolate: isolateSprite,
         })
         applyDefringeToContext(ctx, edge, edge)
+        applyBackgroundUnder(ctx, edge, edge, bgConfig)
       } else {
         ctx.clearRect(0, 0, edge, edge)
       }
@@ -216,6 +219,7 @@ export default function MotionPreviewCanvas({
       const item = frames[index]
       const image = item?.url ? cacheRef.current.get(item.url) : null
       paintFrame(ctx, image, edge)
+      applyBackgroundUnder(ctx, edge, edge, bgConfig)
       paintOverlay(ctx, {
         edge,
         motion,
@@ -272,7 +276,7 @@ export default function MotionPreviewCanvas({
       drawStep(stepRef.current)
     }, delay)
     return () => window.clearInterval(timer)
-  }, [frames, fps, playing, size, effect, speed, pingPong, particles, stillLoop, motionPreset, isolateSprite, intensity, loopSeconds, cacheRev, captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, captionTail])
+  }, [frames, fps, playing, size, effect, speed, pingPong, particles, stillLoop, motionPreset, isolateSprite, intensity, loopSeconds, cacheRev, captionOn, captionText, captionSize, captionStroke, captionFont, captionPos, captionTail, bgConfig])
 
   return (
     <div className="ms-preview-stage checkerboard-bg">

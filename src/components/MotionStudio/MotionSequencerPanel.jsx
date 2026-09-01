@@ -48,6 +48,7 @@ export default function MotionSequencerPanel({
   captionLiveRef,
   onCaptionLive,
   sessionSnapRef,
+  bgConfig,
 }) {
   const studio = useMotionStudio()
   const [sequence, setSequence] = useState([])
@@ -343,6 +344,7 @@ export default function MotionSequencerPanel({
           onCaptionPos={setCaptionPos}
           onCaptionTail={setCaptionTail}
           onTick={(_index, url) => setLiveUrl(url)}
+          bgConfig={bgConfig}
         />
         <div className="ms-tracks">
           {showCutBank ? (
@@ -421,6 +423,7 @@ export default function MotionSequencerPanel({
         captionFont={captionFont}
         captionPos={captionPos}
         captionTail={captionTail}
+        bgConfig={bgConfig}
       />
     </section>
   )

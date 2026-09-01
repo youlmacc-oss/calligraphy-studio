@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>AI Motion GIF Studio PRO 엔지니어링 가이드 & 배포 보고서 v2.4.0</title>
+<style>
+@page {
+    size: A4;
+    margin: 15mm 12mm;
+    background-color: #f8fafc;
+    @bottom-right {
+        content: counter(page) " / " counter(pages);
+        font-size: 9pt;
+        color: #64748b;
+        font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    }
+}
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+    color: #1e293b;
+    line-height: 1.6;
+    font-size: 10pt;
+    background-color: #f8fafc;
+}
+.header-banner {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #ffffff;
+    padding: 24px 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border-left: 6px solid #06b6d4;
+}
+.header-banner h1 {
+    margin: 0 0 6px 0;
+    font-size: 19pt;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.5px;
+}
+.header-banner p {
+    margin: 0;
+    font-size: 10pt;
+    color: #94a3b8;
+}
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 8.5pt;
+    font-weight: 700;
+    border-radius: 4px;
+    background-color: #0891b2;
+    color: #ffffff;
+    margin-bottom: 8px;
+}
+h2 {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #0f172a;
+    border-left: 4px solid #0891b2;
+    padding-left: 8px;
+    margin: 22px 0 10px 0;
+    page-break-after: avoid;
+}
+h3 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 14px 0 6px 0;
+    page-break-after: avoid;
+}
+p {
+    margin: 0 0 8px 0;
+}
+.card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    background: #ffffff;
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 9pt;
+}
+th, td {
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    text-align: left;
+}
+th {
+    background-color: #f1f5f9;
+    font-weight: 700;
+    color: #334155;
+}
+tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+.status-pass {
+    color: #059669;
+    font-weight: 700;
+}
+.tag {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 8pt;
+    font-weight: 600;
+    background: #e0f2fe;
+    color: #0369a1;
+}
+ul, ol {
+    margin: 0 0 10px 0;
+    padding-left: 20px;
+}
+li {
+    margin-bottom: 4px;
+}
+code {
+    font-family: monospace;
+    background: #f1f5f9;
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #0f172a;
+    font-size: 9pt;
+}
+.highlight-box {
+    background-color: #ecfeff;
+    border: 1px solid #a5f3fc;
+    border-left: 4px solid #06b6d4;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+    font-size: 9pt;
+}
+</style>
+</head>
+<body>
+
+<div class="header-banner">
+    <span class="badge">PROD VERSION 2.4.0</span>
+    <h1>AI Motion GIF Studio PRO 엔지니어링 가이드 & 배포 보고서</h1>
+    <p>시스템 자가진단(Self-Diagnosis 10/10 PASS) 및 프로덕션 빌드·배포 절차 매뉴얼</p>
+</div>
+
+<h2>1. 시스템 아키텍처 & 핵심 엔진 개요</h2>
+<div class="card">
+    <p><strong>Zero-Layout-Shift 원칙:</strong> 고해상도 데스크탑부터 13~15인치 노트북 환경까지 3단 메인 레이아웃의 컨테이너 크기 및 버튼 배치를 100% 동결 유지하면서, 뷰포트 크기를 유연하게 맞추는 비침습적 반응형 파이프라인을 구축했습니다.</p>
+    <ul>
+        <li><strong>Layer 0 (Background):</strong> 순수 투명, 화이트/다크 스튜디오, 8종 그라데이션, 사전 다운스케일링된 사용자 업로드 이미지</li>
+        <li><strong>Layer 1 (Dynamic Motion):</strong> 24 FPS 모션 루프, 바운스/위글/글리치 등 동적 프레임 버퍼 실시간 합성</li>
+        <li><strong>Layer 2 (Foreground & Subtitle):</strong> 상업용 무료 폰트 10선 렌더러 및 마우스 드래그 조절형 3포인트 벡터 꼬리 말풍선</li>
+    </ul>
+</div>
+
+<h2>2. 주요 해결 과제 & 수정 내역</h2>
+<table>
+    <thead>
+        <tr>
+            <th style="width: 25%;">항목</th>
+            <th style="width: 35%;">기존 결함 및 병목</th>
+            <th style="width: 40%;">최종 해결 아키텍처</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>인코딩 스레드 락</strong></td>
+            <td>대용량 배경 로드 시 3% 멈춤 및 <code>paintMotionFrame is not defined</code> 오류 발생</td>
+            <td>360×360 사전 렌더링 캐시 및 비동기 틱 분할(<code>setTimeout(r, 0)</code>)로 100% 완주 보장</td>
+        </tr>
+        <tr>
+            <td><strong>체커보드 사각 잔여물</strong></td>
+            <td>GIF/WebP 내보내기 시 투명 영역 뒤에 가짜 사각 격자 비트맵이 구워져 나오는 현상</td>
+            <td>'초고화질 무한루프'와 동일한 <code>cleanMaskedFrames</code> 버퍼로 동기화하여 완벽 제거</td>
+        </tr>
+        <tr>
+            <td><strong>소스 모드 라이프사이클</strong></td>
+            <td>내 PC 업로드 작업 후 재오픈 시 본체 그래픽으로 강제 초기화되는 현상</td>
+            <td>3대 모드(본체/이모티콘/내PC) 컨텍스트 분리: 임시저장 시 직전 모드 복원, 완료 시 본체 리셋</td>
+        </tr>
+        <tr>
+            <td><strong>파일 저장 파이프라인</strong></td>
+            <td>브라우저 기본 폴더로 무조건 자동 저장되는 제약</td>
+            <td><code>File System Access API</code> 연동을 통해 OS 탐색기에서 저장 폴더/파일명 직접 선택 지원</td>
+        </tr>
+        <tr>
+            <td><strong>세션 및 모달 안전성</strong></td>
+            <td>창 바깥 클릭 시 작업 창이 꺼지거나 작업 내용이 유실되는 문제</td>
+            <td>외부 클릭 차단 및 닫기 시 스마트 임시저장 컨펌 모달 연동</td>
+        </tr>
+    </tbody>
+</table>
+
+<h2>3. 시스템 자가진단(Self-Diagnosis) 10/10 PASS 검증</h2>
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>진단 ID</th>
+                <th>검증 대상</th>
+                <th>테스트 시나리오</th>
+                <th>결과</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>TC-01</strong></td>
+                <td>Zero-Layout-Shift</td>
+                <td>데스크탑(1920x1080) 및 노트북(1366x768) 반응형 레이아웃 오차 검증</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-02</strong></td>
+                <td>투명 알파 파이프라인</td>
+                <td>텍스트 스타일러 ➔ 스튜디오 간 순수 투명($Alpha=0$) 버퍼 전달</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-03</strong></td>
+                <td>체커보드 사각 박멸</td>
+                <td>GIF/WebP 내보내기 결과물의 배경 격자 오염도 0% 검증</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-04</strong></td>
+                <td>비동기 인코더 완주</td>
+                <td>16개 프레임 GIF/WebP 내보내기 시 스레드 락 없이 100% 완료</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-05</strong></td>
+                <td>폴더 선택 저장</td>
+                <td><code>showSaveFilePicker</code> 호출 및 사용자 지정 디렉토리 파일 쓰기</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-06</strong></td>
+                <td>소스 3종 모드 복원</td>
+                <td>내 PC 업로드 모드 임시저장 ➔ 재오픈 시 해당 탭 및 이미지 복원</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-07</strong></td>
+                <td>작업 완료 리셋</td>
+                <td>내보내기 완료 후 세션 클리어 ➔ 신규 진입 시 본체 그래픽 기본 모드 리셋</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-08</strong></td>
+                <td>창 이탈 차단</td>
+                <td>모달 백드롭 클릭 시 이벤트 버블링 차단 및 창 유지</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-09</strong></td>
+                <td>동적 모션 유지</td>
+                <td>화이트/다크 스튜디오 및 이미지 배경 적용 상태에서 캐릭터 애니메이션 24 FPS 유지</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+            <tr>
+                <td><strong>TC-10</strong></td>
+                <td>말풍선 꼬리/폰트</td>
+                <td>3포인트 꼬리 드래그 및 웹폰트 10선 실시간 렌더링 무결성</td>
+                <td><span class="status-pass">PASS</span></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<h2>4. 안전 백업 및 프로덕션 배포 가이드</h2>
+<div class="highlight-box">
+    <strong>배포 전 주의사항:</strong> 형상 관리(Git)는 수동 승인 후 안전 커밋 및 태그 생성을 진행하며, 브라우저 빌드 캐시를 초기화한 후 배포 파이프라인을 실행합니다. GitHub Pages는 <code>main</code> 푸시 시 <code>.github/workflows/deploy.yml</code>이 <code>npm run build</code> 후 배포합니다. 앱 내 HUD 단계 수는 고정 10이 아니라 <code>DIAG_STEPS.length</code>를 따릅니다.
+</div>
+
+<ol>
+    <li><strong>로컬 검증:</strong> <code>npm run diagnose</code> 후 <code>npm run test:loop</code> (캐시 삭제 · Vite --force 재기동 · Playwright Hard Reload)</li>
+    <li><strong>프로덕션 빌드 검증:</strong> <code>npm run build</code> 실행 후 번들 생성 확인</li>
+    <li><strong>스냅샷 안전 백업:</strong> <code>git add . && git commit</code> 후 <code>v2.4.0</code> 및 <code>v2.4.0-stable-backup</code> 태그</li>
+    <li><strong>배포:</strong> <code>git push origin main</code> 및 태그 푸시 → GitHub Pages Actions</li>
+</ol>
+
+</body>
+</html>

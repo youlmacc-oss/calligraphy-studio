@@ -39,10 +39,12 @@ import { MotionSequencerPanel } from '../MotionStudio/index.js'
 import { MotionStudioProvider, useMotionStudio } from '../MotionStudio/motionStudioContext.jsx'
 import {
   canvasToPngDataUrl,
+  clearSavedSession,
   hydrateSavedSession,
   peekFreshSession,
   persistMotionStudioSession,
   urlToDataUrl,
+  normalizeSourceTab,
 } from '../../lib/sessionManager.js'
 import MotionZipToolbarButton from '../MotionStudio/MotionZipToolbarButton.jsx'
 import { paintParticleOverlay, normalizeParticleLayers } from '../MotionStudio/particleOverlayEngine.js'
@@ -52,6 +54,17 @@ import { cropSpriteWithFeedback, drawDetectionOutline, forgetCroppedSprite } fro
 import PixelSelectionModal from './PixelSelectionModal.jsx'
 import TransparencyCheckModal from '../TransparencyCheckModal.jsx'
 import { canvasFromUrl, enforceTransparencyPurge, sourceToCanvas } from '../../lib/fakeBackgroundPurge.js'
+import {
+  BACKGROUND_PRESETS,
+  applyBackgroundUnder,
+  backgroundSelectValue,
+  bgConfigFromSelect,
+  defaultBgConfig,
+  isTransparentBackground,
+  normalizeBgConfig,
+} from '../../lib/motionBackground.js'
+import { optimizeBackgroundImage } from '../../utils/gifOptimizer.js'
+import { saveFileWithFolderPicker } from '../../utils/fileSaveManager.js'
 import { useTransparencyGate } from '../../hooks/useTransparencyGate.js'
 import './motionGifStudio.css'
 
@@ -248,6 +261,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const [intensity, setIntensity] = useState(70)
   const [fps, setFps] = useState(24)
   const [sizeId, setSizeId] = useState('kakao')
+  const [bgConfig, setBgConfig] = useState(defaultBgConfig)
   const [eta, setEta] = useState('')
   const [hasSource, setHasSource] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -262,16 +276,20 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const [sessionSaved, setSessionSaved] = useState(false)
   const [sessionBusy, setSessionBusy] = useState(false)
   const [resumeAsk, setResumeAsk] = useState(false)
+  const [closeAsk, setCloseAsk] = useState(false)
   const sessionSnapRef = useRef(null)
   const studioApiRef = useRef(null)
   const skipSourceSyncRef = useRef(false)
   const saveTimerRef = useRef(0)
   const persistBusyRef = useRef(false)
+  const closingRef = useRef(false)
+  const bgFileInputRef = useRef(null)
+  const bgImageRef = useRef(null)
 
   const loop = clampLoopSeconds(loopSeconds)
 
   useEffect(() => {
-    paramsRef.current = { preset, intensity, loopSeconds: loop, fps, sizeId, playing, zoom, isolate: isolateOn }
+    paramsRef.current = { preset, intensity, loopSeconds: loop, fps, sizeId, playing, zoom, isolate: isolateOn, bgConfig: { ...bgConfig, image: bgImageRef.current } }
     sourceTabRef.current = sourceTab
     cutsRef.current = cuts
     diagSnapRef.current = {
@@ -321,6 +339,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       intensity: paramsRef.current.intensity,
       isolate: paramsRef.current.isolate !== false,
     })
+    applyBackgroundUnder(virtualCtx, size.width, size.height, paramsRef.current.bgConfig)
     const detect = detectRef.current
     if (detect.until > performance.now() && detect.bounds && Math.floor(performance.now() / 180) % 2 === 0) {
       drawDetectionOutline(virtualCtx, detect.bounds, size.width, size.height)
@@ -441,6 +460,10 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       setStatusKind('ok')
       setStatus('엔진 대기 중 (Ready)')
     } catch (error) {
+      if (imageRef.current) {
+        setHasSource(true)
+        return
+      }
       setHasSource(false)
       setStatusKind('error')
       setStatus(error.message || '이미지를 읽지 못했습니다.')
@@ -472,6 +495,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       sourceImage: canvasToPngDataUrl(sourceCanvas),
       pixelSprite: pixelCanvas && pixelCanvas !== sourceCanvas ? canvasToPngDataUrl(pixelCanvas) : null,
       activeSourceTab: sourceTab,
+      selectedCut,
       selectedPreset: preset,
       motionParams: {
         loopDuration: loop,
@@ -498,11 +522,16 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       isolateOn,
       viewBg,
       zoom,
+      bgConfig: {
+        type: bgConfig.type,
+        gradientId: bgConfig.gradientId || '',
+        imageUrl: bgConfig.type === 'image' ? (bgConfig.imageUrl || '') : '',
+      },
     }
-  }, [sourceTab, preset, loop, intensity, fps, sizeId, isolateOn, viewBg, zoom])
+  }, [sourceTab, selectedCut, preset, loop, intensity, fps, sizeId, isolateOn, viewBg, zoom, bgConfig])
 
   const persistSessionNow = useCallback(async () => {
-    if (!isOpen || encoding || persistBusyRef.current) return false
+    if (!isOpen || encoding || persistBusyRef.current || closingRef.current) return false
     persistBusyRef.current = true
     setSessionBusy(true)
     try {
@@ -518,8 +547,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
 
   const applySavedSession = useCallback(async (session) => {
     if (!session) return false
-    skipSourceSyncRef.current = Date.now() + 900
-    setSourceTab(session.activeSourceTab || 'canvas')
+    skipSourceSyncRef.current = Date.now() + 2500
+    setSourceTab(normalizeSourceTab(session.activeSourceTab))
+    if (session.selectedCut) setSelectedCut(session.selectedCut)
     setPreset(session.selectedPreset || MOTION_NONE)
     setLoopSeconds(session.motionParams?.loopDuration ?? 2)
     setIntensity(session.motionParams?.motionIntensity ?? 70)
@@ -528,6 +558,23 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     setIsolateOn(session.isolateOn !== false)
     setViewBg(session.viewBg || 'checker')
     setZoom(session.zoom || 100)
+    if (session.bgConfig) {
+      const nextBg = normalizeBgConfig(session.bgConfig)
+      if (nextBg.type === 'image' && nextBg.imageUrl) {
+        try {
+          const image = await loadImage(nextBg.imageUrl)
+          const optimized = await optimizeBackgroundImage(image, 360, 360)
+          bgImageRef.current = optimized
+          setBgConfig({ ...nextBg, image: optimized, optimizedCanvas: optimized })
+        } catch {
+          bgImageRef.current = null
+          setBgConfig(defaultBgConfig())
+        }
+      } else {
+        bgImageRef.current = null
+        setBgConfig(nextBg)
+      }
+    }
     if (session.sourceImage) {
       if (session.activeSourceTab === 'drop') {
         const item = {
@@ -582,6 +629,8 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     })
     setResumeAsk(false)
     setSessionSaved(true)
+    setDetectOn(false)
+    setSourceTab(normalizeSourceTab(session.activeSourceTab))
     setStatusKind('ok')
     setStatus('이전 작업을 복원했습니다')
     paintNow(playRef.current.pausedT || 0)
@@ -704,14 +753,16 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
         setEncoding(false)
         setProgress(0)
         setPlaying(true)
-        setLocalUrl(null)
-        setUploadedImages([])
-        setSelectedUpload('')
         setSelectedCut('')
         setDropNote('')
-        setSourceTab('canvas')
         setEta('')
         setStatus('엔진 대기 중 (Ready)')
+        if (!peekFreshSession()) {
+          setSourceTab('canvas')
+          setLocalUrl(null)
+          setUploadedImages([])
+          setSelectedUpload('')
+        }
       }, 0)
       return () => window.clearTimeout(timer)
     }
@@ -723,13 +774,8 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       if (nextCuts[0]) setSelectedCut(cutKey(nextCuts[0], 0))
       ingestUrl(parsed.dataUrl)
     }, 0)
-    const onKey = (event) => {
-      if (event.key === 'Escape') onClose?.()
-    }
-    window.addEventListener('keydown', onKey)
     return () => {
       window.clearTimeout(timer)
-      window.removeEventListener('keydown', onKey)
       teardown()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -738,8 +784,10 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   useEffect(() => {
     if (!isOpen) {
       setResumeAsk(false)
+      setCloseAsk(false)
       return undefined
     }
+    closingRef.current = false
     setResumeAsk(Boolean(peekFreshSession()))
     return undefined
   }, [isOpen])
@@ -813,7 +861,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       stopLoop()
     }
     return undefined
-  }, [isOpen, hasSource, preset, intensity, loopSeconds, sizeId, playing, zoom, isolateOn, paintNow, startLoop, stopLoop])
+  }, [isOpen, hasSource, preset, intensity, loopSeconds, sizeId, playing, zoom, isolateOn, paintNow, startLoop, stopLoop, bgConfig])
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -842,13 +890,63 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     return () => window.clearTimeout(timer)
   }, [sourceTab, selectedCut, cuts, parsed.cuts])
 
-  const requestClose = useCallback(() => {
-    if (encoding) {
-      abortRef.current = true
-      setEncoding(false)
-    }
+  const hasUnsavedWork = useCallback(() => (
+    Boolean(hasSource || encoding || !isTransparentBackground(bgConfig) || (preset && preset !== MOTION_NONE))
+  ), [hasSource, encoding, bgConfig, preset])
+
+  const finishClose = useCallback(() => {
+    abortRef.current = true
+    setEncoding(false)
+    setCloseAsk(false)
     onClose?.()
-  }, [encoding, onClose])
+  }, [onClose])
+
+  const requestClose = useCallback(() => {
+    if (closeAsk) return
+    if (hasUnsavedWork()) {
+      setCloseAsk(true)
+      return
+    }
+    finishClose()
+  }, [closeAsk, hasUnsavedWork, finishClose])
+
+  const confirmSaveAndClose = useCallback(async () => {
+    abortRef.current = true
+    persistBusyRef.current = false
+    try {
+      const payload = await collectSessionPayload()
+      const ok = await persistMotionStudioSession(payload)
+      setSessionSaved(ok)
+    } catch {
+      /* still close */
+    }
+    finishClose()
+  }, [collectSessionPayload, finishClose])
+
+  const confirmDiscardAndClose = useCallback(() => {
+    closingRef.current = true
+    clearSavedSession()
+    setSourceTab('canvas')
+    setUploadedImages([])
+    setSelectedUpload('')
+    setLocalUrl(null)
+    finishClose()
+  }, [finishClose])
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      if (closeAsk) {
+        setCloseAsk(false)
+        return
+      }
+      requestClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, closeAsk, requestClose])
 
   const handleDownload = useCallback(async () => {
     const source = fittedRef.current
@@ -871,6 +969,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
         loopSeconds: loop,
         preset,
         intensity,
+        bgConfig: { ...bgConfig, image: bgImageRef.current },
         signal: { get aborted() { return abortRef.current } },
         onProgress: (pct, index, total, phase) => {
           encodePhaseRef.current = phase || 'encode'
@@ -894,7 +993,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       setProgress(100)
       setEta('')
       setStatus(`완료 ${Math.round(result.byteLength / 1024)} KB`)
-      saveAs(result.blob, `motion-studio-${size.width}x${size.height}.gif`)
+      await saveFileWithFolderPicker(result.blob, `motion-studio-${size.width}x${size.height}.gif`, 'image/gif')
       revokeGifUrl(result.url)
     } catch (error) {
       encodeErrorRef.current = error.message || 'GIF 인코딩에 실패했습니다.'
@@ -905,7 +1004,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       setEncoding(false)
       if (!abortRef.current && hasSource && playing) startLoop()
     }
-  }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop])
+  }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop, bgConfig])
 
   const runBatchEncode = useCallback(async (list, zipName, folderName) => {
     if (!list.length || encoding) return
@@ -934,6 +1033,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
           loopSeconds: loop,
           preset,
           intensity,
+          bgConfig: { ...bgConfig, image: bgImageRef.current },
           signal: { get aborted() { return abortRef.current } },
           onProgress: (pct, _index, _total, phase) => {
             encodePhaseRef.current = phase || 'encode'
@@ -972,7 +1072,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       setEncoding(false)
       if (!abortRef.current && hasSource && playing) startLoop()
     }
-  }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop])
+  }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop, bgConfig])
 
   const handleBatchExport = useCallback(() => {
     const list = (cuts.length ? cuts : parsed.cuts).filter((cut) => cutUrl(cut)).slice(0, 28)
@@ -1078,6 +1178,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const handlePixelApply = (sprite) => {
     if (!sprite) return
     releaseCanvas(pixelSpriteRef.current)
+    if (sprite) enforceTransparencyPurge(sprite)
     pixelSpriteRef.current = sprite
     setIsolateOn(true)
     paramsRef.current.isolate = true
@@ -1105,8 +1206,12 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
       aria-modal="true"
       aria-labelledby="mgs-title"
     >
-      <div className="studio-modal-backdrop" onClick={requestClose} />
-      <div className="studio-modal-card mgs-card">
+      <div className="studio-modal-backdrop" data-mgs-backdrop="1" />
+      <div
+        className="studio-modal-card mgs-card"
+        onClick={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <MotionStudioProvider>
         <StudioSessionBridge apiRef={studioApiRef}>
         <header className="mgs-head">
@@ -1192,9 +1297,31 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                 type="button"
                 className="mgs-icon-btn"
                 data-session-fresh="1"
-                onClick={() => setResumeAsk(false)}
+                onClick={() => {
+                  setResumeAsk(false)
+                  setSourceTab('canvas')
+                  setUploadedImages([])
+                  setSelectedUpload('')
+                  setLocalUrl(null)
+                }}
               >
                 새로 시작
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {closeAsk ? (
+          <div className="mgs-session-banner mgs-close-confirm" data-close-confirm="1" role="alertdialog" aria-modal="true">
+            <p>작업 중인 내용이 있습니다. 임시저장 후 닫으시겠습니까?</p>
+            <div className="mgs-session-banner-actions">
+              <button type="button" className="mgs-icon-btn is-on" data-close-save="1" onClick={() => { void confirmSaveAndClose() }}>
+                저장 후 닫기
+              </button>
+              <button type="button" className="mgs-icon-btn" data-close-discard="1" onClick={confirmDiscardAndClose}>
+                저장 안 함
+              </button>
+              <button type="button" className="mgs-icon-btn" data-close-cancel="1" onClick={() => setCloseAsk(false)}>
+                취소
               </button>
             </div>
           </div>
@@ -1471,6 +1598,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               captionLiveRef={captionLiveRef}
               onCaptionLive={syncStageCaption}
               sessionSnapRef={sessionSnapRef}
+              bgConfig={{ ...bgConfig, image: bgImageRef.current }}
             />
           </section>
 
@@ -1685,12 +1813,58 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
                 ))}
               </select>
             </label>
+            <div className="mgs-slider mgs-bg-layer" data-bg-layer="1">
+              <span className="mgs-slider-head">
+                배경 합성 (Layer 0)
+                {!isTransparentBackground(bgConfig) ? <span className="mgs-badge">적용 중</span> : null}
+              </span>
+              <select
+                className="mgs-select"
+                data-bg-select="1"
+                value={backgroundSelectValue(bgConfig)}
+                disabled={encoding}
+                data-tooltip="캐릭터 뒤에만 깔리는 배경입니다. 투명은 기존 알파 GIF를 유지합니다"
+                data-mgs-place="left"
+                onChange={(event) => {
+                  const value = event.target.value
+                  if (value === 'custom_img') {
+                    bgFileInputRef.current?.click()
+                    return
+                  }
+                  bgImageRef.current = null
+                  setBgConfig(bgConfigFromSelect(value))
+                }}
+              >
+                {BACKGROUND_PRESETS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+              <input
+                ref={bgFileInputRef}
+                type="file"
+                accept="image/*"
+                className="mgs-file-input"
+                data-bg-file="1"
+                tabIndex={-1}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!file) return
+                  const url = URL.createObjectURL(file)
+                  void optimizeBackgroundImage(file, 360, 360).then((optimized) => {
+                    bgImageRef.current = optimized
+                    objectUrlsRef.current.push(url)
+                    setBgConfig({ type: 'image', gradientId: '', imageUrl: url, image: optimized, optimizedCanvas: optimized })
+                  }).catch(() => URL.revokeObjectURL(url))
+                }}
+              />
+            </div>
           </aside>
         </div>
 
         <footer className="mgs-foot">
           {statusKind === 'error' ? <p className="mgs-foot-error">{status}</p> : null}
-          {detectOn && statusKind === 'ok' ? <p className="mgs-hint" data-isolate-toast="1">{status}</p> : null}
+          {detectOn ? <p className="mgs-hint" data-isolate-toast="1">{status}</p> : null}
           {!detectOn && statusKind === 'ok' && String(status).includes('원본') ? <p className="mgs-hint" data-restore-toast="1">{status}</p> : null}
           <div className="mgs-foot-actions">
             {encoding ? (

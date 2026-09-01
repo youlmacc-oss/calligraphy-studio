@@ -125,7 +125,7 @@ import { applyBilateralEdgePreserve, applyDefringeToContext, defringeAlphaEdge, 
 import { MOTION_NONE, MOTION_PRESETS, sampleMotion as sampleGifPreset, isMotionNone, paintMotionFrame } from '../components/MotionGifStudio/motionPresets.js'
 import { cropTransparentSprite, drawDetectionOutline, extractCharacterBoundingBox } from '../components/MotionGifStudio/spriteIsolate.js'
 import { PurePixelSelectionEngine, extractSpriteFromMask, renderLoupeGrid } from '../components/MotionGifStudio/pixelSelectionEngine.js'
-import { checkTransparencyHealth, enforceTransparencyPurge, purgeFakeBackground } from './fakeBackgroundPurge.js'
+import { checkTransparencyHealth, enforceTransparencyPurge, purgeFakeBackground, sanitizeExportFrames } from './fakeBackgroundPurge.js'
 import EmoticonSplitterModal from '../components/EmoticonSplitterModal.jsx'
 import TransparencyCheckModal from '../components/TransparencyCheckModal.jsx'
 import PixelSelectionModal from '../components/MotionGifStudio/PixelSelectionModal.jsx'
@@ -158,7 +158,16 @@ import { drawSpeechBubbleWithTail, hitTestTailHandle, defaultBubbleTail } from '
 import { PARTICLE_LAYERS } from '../components/MotionStudio/particleOverlayEngine.js'
 import { estimateStoreSpec } from '../components/MotionStudio/storeSpecHud.js'
 import { STUDIO_HUD_STEPS } from './studioHudChecks.js'
-import { SESSION_KEY, isFreshSession, loadSavedSession, saveCurrentSession } from './sessionManager.js'
+import { SESSION_KEY, isFreshSession, loadSavedSession, saveCurrentSession, normalizeSourceTab, SOURCE_TABS } from './sessionManager.js'
+import {
+  BACKGROUND_PRESETS,
+  applyBackgroundUnder,
+  drawBackgroundLayer,
+  isTransparentBackground,
+  renderCompositeFrame,
+} from './motionBackground.js'
+import { coverBitmapSync, coverCropRect, optimizeBackgroundImage } from '../utils/gifOptimizer.js'
+import { saveFileWithFolderPicker, shouldUseSavePicker } from '../utils/fileSaveManager.js'
 import MotionGifStudioModal from '../components/MotionGifStudio/MotionGifStudioModal.jsx'
 import { isPcImageFile, listPcImageFiles } from '../components/MotionGifStudio/motionPcUpload.js'
 import { NumberSliderControl, bumpSliderValue } from '../components/NumberSliderControl.jsx'
@@ -171,7 +180,7 @@ import EncodeProgressModal from '../components/MotionStudio/EncodeProgressModal.
 import MotionClipManager from '../components/MotionStudio/MotionClipManager.jsx'
 import MotionZipToolbarButton from '../components/MotionStudio/MotionZipToolbarButton.jsx'
 import ChatRoomSimulator, { mirrorPreviewFrame } from '../components/MotionStudio/ChatRoomSimulator.jsx'
-import { ENCODER_SIZE, composeSequenceCanvases, composeStillMotionCanvases, encodeGifFromCanvases as encodeMotionGif, yieldToMain, frameProgressCopy } from '../utils/encoder/MotionEncoderEngine.js'
+import { ENCODER_SIZE, composeSequenceCanvases, composeStillMotionCanvases, encodeGifFromCanvases as encodeMotionGif, yieldToMain, frameProgressCopy, triggerBlobDownload } from '../utils/encoder/MotionEncoderEngine.js'
 import { isAnimatedWebp, muxAnimatedWebp } from '../utils/encoder/webpAnimMux.js'
 import { createSequenceClip, motionClipFileName } from '../utils/encoder/BatchExportEngine.js'
 import JSZip from 'jszip'
@@ -2435,6 +2444,32 @@ export async function checkMotionSequencer() {
   if (!String(composeStillMotionCanvases).includes('paintMotionFrame') || !String(composeSequenceCanvases).includes('stillLoop')) {
     return { status: 'error', detail: '단일 이미지 모션 프리셋 인코딩이 연결되어 있지 않습니다.' }
   }
+  try {
+    const src = document.createElement('canvas')
+    src.width = 32
+    src.height = 32
+    const srcCtx = src.getContext('2d')
+    srcCtx.fillStyle = '#22d3ee'
+    srcCtx.fillRect(6, 6, 20, 20)
+    const composed = await composeStillMotionCanvases(
+      { url: src.toDataURL('image/png') },
+      { fps: 4, loopSeconds: 0.5, preset: 'none', isolate: false, bgConfig: { type: 'solid', gradientId: 'white_studio' } },
+    )
+    if (!composed?.length) {
+      return { status: 'error', detail: 'GIF 프레임 합성이 비었습니다.' }
+    }
+  } catch (err) {
+    return { status: 'error', detail: `paintMotionFrame/GIF 합성 실패: ${err?.message || err}` }
+  }
+  if (typeof saveFileWithFolderPicker !== 'function' || typeof shouldUseSavePicker !== 'function' || !String(triggerBlobDownload).includes('saveFileWithFolderPicker')) {
+    return { status: 'error', detail: '폴더 선택 저장 매니저가 연결되어 있지 않습니다.' }
+  }
+  if (!uploadSrc.includes('saveFileWithFolderPicker') || !uploadSrc.includes('clearSavedSession')) {
+    return { status: 'error', detail: 'GIF 저장 폴더 선택 또는 저장 안 함 세션 정리가 없습니다.' }
+  }
+  if (!SOURCE_TABS.includes('drop') || normalizeSourceTab('upload') !== 'drop' || normalizeSourceTab('emoticon') !== 'cuts' || normalizeSourceTab('main') !== 'canvas') {
+    return { status: 'error', detail: '소스 탭 3종 정규화가 실패했습니다.' }
+  }
   if (!panelSrc.includes('MotionExportPanel') || !exportSrc.includes('data-encode-fmt') || !exportSrc.includes('data-clip-save')) {
     return { status: 'error', detail: '시퀀서 내보내기 또는 클립 저장 버튼이 없습니다.' }
   }
@@ -2480,8 +2515,93 @@ export async function checkMotionSequencer() {
   if (!uploadSrc.includes('data-session-save') || !uploadSrc.includes('data-session-load') || !uploadSrc.includes('data-session-ind') || !uploadSrc.includes('data-session-resume')) {
     return { status: 'error', detail: '작업 저장/불러오기 또는 이어하기 배너가 없습니다.' }
   }
+  if (!uploadSrc.includes('data-close-confirm') || !uploadSrc.includes('data-close-save') || !uploadSrc.includes('data-close-discard') || !uploadSrc.includes('data-close-cancel')) {
+    return { status: 'error', detail: '닫기 임시저장 컨펌이 없습니다.' }
+  }
+  if (/studio-modal-backdrop"[^>]*onClick=\{requestClose\}/.test(uploadSrc)) {
+    return { status: 'error', detail: '모달 배경 클릭이 창을 닫습니다.' }
+  }
   if (!panelSrc.includes('sessionSnapRef')) {
     return { status: 'error', detail: '시퀀서 세션 스냅샷 ref가 없습니다.' }
+  }
+  if (!uploadSrc.includes('data-bg-select') || !uploadSrc.includes('data-bg-layer') || BACKGROUND_PRESETS.length < 9) {
+    return { status: 'error', detail: '우측 패널 배경 합성 셀렉터가 없습니다.' }
+  }
+  if (!BACKGROUND_PRESETS.some((item) => item.id === 'white_studio' && item.type === 'solid')) {
+    return { status: 'error', detail: '화이트 스튜디오 배경 프리셋이 없습니다.' }
+  }
+  if (typeof drawBackgroundLayer !== 'function' || typeof applyBackgroundUnder !== 'function' || typeof renderCompositeFrame !== 'function') {
+    return { status: 'error', detail: '배경 레이어 합성 함수가 없습니다.' }
+  }
+  if (!isTransparentBackground({ type: 'transparent' }) || isTransparentBackground({ type: 'gradient', gradientId: 'sunset' })) {
+    return { status: 'error', detail: '투명 배경 기본값 판정이 실패했습니다.' }
+  }
+  const bgProbe = document.createElement('canvas')
+  bgProbe.width = 40
+  bgProbe.height = 40
+  const bgCtx = bgProbe.getContext('2d')
+  drawBackgroundLayer(bgCtx, 40, 40, { type: 'transparent' })
+  if (bgCtx.getImageData(20, 20, 1, 1).data[3] > 8) {
+    return { status: 'error', detail: '투명 배경이 픽셀을 칠합니다.' }
+  }
+  drawBackgroundLayer(bgCtx, 40, 40, { type: 'gradient', gradientId: 'sunset' })
+  if (bgCtx.getImageData(20, 20, 1, 1).data[3] < 200) {
+    return { status: 'error', detail: '그라데이션 배경 레이어가 그려지지 않습니다.' }
+  }
+  drawBackgroundLayer(bgCtx, 40, 40, { type: 'solid', gradientId: 'white_studio' })
+  const whitePx = bgCtx.getImageData(20, 20, 1, 1).data
+  if (whitePx[0] < 180 || whitePx[3] < 200) {
+    return { status: 'error', detail: '화이트 스튜디오 배경이 그려지지 않습니다.' }
+  }
+  const bag = new Map()
+  const fakeStore = {
+    getItem: (key) => bag.get(key) ?? null,
+    setItem: (key, value) => { bag.set(key, String(value)) },
+    removeItem: (key) => { bag.delete(key) },
+  }
+  saveCurrentSession({ bgConfig: { type: 'solid', gradientId: 'white_studio' } }, fakeStore)
+  const restoredBg = loadSavedSession(fakeStore)?.bgConfig
+  if (restoredBg?.type !== 'solid' || restoredBg?.gradientId !== 'white_studio') {
+    return { status: 'error', detail: '화이트 스튜디오 세션 복원이 실패했습니다.' }
+  }
+  if (!String(composeStillMotionCanvases).includes('applyBackgroundUnder') || !uploadSrc.includes('applyBackgroundUnder')) {
+    return { status: 'error', detail: '미리보기/인코더 배경 합성이 연결되어 있지 않습니다.' }
+  }
+  if (!String(composeStillMotionCanvases).includes('prepareEncodeBackground') || typeof optimizeBackgroundImage !== 'function') {
+    return { status: 'error', detail: '대용량 배경 1회 다운스케일 캐시가 없습니다.' }
+  }
+  if (typeof sanitizeExportFrames !== 'function' || !String(composeStillMotionCanvases).includes('loadCleanExportImage')) {
+    return { status: 'error', detail: '내보내기 클린 프레임 정제가 없습니다.' }
+  }
+  const dirty = document.createElement('canvas')
+  dirty.width = 32
+  dirty.height = 32
+  const dirtyCtx = dirty.getContext('2d')
+  for (let y = 0; y < 32; y += 8) {
+    for (let x = 0; x < 32; x += 8) {
+      dirtyCtx.fillStyle = ((x + y) / 8) % 2 === 0 ? '#ffffff' : '#c8c8c8'
+      dirtyCtx.fillRect(x, y, 8, 8)
+    }
+  }
+  dirtyCtx.fillStyle = '#ff3366'
+  dirtyCtx.fillRect(10, 10, 12, 12)
+  enforceTransparencyPurge(dirty)
+  if (dirty.getImageData(1, 1, 1, 1).data[3] > 20) {
+    return { status: 'error', detail: '가짜 체커보드가 내보내기 버퍼에 남습니다.' }
+  }
+  if (dirty.getImageData(16, 16, 1, 1).data[3] < 200) {
+    return { status: 'error', detail: '체커보드 정제가 캐릭터 픽셀을 지웁니다.' }
+  }
+  const crop = coverCropRect(80, 40, 20, 20)
+  if (Math.abs(crop.sw - 40) > 1 || Math.abs(crop.sh - 40) > 1) {
+    return { status: 'error', detail: '배경 Cover 크롭 비율이 실패했습니다.' }
+  }
+  const huge = document.createElement('canvas')
+  huge.width = 80
+  huge.height = 40
+  const fitted = coverBitmapSync(huge, 20, 20)
+  if (!fitted || fitted.width !== 20 || fitted.height !== 20) {
+    return { status: 'error', detail: '배경 360 사전 캐시 캔버스가 실패했습니다.' }
   }
   return {
     status: 'ok',

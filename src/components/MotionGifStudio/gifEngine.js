@@ -1,5 +1,7 @@
 import { clampLoopSeconds, paintMotionFrame } from './motionPresets.js'
-import { delayMsFromOptions, encodeRgbaFrames, wrapGifBytes, maskRgbaTransparency, ALPHA_CUT } from './gifEncodeCore.js'
+import { applyBackgroundUnder } from '../../lib/motionBackground.js'
+import { prepareEncodeBackground } from '../../utils/gifOptimizer.js'
+import { delayMsFromOptions, encodeRgbaFrames, encodeRgbaFramesAsync, wrapGifBytes, maskRgbaTransparency, ALPHA_CUT } from './gifEncodeCore.js'
 import { primeHqContext } from '../../utils/hqRender.js'
 import { applyBilateralEdgePreserve } from '../../utils/imageProcessor.js'
 
@@ -92,17 +94,7 @@ function encodeWithWorker(buffers, options) {
 async function encodeRgbaNonBlocking(frames, options) {
   const workerJob = encodeWithWorker(frames.map((frame) => frame.data.buffer), options)
   if (workerJob) return workerJob
-  let lastYield = 0
-  return encodeRgbaFrames(frames, {
-    ...options,
-    onProgress: async (pct, index, total) => {
-      options.onProgress?.(pct, index, total)
-      if (index - lastYield >= 1) {
-        lastYield = index
-        await yieldFrame()
-      }
-    },
-  })
+  return encodeRgbaFramesAsync(frames, options)
 }
 
 export async function encodeMotionGif({
@@ -113,6 +105,7 @@ export async function encodeMotionGif({
   loopSeconds = 2,
   preset = 'none',
   intensity = 70,
+  bgConfig,
   onProgress,
   signal,
 } = {}) {
@@ -125,6 +118,8 @@ export async function encodeMotionGif({
   canvas.height = h
   const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
   primeHqContext(ctx)
+  const bgConfigReady = await prepareEncodeBackground(bgConfig, w, h)
+  await yieldFrame()
   const frames = []
   onProgress?.(0, 0, frameCount, 'render')
   try {
@@ -137,6 +132,7 @@ export async function encodeMotionGif({
         preset,
         intensity,
       })
+      applyBackgroundUnder(ctx, w, h, bgConfigReady)
       const pixels = ctx.getImageData(0, 0, w, h)
       applyBilateralEdgePreserve(pixels, { mix: 0.52 })
       frames.push({ data: maskRgbaTransparency(pixels.data, ALPHA_CUT), width: w, height: h })

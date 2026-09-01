@@ -127,6 +127,52 @@ export function encodeRgbaFrames(frames, options = {}) {
   return uint8
 }
 
+export async function encodeRgbaFramesAsync(frames, options = {}) {
+  const list = Array.isArray(frames) ? frames.filter(Boolean) : []
+  if (!list.length) throw new Error('인코딩할 프레임이 없습니다.')
+  const width = Math.max(1, Math.round(Number(options.width) || list[0].width || 1))
+  const height = Math.max(1, Math.round(Number(options.height) || list[0].height || 1))
+  const delay = delayMsFromOptions(options)
+  const transparent = options.transparent !== false
+  const alphaCut = Math.min(20, Math.max(10, Number(options.alphaThreshold) || ALPHA_CUT))
+  const gif = GIFEncoder()
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  for (let i = 0; i < list.length; i += 1) {
+    if (options.signal?.aborted) throw new Error('내보내기를 취소했습니다.')
+    const pixels = list[i]
+    if (pixels.width !== width || pixels.height !== height) {
+      throw new Error('모든 GIF 프레임 크기가 같아야 합니다.')
+    }
+    const mapped = transparent
+      ? encodeTransparentFrame(pixels.data, alphaCut)
+      : (() => {
+        const palette = quantize(pixels.data, 256, { format: 'rgb565' })
+        return {
+          index: applyPalette(pixels.data, palette, 'rgb565'),
+          palette,
+          transparentIndex: 0,
+        }
+      })()
+    gif.writeFrame(mapped.index, width, height, {
+      palette: mapped.palette,
+      delay,
+      repeat: i === 0 ? 0 : -1,
+      dispose: 2,
+      transparent,
+      transparentIndex: mapped.transparentIndex,
+    })
+    options.onProgress?.(Math.round(((i + 1) / list.length) * 100), i + 1, list.length)
+    await tick()
+  }
+
+  gif.finish()
+  const out = gif.bytes()
+  const encoded = out instanceof Uint8Array ? out : new Uint8Array(out)
+  assertValidGif(encoded)
+  return encoded
+}
+
 export function wrapGifBytes(uint8, meta = {}) {
   const blob = new Blob([uint8], { type: 'image/gif' })
   if (!blob.size) throw new Error('GIF Blob 크기가 0입니다.')

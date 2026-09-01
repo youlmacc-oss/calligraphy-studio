@@ -6,11 +6,11 @@ import clsx from 'clsx'
 import { magnify } from '../MenuMagnifierHUD.jsx'
 import EncodeProgressModal from './EncodeProgressModal.jsx'
 import {
-  encodeMotionExport,
   openCheckerboardPreview,
   triggerBlobDownload,
   yieldToMain,
 } from '../../utils/encoder/MotionEncoderEngine.js'
+import { exportCompositeGif, sanitizeExportFrames } from '../../utils/gifExporter.js'
 import { useMotionStudio } from './motionStudioContext.jsx'
 import { isPermanentClip } from '../../utils/encoder/BatchExportEngine.js'
 import { expandPingPong } from './motionSequencer.js'
@@ -46,6 +46,7 @@ export default function MotionExportPanel({
   captionFont,
   captionPos = { posX: 0, posY: 0 },
   captionTail,
+  bgConfig,
 }) {
   const studio = useMotionStudio()
   const [busy, setBusy] = useState(false)
@@ -92,8 +93,12 @@ export default function MotionExportPanel({
 
   const requestExport = async (format) => {
     if (!ready) return
-    const probe = await canvasFromUrl(frames[0]?.url || '')
-    await alphaGate.runOrAsk(probe ? [probe] : [], () => runExport(format))
+    try {
+      const probe = await canvasFromUrl(frames[0]?.url || '')
+      await alphaGate.runOrAsk(probe ? [probe] : [], () => runExport(format))
+    } catch {
+      await runExport(format)
+    }
   }
 
   const runExport = async (format) => {
@@ -111,7 +116,8 @@ export default function MotionExportPanel({
     setMessage(format === 'webp' ? '🎬 WebP 생성 중...' : '🎬 GIF 생성 중...')
     await yieldToMain()
     try {
-      const packed = await encodeMotionExport(expandPingPong(frames, pingPong), {
+      const cleanFrames = await sanitizeExportFrames(expandPingPong(frames, pingPong))
+      const packed = await exportCompositeGif(cleanFrames.length ? cleanFrames : frames, bgConfig, {}, {
         format,
         fps: encodeFps(fps, speed),
         effect,
@@ -129,12 +135,12 @@ export default function MotionExportPanel({
         posX: captionPos.posX,
         posY: captionPos.posY,
         captionTail,
-        onProgress: (info) => {
+        bgConfig,
+      }, (_pct, info) => {
           setPercent(info.percent || 0)
           setCurrent(info.current || 0)
           setTotal(info.total || 0)
           setMessage(info.message || '')
-        },
       })
       const url = URL.createObjectURL(packed.blob)
       setResult(packed)
@@ -142,7 +148,7 @@ export default function MotionExportPanel({
       setPercent(100)
       setState('done')
       setMessage('내보내기 완료')
-      triggerBlobDownload(packed.blob, fileName(packed.ext))
+      await triggerBlobDownload(packed.blob, fileName(packed.ext))
       studio?.purgeTempClips?.()
       flashToast('내보내기 완료')
       window.setTimeout(() => setOpen(false), 900)
@@ -206,7 +212,7 @@ export default function MotionExportPanel({
         total={total}
         previewUrl={previewUrl}
         error={error}
-        onDownload={() => result?.blob && triggerBlobDownload(result.blob, fileName(result.ext))}
+        onDownload={() => { if (result?.blob) void triggerBlobDownload(result.blob, fileName(result.ext)) }}
         onPreview={() => result?.blob && openCheckerboardPreview(result.blob)}
         onClose={() => {
           if (state === 'run') return

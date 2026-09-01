@@ -108,6 +108,10 @@ html[data-studio-fit] .studio-modal-card.mgs-card {
   gap: 0.4rem;
 }
 
+.mgs-close-confirm {
+  z-index: 60;
+}
+
 .mgs-head-actions .studio-modal-close {
   position: static;
   width: auto;
@@ -269,6 +273,12 @@ html[data-studio-fit] .studio-modal-card.mgs-card {
 .mgs-controls .mgs-select {
   margin-top: 0.08rem;
   padding: 8px 12px;
+}
+
+.mgs-bg-layer {
+  margin-top: 0.12rem;
+  padding-top: 0.42rem;
+  border-top: 1px solid rgba(34, 211, 238, 0.14);
 }
 
 .mgs-controls .mgs-preset,

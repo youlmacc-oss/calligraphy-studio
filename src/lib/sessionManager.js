@@ -1,3 +1,5 @@
+import { normalizeBgConfig } from './motionBackground.js'
+
 export const SESSION_KEY = 'MOTION_STUDIO_ACTIVE_SESSION'
 export const SESSION_VERSION = '1.0'
 export const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
@@ -18,6 +20,16 @@ function defaultStorage() {
   return null
 }
 
+export const SOURCE_TABS = ['canvas', 'cuts', 'drop']
+
+export function normalizeSourceTab(value) {
+  const key = String(value || '')
+  if (key === 'main') return 'canvas'
+  if (key === 'emoticon') return 'cuts'
+  if (key === 'upload') return 'drop'
+  return SOURCE_TABS.includes(key) ? key : 'canvas'
+}
+
 export function isFreshSession(session, maxAge = SESSION_MAX_AGE_MS) {
   const stamp = Number(session?.timestamp)
   if (!Number.isFinite(stamp) || stamp <= 0) return false
@@ -35,7 +47,8 @@ export function normalizeMotionStudioSession(raw) {
     timestamp: Number(raw.timestamp) || Date.now(),
     sourceImage: typeof raw.sourceImage === 'string' ? raw.sourceImage : null,
     pixelSprite: typeof raw.pixelSprite === 'string' ? raw.pixelSprite : null,
-    activeSourceTab: typeof raw.activeSourceTab === 'string' ? raw.activeSourceTab : 'canvas',
+    activeSourceTab: normalizeSourceTab(raw.activeSourceTab),
+    selectedCut: typeof raw.selectedCut === 'string' ? raw.selectedCut : '',
     selectedPreset: typeof raw.selectedPreset === 'string' ? raw.selectedPreset : 'none',
     motionParams: {
       loopDuration: Number(params.loopDuration) || 2,
@@ -67,6 +80,14 @@ export function normalizeMotionStudioSession(raw) {
     isolateOn: raw.isolateOn !== false,
     viewBg: typeof raw.viewBg === 'string' ? raw.viewBg : 'checker',
     zoom: Number(raw.zoom) || 100,
+    bgConfig: (() => {
+      const bg = normalizeBgConfig(raw.bgConfig)
+      return {
+        type: bg.type,
+        gradientId: bg.gradientId || '',
+        imageUrl: typeof bg.imageUrl === 'string' ? bg.imageUrl : '',
+      }
+    })(),
   }
 }
 

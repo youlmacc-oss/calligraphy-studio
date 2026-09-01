@@ -9,6 +9,10 @@ import { clampSequenceFps, stillLoopFrameCount } from '../../components/MotionSt
 import { applyDefringeToContext } from '../imageProcessor.js'
 import { normalizeParticleLayers, paintParticleOverlay } from '../../components/MotionStudio/particleOverlayEngine.js'
 import { paintMotionFrame } from '../../components/MotionGifStudio/motionPresets.js'
+import { applyBackgroundUnder } from '../../lib/motionBackground.js'
+import { sanitizeExportSource } from '../../lib/fakeBackgroundPurge.js'
+import { prepareEncodeBackground, yieldEncoderTick } from '../gifOptimizer.js'
+import { saveFileWithFolderPicker } from '../fileSaveManager.js'
 import { floydSteinbergIndex } from './floydSteinberg.js'
 import {
   isAnimatedWebp,
@@ -22,14 +26,7 @@ export const ENCODER_ALPHA_CUT = 16
 const GIF_HEADER = 'GIF89a'
 
 export function yieldToMain() {
-  return new Promise((resolve) => {
-    const kick = () => setTimeout(resolve, 0)
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(kick)
-      return
-    }
-    kick()
-  })
+  return yieldEncoderTick()
 }
 
 export function frameProgressCopy(kind, current, total) {
@@ -55,6 +52,18 @@ function loadFrameImage(url) {
     image.onerror = () => reject(new Error('frame'))
     image.src = url
   })
+}
+
+async function loadCleanExportImage(frame) {
+  const direct = frame?.canvas || (frame && typeof frame.getContext === 'function' && frame.width ? frame : null)
+  if (direct) return sanitizeExportSource(direct)
+  const url = typeof frame === 'string' ? frame : frame?.url
+  if (!url) return null
+  try {
+    return sanitizeExportSource(await loadFrameImage(url))
+  } catch {
+    return null
+  }
 }
 
 function paintCharacter(ctx, image, size) {
@@ -148,12 +157,16 @@ export async function composeStillMotionCanvases(frame, options = {}) {
   const size = ENCODER_SIZE
   const effect = normalizeTextMotionEffect(options.effect)
   await ensureEmoticonFontsReady(options.captionFont || options.fontId)
-  let image = null
-  try {
-    image = await loadFrameImage(frame?.url)
-  } catch {
-    image = null
-  }
+  report(options.onProgress, {
+    stage: 'render',
+    current: 0,
+    total: 1,
+    percent: 1,
+    message: frameProgressCopy(options.format, 0, 1),
+  })
+  const bgConfig = await prepareEncodeBackground(options.bgConfig, size, size)
+  await yieldToMain()
+  const image = await loadCleanExportImage(frame)
   const total = stillLoopFrameCount(options.fps, options.loopSeconds, 1)
   const canvases = []
   for (let i = 0; i < total; i += 1) {
@@ -162,7 +175,7 @@ export async function composeStillMotionCanvases(frame, options = {}) {
       stage: 'render',
       current: i + 1,
       total,
-      percent: Math.round(((i + 1) / total) * 48),
+      percent: Math.round(2 + ((i + 1) / total) * 46),
       message: frameProgressCopy(options.format, i + 1, total),
     })
     await yieldToMain()
@@ -171,6 +184,9 @@ export async function composeStillMotionCanvases(frame, options = {}) {
     canvas.height = size
     const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
     if (!ctx) throw new Error('Canvas 2D를 만들 수 없습니다.')
+    if (typeof paintMotionFrame !== 'function') {
+      throw new Error('paintMotionFrame is not defined')
+    }
     paintMotionFrame(ctx, image, {
       width: size,
       height: size,
@@ -179,6 +195,8 @@ export async function composeStillMotionCanvases(frame, options = {}) {
       intensity: options.intensity ?? 70,
       isolate: options.isolate !== false,
     })
+    applyBackgroundUnder(ctx, size, size, bgConfig)
+    await yieldToMain()
     paintTextAndParticles(ctx, {
       size,
       effect,
@@ -212,13 +230,15 @@ export async function composeSequenceCanvases(frames, options = {}) {
   const size = ENCODER_SIZE
   const effect = normalizeTextMotionEffect(options.effect)
   await ensureEmoticonFontsReady(options.captionFont || options.fontId)
+  const bgConfig = await prepareEncodeBackground(options.bgConfig, size, size)
+  await yieldToMain()
   const canvases = []
   for (let i = 0; i < list.length; i += 1) {
     report(options.onProgress, {
       stage: 'render',
       current: i + 1,
       total: list.length,
-      percent: Math.round(((i + 1) / list.length) * 48),
+      percent: Math.round(2 + ((i + 1) / list.length) * 46),
       message: frameProgressCopy(options.format, i + 1, list.length),
     })
     await yieldToMain()
@@ -227,13 +247,10 @@ export async function composeSequenceCanvases(frames, options = {}) {
     canvas.height = size
     const ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true })
     if (!ctx) throw new Error('Canvas 2D를 만들 수 없습니다.')
-    let image = null
-    try {
-      image = await loadFrameImage(list[i].url)
-    } catch {
-      image = null
-    }
+    const image = await loadCleanExportImage(list[i])
     paintCharacter(ctx, image, size)
+    applyBackgroundUnder(ctx, size, size, bgConfig)
+    await yieldToMain()
     paintTextAndParticles(ctx, {
       size,
       effect,
@@ -279,6 +296,7 @@ export async function encodeGifFromCanvases(canvases, options = {}) {
     const masked = maskOpaqueRgb(imageData.data)
     const colors = (quantize(masked, 255, { format: 'rgb565' }) || []).map((color) => color.slice(0, 3))
     if (!colors.length) colors.push([0, 0, 0])
+    await yieldToMain()
     const raw = floydSteinbergIndex(
       { width, height, data: imageData.data },
       colors,
@@ -398,17 +416,8 @@ export async function encodeMotionExport(frames, options = {}) {
   return { blob, uint8, mime: 'image/gif', ext: 'gif', width: ENCODER_SIZE, height: ENCODER_SIZE, frames: canvases.length }
 }
 
-export function triggerBlobDownload(blob, filename) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.rel = 'noopener'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 4000)
-  return url
+export async function triggerBlobDownload(blob, filename) {
+  return saveFileWithFolderPicker(blob, filename, blob?.type || '')
 }
 
 export async function openCheckerboardPreview(blob) {
