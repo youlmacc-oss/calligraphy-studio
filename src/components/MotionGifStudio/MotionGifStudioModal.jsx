@@ -64,7 +64,6 @@ import {
   normalizeBgConfig,
 } from '../../lib/motionBackground.js'
 import { optimizeBackgroundImage } from '../../utils/gifOptimizer.js'
-import { saveFileWithFolderPicker } from '../../utils/fileSaveManager.js'
 import { useTransparencyGate } from '../../hooks/useTransparencyGate.js'
 import './motionGifStudio.css'
 
@@ -217,6 +216,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const cutsRef = useRef([])
   const fpsProbeRef = useRef({ last: 0, frames: 0, hz: 0 })
   const lastBlobRef = useRef(null)
+  const gifExportApiRef = useRef(null)
   const encodePhaseRef = useRef('idle')
   const encodeErrorRef = useRef('')
   const diagSnapRef = useRef({})
@@ -266,6 +266,7 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
   const [hasSource, setHasSource] = useState(false)
   const [loading, setLoading] = useState(false)
   const [encoding, setEncoding] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('엔진 대기 중 (Ready)')
   const [statusKind, setStatusKind] = useState('ok')
@@ -948,63 +949,30 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, closeAsk, requestClose])
 
-  const handleDownload = useCallback(async () => {
-    const source = fittedRef.current
-    if (!source || encoding) return
-    abortRef.current = false
-    encodeStartedRef.current = performance.now()
-    setEncoding(true)
-    setProgress(0)
-    setEta('')
-    setStatusKind('ok')
-    setFrameHint('')
-    const size = outputSize(sizeId, imageRef.current || source)
-    const exportFps = size.fps || fps
-    try {
-      const result = await encodeMotionGif({
-        source: pixelSpriteRef.current || imageRef.current || source,
-        width: size.width,
-        height: size.height,
-        fps: exportFps,
-        loopSeconds: loop,
-        preset,
-        intensity,
-        bgConfig: { ...bgConfig, image: bgImageRef.current },
-        signal: { get aborted() { return abortRef.current } },
-        onProgress: (pct, index, total, phase) => {
-          encodePhaseRef.current = phase || 'encode'
-          encodeErrorRef.current = ''
-          setProgress(pct)
-          setEta(formatEta(encodeStartedRef.current, pct))
-          setFrameHint(total ? `프레임 ${index} / ${total}` : '')
-          setStatus(`인코딩 중 ${pct}%`)
-        },
-      })
-      lastBlobRef.current = {
-        bytes: result.byteLength,
-        header: readGifHeader(result.uint8),
-        netscape: hasNetscapeLoop(result.uint8),
-        elapsedMs: Math.round(performance.now() - encodeStartedRef.current),
-        width: result.width,
-        height: result.height,
-        frames: result.frames,
-      }
-      encodePhaseRef.current = 'done'
-      setProgress(100)
-      setEta('')
-      setStatus(`완료 ${Math.round(result.byteLength / 1024)} KB`)
-      await saveFileWithFolderPicker(result.blob, `motion-studio-${size.width}x${size.height}.gif`, 'image/gif')
-      revokeGifUrl(result.url)
-    } catch (error) {
-      encodeErrorRef.current = error.message || 'GIF 인코딩에 실패했습니다.'
-      encodePhaseRef.current = 'idle'
-      setStatusKind(abortRef.current ? 'ok' : 'error')
-      setStatus(error.message || 'GIF 인코딩에 실패했습니다.')
-    } finally {
-      setEncoding(false)
-      if (!abortRef.current && hasSource && playing) startLoop()
+  const rememberExportBlob = useCallback((packed) => {
+    if (!packed?.blob && !packed?.uint8) return
+    const uint8 = packed.uint8
+    lastBlobRef.current = {
+      bytes: packed.blob?.size || uint8?.byteLength || 0,
+      header: uint8 ? readGifHeader(uint8) : 'GIF89a',
+      netscape: uint8 ? hasNetscapeLoop(uint8) : true,
+      elapsedMs: encodeStartedRef.current ? Math.round(performance.now() - encodeStartedRef.current) : 0,
+      width: packed.width,
+      height: packed.height,
+      frames: packed.frames,
     }
-  }, [encoding, fps, hasSource, intensity, loop, playing, preset, sizeId, startLoop, bgConfig])
+    encodePhaseRef.current = 'done'
+  }, [])
+
+  const requestDownload = useCallback(() => {
+    if (exportBusy || encoding) return
+    encodeStartedRef.current = performance.now()
+    encodePhaseRef.current = 'encode'
+    encodeErrorRef.current = ''
+    setStatusKind('ok')
+    setStatus('🎬 GIF 생성 중...')
+    void gifExportApiRef.current?.requestExport?.('gif')
+  }, [encoding, exportBusy])
 
   const runBatchEncode = useCallback(async (list, zipName, folderName) => {
     if (!list.length || encoding) return
@@ -1083,15 +1051,6 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
     const list = uploadedImages.filter((item) => item.url)
     return runBatchEncode(list, 'custom_images_motion_gif.zip', 'custom_images_motion_gif')
   }, [runBatchEncode, uploadedImages])
-
-  const requestDownload = useCallback(() => {
-    const canvas = sourceToCanvas(pixelSpriteRef.current || imageRef.current || fittedRef.current)
-    if (!canvas) return
-    void alphaGate.runOrAsk([canvas], async ({ purged, canvases }) => {
-      if (purged && canvases[0]) pixelSpriteRef.current = canvases[0]
-      await handleDownload()
-    })
-  }, [alphaGate, handleDownload])
 
   const requestUploadBatchExport = useCallback(async () => {
     const list = uploadedImages.filter((item) => item.url)
@@ -1599,6 +1558,9 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
               onCaptionLive={syncStageCaption}
               sessionSnapRef={sessionSnapRef}
               bgConfig={{ ...bgConfig, image: bgImageRef.current }}
+              exportApiRef={gifExportApiRef}
+              onExportBusy={setExportBusy}
+              onExportPacked={rememberExportBlob}
             />
           </section>
 
@@ -1886,12 +1848,13 @@ export default function MotionGifStudioModal({ isOpen, onClose, initialSource = 
             <button
               type="button"
               className="tool-btn is-on mgs-download mgs-tip allow-long-text"
-              data-tooltip="투명 배경 무손실 GIF 생성 및 PC 즉시 다운로드"
+              data-tooltip="GIF로 내보내기와 같은 자동 투명·360 인코더로 저장합니다"
               data-mgs-place="up"
-              disabled={!hasSource || encoding}
+              data-hq-gif="1"
+              disabled={!hasSource || encoding || exportBusy}
               onClick={requestDownload}
             >
-              {encoding ? `인코딩 중 ${progress}%` : '🚀 초고화질 무한루프 GIF 다운로드'}
+              {exportBusy ? '⏳ 변환 중...' : encoding ? `인코딩 중 ${progress}%` : '🚀 초고화질 무한루프 GIF 다운로드'}
             </button>
           </div>
         </footer>

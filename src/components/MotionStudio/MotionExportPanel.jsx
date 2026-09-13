@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import TransparencyCheckModal from '../TransparencyCheckModal.jsx'
 import { canvasFromUrl } from '../../lib/fakeBackgroundPurge.js'
 import { useTransparencyGate } from '../../hooks/useTransparencyGate.js'
@@ -47,6 +47,9 @@ export default function MotionExportPanel({
   captionPos = { posX: 0, posY: 0 },
   captionTail,
   bgConfig,
+  exportApiRef,
+  onBusyChange,
+  onExportPacked,
 }) {
   const studio = useMotionStudio()
   const [busy, setBusy] = useState(false)
@@ -91,6 +94,7 @@ export default function MotionExportPanel({
     flashToast(`클립 ${slot} 저장됨`)
   }
 
+  const requestExportRef = useRef(null)
   const requestExport = async (format) => {
     if (!ready) return
     try {
@@ -100,6 +104,21 @@ export default function MotionExportPanel({
       await runExport(format)
     }
   }
+  requestExportRef.current = requestExport
+
+  useEffect(() => {
+    if (!exportApiRef) return undefined
+    exportApiRef.current = {
+      requestExport: (format) => requestExportRef.current?.(format),
+    }
+    return () => {
+      if (exportApiRef.current?.requestExport) exportApiRef.current = null
+    }
+  }, [exportApiRef])
+
+  useEffect(() => {
+    onBusyChange?.(busy)
+  }, [busy, onBusyChange])
 
   const runExport = async (format) => {
     if (!ready) return
@@ -148,6 +167,7 @@ export default function MotionExportPanel({
       setPercent(100)
       setState('done')
       setMessage('내보내기 완료')
+      onExportPacked?.(packed)
       await triggerBlobDownload(packed.blob, fileName(packed.ext))
       studio?.purgeTempClips?.()
       flashToast('내보내기 완료')

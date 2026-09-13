@@ -265,8 +265,9 @@ async function runVisualCheck() {
   await page.screenshot({ path: GRID_SHOT, fullPage: false, timeout: 60000 })
 
   await page.locator('.emo-split-card .studio-modal-close').click()
+  await page.waitForFunction(() => !document.querySelector('#emo-split-title'), { timeout: 8000 })
   await page.locator('[data-tour="gif-export"]').click()
-  await page.waitForSelector('#mgs-title', { timeout: 10000 })
+  await page.waitForSelector('#mgs-title', { timeout: 20000 })
   await page.waitForSelector('[data-session-save]', { timeout: 8000 })
   await page.waitForSelector('[data-session-load]', { timeout: 5000 })
   await page.waitForTimeout(250)
@@ -463,6 +464,7 @@ async function runVisualCheck() {
     return String(input?.value || '') === '안녕' && bounce?.classList.contains('is-on')
   }, { timeout: 5000 })
   await page.waitForTimeout(500)
+  await page.waitForSelector('[data-hq-gif]:not([disabled])', { timeout: 8000 })
   await encodeUntilDone(page, 'gif')
   await encodeUntilDone(page, 'webp')
   await page.locator('[data-clip-save]').click()

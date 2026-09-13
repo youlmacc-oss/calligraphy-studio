@@ -49,6 +49,9 @@ export default function MotionSequencerPanel({
   onCaptionLive,
   sessionSnapRef,
   bgConfig,
+  exportApiRef,
+  onExportBusy,
+  onExportPacked,
 }) {
   const studio = useMotionStudio()
   const [sequence, setSequence] = useState([])
@@ -424,6 +427,9 @@ export default function MotionSequencerPanel({
         captionPos={captionPos}
         captionTail={captionTail}
         bgConfig={bgConfig}
+        exportApiRef={exportApiRef}
+        onBusyChange={onExportBusy}
+        onExportPacked={onExportPacked}
       />
     </section>
   )

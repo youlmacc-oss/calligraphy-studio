@@ -2464,8 +2464,14 @@ export async function checkMotionSequencer() {
   if (typeof saveFileWithFolderPicker !== 'function' || typeof shouldUseSavePicker !== 'function' || !String(triggerBlobDownload).includes('saveFileWithFolderPicker')) {
     return { status: 'error', detail: '폴더 선택 저장 매니저가 연결되어 있지 않습니다.' }
   }
-  if (!uploadSrc.includes('saveFileWithFolderPicker') || !uploadSrc.includes('clearSavedSession')) {
-    return { status: 'error', detail: 'GIF 저장 폴더 선택 또는 저장 안 함 세션 정리가 없습니다.' }
+  if (!uploadSrc.includes('clearSavedSession')) {
+    return { status: 'error', detail: '저장 안 함 세션 정리가 없습니다.' }
+  }
+  if (!uploadSrc.includes('gifExportApiRef') || !uploadSrc.includes("requestExport?.('gif')") || !uploadSrc.includes('data-hq-gif')) {
+    return { status: 'error', detail: '초고화질 무한루프 GIF가 GIF 내보내기 인코더에 연결되지 않았습니다.' }
+  }
+  if (!exportSrc.includes('exportApiRef') || !panelSrc.includes('exportApiRef') || !exportSrc.includes('sanitizeExportFrames')) {
+    return { status: 'error', detail: 'GIF 내보내기 API 브리지 또는 자동 투명 정화가 없습니다.' }
   }
   if (!SOURCE_TABS.includes('drop') || normalizeSourceTab('upload') !== 'drop' || normalizeSourceTab('emoticon') !== 'cuts' || normalizeSourceTab('main') !== 'canvas') {
     return { status: 'error', detail: '소스 탭 3종 정규화가 실패했습니다.' }
