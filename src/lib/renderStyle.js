@@ -25,11 +25,52 @@ export function resolveWeight(font, requested) {
   return font.weights.includes(700) ? 700 : font.weights[0]
 }
 
-function applyTypeface(ctx, { font, fontSize, fontWeight }) {
+const CJK_FACE_FALLBACK = '"Noto Serif KR", "Noto Serif SC", "Source Han Serif", "Yu Mincho", "Malgun Gothic", serif'
+const CJK_CHAR_RE = /[\u3400-\u9fff\uf900-\ufaff]/
+const GENERIC_FACE_RE = /,\s*(serif|sans-serif|monospace|cursive|fantasy|system-ui)\s*$/i
+
+export function withCjkFallback(family) {
+  const stack = String(family || '').trim()
+  if (!stack) return CJK_FACE_FALLBACK
+  if (stack.includes('Noto Serif KR')) return GENERIC_FACE_RE.test(stack) ? stack : `${stack}, ${CJK_FACE_FALLBACK}`
+  if (GENERIC_FACE_RE.test(stack)) {
+    return stack.replace(GENERIC_FACE_RE, `, ${CJK_FACE_FALLBACK}, $1`)
+  }
+  return `${stack}, ${CJK_FACE_FALLBACK}`
+}
+
+export function hexToRgbChannels(hex, fallback = { r: 10, g: 10, b: 10 }) {
+  const raw = String(hex || '').trim()
+  const short = /^#?([0-9a-fA-F]{3})$/.exec(raw)
+  if (short) {
+    const [r, g, b] = short[1].split('').map((ch) => parseInt(ch + ch, 16))
+    return { r, g, b }
+  }
+  const full = /^#?([0-9a-fA-F]{6})$/.exec(raw)
+  if (!full) return fallback
+  return {
+    r: parseInt(full[1].slice(0, 2), 16),
+    g: parseInt(full[1].slice(2, 4), 16),
+    b: parseInt(full[1].slice(4, 6), 16),
+  }
+}
+
+export function inkRgba(color, blackMix, alpha) {
+  const { r, g, b } = hexToRgbChannels(color)
+  const k = Math.max(0, Math.min(1, Number(blackMix) || 0))
+  const a = Math.max(0, Math.min(1, Number(alpha) || 0))
+  return `rgba(${Math.round(r * (1 - k))},${Math.round(g * (1 - k))},${Math.round(b * (1 - k))},${a})`
+}
+
+function applyTypeface(ctx, { font, fontSize, fontWeight, text }) {
   const weight = resolveWeight(font, fontWeight)
-  ctx.font = `${weight} ${fontSize}px ${font.family}`
+  ctx.font = `${weight} ${fontSize}px ${withCjkFallback(font.family)}`
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
+  const sample = [...String(text || '')].find((ch) => CJK_CHAR_RE.test(ch))
+  if (sample && shouldFallbackCjkGlyph(ctx.measureText(sample))) {
+    ctx.font = `${weight} ${fontSize}px ${CJK_FACE_FALLBACK}`
+  }
 }
 
 function layoutText(ctx, text, letterSpacing) {
@@ -70,10 +111,22 @@ function eachGlyphOnArc(layout, originX, originY, letterSpacing, curveDeg, paint
   })
 }
 
+export function shouldFallbackCjkGlyph(metrics) {
+  const w = (Number(metrics?.actualBoundingBoxLeft) || 0) + (Number(metrics?.actualBoundingBoxRight) || 0)
+  const h = (Number(metrics?.actualBoundingBoxAscent) || 0) + (Number(metrics?.actualBoundingBoxDescent) || 0)
+  return w < 0.5 || h < 0.5
+}
+
 function strokeOrFillGlyph(ctx, mode, ch, gx, gy, angle, width) {
+  const prev = ctx.font
+  if (CJK_CHAR_RE.test(ch) && shouldFallbackCjkGlyph(ctx.measureText(ch))) {
+    const parsed = /^(\d+)\s+([\d.]+)px/.exec(prev)
+    ctx.font = `${parsed?.[1] || 400} ${parsed?.[2] || 70}px ${CJK_FACE_FALLBACK}`
+  }
   if (!angle) {
     if (mode === 'stroke') ctx.strokeText(ch, gx, gy)
     else ctx.fillText(ch, gx, gy)
+    ctx.font = prev
     return
   }
   ctx.save()
@@ -82,6 +135,7 @@ function strokeOrFillGlyph(ctx, mode, ch, gx, gy, angle, width) {
   if (mode === 'stroke') ctx.strokeText(ch, -width / 2, 0)
   else ctx.fillText(ch, -width / 2, 0)
   ctx.restore()
+  ctx.font = prev
 }
 
 function walkGlyphs(layout, x, y, letterSpacing, curve, paint) {
@@ -93,11 +147,15 @@ function walkGlyphs(layout, x, y, letterSpacing, curve, paint) {
 }
 
 function fillSpaced(ctx, layout, x, y, letterSpacing) {
-  eachGlyph(layout, x, y, letterSpacing, (ch, gx, gy) => ctx.fillText(ch, gx, gy))
+  eachGlyph(layout, x, y, letterSpacing, (ch, gx, gy, angle, width) => {
+    strokeOrFillGlyph(ctx, 'fill', ch, gx, gy, angle, width)
+  })
 }
 
 function strokeSpaced(ctx, layout, x, y, letterSpacing) {
-  eachGlyph(layout, x, y, letterSpacing, (ch, gx, gy) => ctx.strokeText(ch, gx, gy))
+  eachGlyph(layout, x, y, letterSpacing, (ch, gx, gy, angle, width) => {
+    strokeOrFillGlyph(ctx, 'stroke', ch, gx, gy, angle, width)
+  })
 }
 
 function clearCanvasShadow(ctx) {
@@ -759,25 +817,25 @@ function paintShader(ctx, layout, x, y, letterSpacing, fontSize, preset, viewW, 
     case 'calligraphy': {
       const ink = extras.inkDensity ?? 70
       const dry = extras.dryBrush ?? 30
-      const shade = Math.round(18 - ink * 0.12)
+      const fill = c0 || '#0a0a0a'
       const alpha = 0.4 + (ink / 100) * 0.58
       paintLayer(ctx, layout, x, y, letterSpacing, {
-        fillStyle: `rgba(0,0,0,${0.18 + dry / 280})`,
+        fillStyle: inkRgba(fill, 0.12, 0.18 + dry / 280),
         ox: 3,
         oy: 5,
-        shadowColor: 'rgba(0,0,0,0.4)',
+        shadowColor: inkRgba(fill, 0.35, 0.4),
         shadowBlur: 8 + dry * 0.08,
       })
       const flakes = 1 + Math.round(dry / 18)
       for (let i = 0; i < flakes; i += 1) {
         paintLayer(ctx, layout, x, y, letterSpacing, {
-          fillStyle: `rgba(${shade},${shade},${shade},${alpha * (1 - i * 0.12)})`,
+          fillStyle: inkRgba(fill, 0.06 + i * 0.04, alpha * (1 - i * 0.12)),
           ox: Math.sin(i * 1.7) * (dry * 0.055),
           oy: Math.cos(i * 1.3) * (dry * 0.045),
         })
       }
       paintLayer(ctx, layout, x, y, letterSpacing, {
-        fillStyle: `rgba(${Math.max(0, shade - 8)},${Math.max(0, shade - 8)},${Math.max(0, shade - 8)},${alpha})`,
+        fillStyle: inkRgba(fill, 0.04, alpha),
         strokeStyle: c2,
         lineWidth: Math.max(1, fontSize * 0.018 + dry * 0.01),
       })
@@ -933,22 +991,22 @@ function paintShader(ctx, layout, x, y, letterSpacing, fontSize, preset, viewW, 
 
     case 'botanical':
       paintLayer(ctx, layout, x, y, letterSpacing, {
-        fillStyle: c2,
+        fillStyle: c0,
         shadowColor: c0,
         shadowBlur: fontSize * 0.45,
       })
       paintLayer(ctx, layout, x, y, letterSpacing, {
-        fillStyle: c2,
+        fillStyle: c0,
         ox: 3,
         oy: 4,
       })
       paintLayer(ctx, layout, x, y, letterSpacing, {
         fillStyle: verticalGradient(ctx, x, y, fontSize, [
-          [0, '#dcfce7'],
-          [0.4, c1],
+          [0, c1],
+          [0.4, c0],
           [1, c2],
         ]),
-        strokeStyle: c0,
+        strokeStyle: c2,
         lineWidth: Math.max(2, fontSize * 0.03),
       })
       break
@@ -964,7 +1022,7 @@ function paintShader(ctx, layout, x, y, letterSpacing, fontSize, preset, viewW, 
 
 async function ensureFont(font, fontSize, fontWeight) {
   const weight = resolveWeight(font, fontWeight)
-  const spec = `${weight} ${Math.max(12, Math.round(fontSize))}px ${font.family}`
+  const spec = `${weight} ${Math.max(12, Math.round(fontSize))}px ${withCjkFallback(font.family)}`
   try {
     await document.fonts.load(spec)
   } catch {
@@ -1013,7 +1071,7 @@ export function fitLayerFontSize(layer, font, viewW, viewH = viewW, {
   const lineHeight = Math.max(0.8, Math.min(2.5, Number(layer.lineHeight) || 1.2))
 
   const measure = (size) => {
-    applyTypeface(ctx, { font, fontSize: size, fontWeight: layer.fontWeight })
+    applyTypeface(ctx, { font, fontSize: size, fontWeight: layer.fontWeight, text: layer.text })
     const block = lineBlock(ctx, layer.text, spacing, size, lineHeight, layer.align)
     const width = block.maxW + strokePad
     const height = size * lineHeight * lineCount * (layer.type === 'seal' ? 1.1 : 1.08)
@@ -1105,7 +1163,7 @@ function drawStyled(ctx, {
     }
   }
 
-  applyTypeface(ctx, { font, fontSize, fontWeight })
+  applyTypeface(ctx, { font, fontSize, fontWeight, text: display })
   const extras = {
     text: display,
     stickerOn,
@@ -1158,7 +1216,7 @@ function drawMask(ctx, {
   ctx.clearRect(0, 0, viewW, viewH)
   ctx.fillStyle = '#000000'
   ctx.fillRect(0, 0, viewW, viewH)
-  applyTypeface(ctx, { font, fontSize, fontWeight })
+  applyTypeface(ctx, { font, fontSize, fontWeight, text: display })
   const extras = {
     text: display,
     stickerOn,
@@ -1259,7 +1317,12 @@ function resolveBoxFont(layer, options) {
     ?? FONTS[0]
 }
 
+function hasExplicitPlainFill(layer) {
+  return layer?.presetId === '' || layer?.presetId === null
+}
+
 function resolveBoxPreset(layer, options) {
+  if (hasExplicitPlainFill(layer)) return null
   if (layer.presetId && options?.presetsById?.[layer.presetId]) return options.presetsById[layer.presetId]
   if (layer.presetId && PRESETS_BY_ID[layer.presetId]) return PRESETS_BY_ID[layer.presetId]
   if (layer.role === 'main') return options?.preset ?? null
@@ -1353,7 +1416,7 @@ export function estimateLayerBox(layer, viewW, viewH, scale, options = {}) {
   let contentW
   let contentH
   if (ctx && font) {
-    applyTypeface(ctx, { font, fontSize, fontWeight: layer.fontWeight })
+    applyTypeface(ctx, { font, fontSize, fontWeight: layer.fontWeight, text: layer.text })
     const block = lineBlock(ctx, layer.text, spacing, fontSize, lineHeight, layer.align)
     const overflow = glyphOverflow(ctx, block)
     const lineCount = Math.max(1, block.layouts.length)
@@ -1515,10 +1578,16 @@ function drawBackgroundPlate(ctx, viewW, viewH, transparent, bgImage, background
   ctx.restore()
 }
 
-function resolveLayerPreset(layer, fallbackPreset, extras) {
+export function resolveActiveLayerPreset(layer, fallbackPreset, extras) {
+  if (hasExplicitPlainFill(layer)) return null
   if (layer.presetId && extras?.presetsById?.[layer.presetId]) return extras.presetsById[layer.presetId]
+  if (layer.presetId && PRESETS_BY_ID[layer.presetId]) return PRESETS_BY_ID[layer.presetId]
   if (layer.role === 'main') return fallbackPreset
   return null
+}
+
+function resolveLayerPreset(layer, fallbackPreset, extras) {
+  return resolveActiveLayerPreset(layer, fallbackPreset, extras)
 }
 
 function bindLayerColors(preset, layer) {
@@ -1546,7 +1615,7 @@ function paintStudioLayer(ctx, layer, font, preset, extras, viewW, viewH, scale,
   ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity ?? 1))
   ctx.translate(x, y)
   ctx.rotate(((layer.rotation ?? 0) * Math.PI) / 180)
-  applyTypeface(ctx, { font, fontSize, fontWeight: layer.fontWeight })
+  applyTypeface(ctx, { font, fontSize, fontWeight: layer.fontWeight, text: display })
   const block = lineBlock(ctx, display, letterSpacing, fontSize, layer.lineHeight, layer.align)
   if (layer.type === 'seal') {
     paintSealStamp(ctx, 0, 0, fontSize * 2.4, display, mask)

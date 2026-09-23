@@ -184,7 +184,7 @@ import { ENCODER_SIZE, composeSequenceCanvases, composeStillMotionCanvases, enco
 import { isAnimatedWebp, muxAnimatedWebp } from '../utils/encoder/webpAnimMux.js'
 import { createSequenceClip, motionClipFileName } from '../utils/encoder/BatchExportEngine.js'
 import JSZip from 'jszip'
-import { computeDualStrokeWidths, drawLivePreview, estimateLayerBox, exportCleanCanvas, hitTestStudio, layerPaintRank, probeTypographyIsolation, resolveBoundColors, textLines } from './renderStyle.js'
+import { computeDualStrokeWidths, drawLivePreview, estimateLayerBox, exportCleanCanvas, hitTestStudio, inkRgba, layerPaintRank, probeTypographyIsolation, resolveActiveLayerPreset, resolveBoundColors, shouldFallbackCjkGlyph, textLines, withCjkFallback } from './renderStyle.js'
 import { snapshotOf } from './studioModel.js'
 import { applyViewEdit, constrainCrop, defaultViewEdit, makeCropRect } from './viewEdit.js'
 import {
@@ -934,6 +934,25 @@ export async function checkEdit() {
   )
   if (bound[0] !== '#ff0033' || bound[1] !== '#00cc66' || bound[2] !== '#0033ff') {
     return { status: 'error', detail: '텍스트/외곽선/그림자 색 바인딩이 역전되어 있습니다.' }
+  }
+  const plain = resolveActiveLayerPreset({ role: 'main', presetId: '' }, { id: 'kitsch-sticker', shader: 'kitschSticker' }, {})
+  const inherited = resolveActiveLayerPreset({ role: 'main' }, { id: 'kitsch-sticker', shader: 'kitschSticker' }, {})
+  if (plain || inherited?.id !== 'kitsch-sticker') {
+    return { status: 'error', detail: '기본 단색이 메인 셰이더를 끊지 않거나 상속이 깨졌습니다.' }
+  }
+  const tinted = inkRgba('#ff3366', 0, 1)
+  if (!tinted.startsWith('rgba(255,51,102,')) {
+    return { status: 'error', detail: '수묵/한자 잉크가 텍스트 색을 따르지 않습니다.' }
+  }
+  const stacked = withCjkFallback('Jalnan, "Black Han Sans", sans-serif')
+  if (!stacked.includes('Noto Serif KR') || stacked.indexOf('Noto Serif KR') > stacked.indexOf('sans-serif')) {
+    return { status: 'error', detail: '한자 폰트 폴백이 제네릭 패밀리 뒤에 있어 夢이 빠집니다.' }
+  }
+  if (!shouldFallbackCjkGlyph({ actualBoundingBoxLeft: 0, actualBoundingBoxRight: 0, actualBoundingBoxAscent: 0, actualBoundingBoxDescent: 0 })) {
+    return { status: 'error', detail: '빈 한자 글리프 폴백 판정이 꺼져 있습니다.' }
+  }
+  if (shouldFallbackCjkGlyph({ actualBoundingBoxLeft: 2, actualBoundingBoxRight: 68, actualBoundingBoxAscent: 59, actualBoundingBoxDescent: 6 })) {
+    return { status: 'error', detail: '실제 한자 획이 있는 글리프를 폴백으로 잘못 판정합니다.' }
   }
   if (bumpSliderValue(10, 1, 0, 20, 1) !== 11 || bumpSliderValue(10, -1, 0, 20, 1) !== 9) {
     return { status: 'error', detail: '슬라이더 ± 증감이 대상 값과 동기화되지 않습니다.' }

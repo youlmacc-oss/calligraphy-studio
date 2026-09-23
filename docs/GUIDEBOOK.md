@@ -95,7 +95,7 @@ npm run verify
 
 ## 7. v2.4.0 엔지니어링 검증 (TC-01~TC-10)
 
-프로덕션 빌드 `2026.09.14-v2.4.1` 기준입니다. 화면 HUD 단계 수는 고정 10이 아니라 `DIAG_STEPS.length`를 따릅니다. 엔지니어링 HTML은 `docs/AI_Motion_GIF_Studio_PRO_Guide_v2.4.0.html`입니다.
+프로덕션 빌드 `2026.09.24-v2.4.2` 기준입니다. 화면 HUD 단계 수는 고정 10이 아니라 `DIAG_STEPS.length`를 따릅니다. 엔지니어링 HTML은 `docs/AI_Motion_GIF_Studio_PRO_Guide_v2.4.0.html`입니다.
 
 | ID | 검증 | 결과 |
 |---|---|---|
@@ -112,6 +112,12 @@ npm run verify
 
 ---
 
-## 8. 다른 PC에서 동일 앱 재구축
+## 8. 한자·텍스트 색
+
+`[기본 단색]`은 메인 레이어도 19종 올인원/수묵 셰이더를 끊고 카드의 텍스트 색만 그립니다. `[수묵 캘리그라피]`는 검정 잉크 고정이 아니라 텍스트 색을 `inkRgba` 틴트로 씁니다. 한자(夢 등)는 선택 폰트에 글자가 없으면 노토 세리프 KR/SC 폴백으로 같은 색을 유지합니다.
+
+---
+
+## 9. 다른 PC에서 동일 앱 재구축
 
 코드 없이 명세만으로 다시 만들 때는 `docs/rebuild-kit/` 를 복사한다. 필수 4종은 `PRD.md`, `ARCHITECTURE.md`, `UI.md`, `PROMPTS.md` 이다. 첫 채팅에는 `PROMPTS.md`의 마스터 프롬프트를 그대로 붙인다.

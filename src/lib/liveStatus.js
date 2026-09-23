@@ -1,3 +1,5 @@
+import { resolveActiveLayerPreset } from './renderStyle.js'
+
 export function formatHudNumber(value, digits = 2) {
   const rounded = Number(Number(value || 0).toFixed(digits))
   return Object.is(rounded, -0) ? '0' : String(rounded)
@@ -9,7 +11,7 @@ export function liveStatusFromLayer(layer, { fontsById, presetsById, studioPrese
   const chars = [...raw].length
   const lines = raw.length ? raw.split('\n').length : 1
   const font = fontsById?.[layer.fontId]
-  const layerPreset = presetsById?.[layer.presetId] ?? (layer.role === 'main' ? studioPreset : null)
+  const layerPreset = resolveActiveLayerPreset(layer, studioPreset, { presetsById })
   const badge = layer.role === 'main'
     ? { tone: 'main', text: '👑 메인' }
     : layer.role === 'sub'
